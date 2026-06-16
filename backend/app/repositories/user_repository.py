@@ -11,9 +11,7 @@ class UserRepository:
         self._db = db
 
     async def get_by_id(self, user_id: str) -> User | None:
-        result = await self._db.execute(
-            select(User).where(User.id == user_id)
-        )
+        result = await self._db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def get_by_provider(self, provider: str, provider_id: str) -> User | None:
@@ -25,7 +23,9 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create(self, provider: str, provider_id: str, nickname: str, avatar_url: str | None = None) -> User:
+    async def create(
+        self, provider: str, provider_id: str, nickname: str, avatar_url: str | None = None
+    ) -> User:
         user = User(
             provider=provider,
             provider_id=provider_id,
@@ -37,7 +37,9 @@ class UserRepository:
         await self._db.refresh(user)
         return user
 
-    async def update(self, user: User, nickname: str | None = None, avatar_url: str | None = None) -> User:
+    async def update(
+        self, user: User, nickname: str | None = None, avatar_url: str | None = None
+    ) -> User:
         if nickname is not None:
             user.nickname = nickname
         if avatar_url is not None:

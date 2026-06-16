@@ -20,9 +20,7 @@ class PushUnsubscribeBody(BaseModel):
 
 
 @router.post("/subscribe", status_code=204)
-async def subscribe_push(
-    body: PushSubscribeBody, current_user: CurrentUser, db: DbSession
-):
+async def subscribe_push(body: PushSubscribeBody, current_user: CurrentUser, db: DbSession):
     svc = NotificationService(db)
     await svc.upsert_push_subscription(
         user_id=current_user.id,
@@ -33,8 +31,6 @@ async def subscribe_push(
 
 
 @router.post("/unsubscribe", status_code=204)
-async def unsubscribe_push(
-    body: PushUnsubscribeBody, current_user: CurrentUser, db: DbSession
-):
+async def unsubscribe_push(body: PushUnsubscribeBody, current_user: CurrentUser, db: DbSession):
     svc = NotificationService(db)
     await svc.delete_push_subscription(endpoint=body.endpoint, user_id=current_user.id)

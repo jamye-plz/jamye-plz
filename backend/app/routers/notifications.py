@@ -34,8 +34,6 @@ async def list_notifications(
 
 
 @router.post("/{notification_id}/read", response_model=NotificationOut)
-async def mark_notification_read(
-    notification_id: str, current_user: CurrentUser, db: DbSession
-):
+async def mark_notification_read(notification_id: str, current_user: CurrentUser, db: DbSession):
     svc = NotificationService(db)
     return await svc.mark_read(notification_id, current_user.id)

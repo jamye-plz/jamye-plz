@@ -11,9 +11,7 @@ class InviteRepository:
         self._db = db
 
     async def get_by_code(self, code: str) -> Invite | None:
-        result = await self._db.execute(
-            select(Invite).where(Invite.code == code)
-        )
+        result = await self._db.execute(select(Invite).where(Invite.code == code))
         return result.scalar_one_or_none()
 
     async def create(

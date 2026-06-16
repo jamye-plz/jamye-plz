@@ -12,15 +12,11 @@ from app.models.base import Base
 class Group(Base):
     __tablename__ = "groups"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(128))
     owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
     max_members: Mapped[int] = mapped_column(Integer, default=12)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships
     owner: Mapped["User"] = relationship(  # noqa: F821

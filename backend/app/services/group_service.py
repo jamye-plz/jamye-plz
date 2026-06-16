@@ -27,9 +27,7 @@ class GroupService:
     async def create_group(self, name: str, owner_id: str) -> Group:
         group = await self._group_repo.create(name=name, owner_id=owner_id)
         # Add owner as a member with role "owner"
-        await self._membership_repo.create(
-            group_id=group.id, user_id=owner_id, role="owner"
-        )
+        await self._membership_repo.create(group_id=group.id, user_id=owner_id, role="owner")
         # Create the default main chatroom
         await self._chatroom_repo.create(group_id=group.id, type="main")
         await self._db.commit()

@@ -15,9 +15,7 @@ class TopicRepository:
         self._db = db
 
     async def get_by_id(self, topic_id: str) -> Topic | None:
-        result = await self._db.execute(
-            select(Topic).where(Topic.id == topic_id)
-        )
+        result = await self._db.execute(select(Topic).where(Topic.id == topic_id))
         return result.scalar_one_or_none()
 
     async def create(self, group_id: str, author_id: str, title: str) -> Topic:
@@ -96,9 +94,7 @@ class TopicMediaRepository:
         return media
 
     async def list_by_topic(self, topic_id: str) -> list[TopicMedia]:
-        result = await self._db.execute(
-            select(TopicMedia).where(TopicMedia.topic_id == topic_id)
-        )
+        result = await self._db.execute(select(TopicMedia).where(TopicMedia.topic_id == topic_id))
         return list(result.scalars().all())
 
 
@@ -107,9 +103,7 @@ class TopicTagRepository:
         self._db = db
 
     async def delete_by_topic(self, topic_id: str) -> None:
-        result = await self._db.execute(
-            select(TopicTag).where(TopicTag.topic_id == topic_id)
-        )
+        result = await self._db.execute(select(TopicTag).where(TopicTag.topic_id == topic_id))
         for tag in result.scalars().all():
             await self._db.delete(tag)
         await self._db.flush()
@@ -131,7 +125,5 @@ class TopicTagRepository:
         return created
 
     async def list_by_topic(self, topic_id: str) -> list[TopicTag]:
-        result = await self._db.execute(
-            select(TopicTag).where(TopicTag.topic_id == topic_id)
-        )
+        result = await self._db.execute(select(TopicTag).where(TopicTag.topic_id == topic_id))
         return list(result.scalars().all())

@@ -32,9 +32,7 @@ class NotificationService:
         await self._db.refresh(notif)
         return notif
 
-    async def list_notifications(
-        self, user_id: str, limit: int = 50
-    ) -> list[Notification]:
+    async def list_notifications(self, user_id: str, limit: int = 50) -> list[Notification]:
         return await self._notif_repo.list_by_user(user_id, limit=limit)
 
     async def mark_read(self, notification_id: str, user_id: str) -> Notification:
@@ -43,6 +41,7 @@ class NotificationService:
             raise NotFoundError("Notification", notification_id)
         if notif.user_id != user_id:
             from app.core.exceptions import ForbiddenError
+
             raise ForbiddenError("Cannot mark another user's notification as read")
         notif = await self._notif_repo.mark_read(notif)
         await self._db.commit()
@@ -63,6 +62,7 @@ class NotificationService:
             raise NotFoundError("PushSubscription", endpoint)
         if sub.user_id != user_id:
             from app.core.exceptions import ForbiddenError
+
             raise ForbiddenError("Cannot delete another user's subscription")
         await self._push_repo.delete(sub)
         await self._db.commit()

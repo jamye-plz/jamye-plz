@@ -11,9 +11,7 @@ class MessageRepository:
         self._db = db
 
     async def get_by_id(self, message_id: str) -> Message | None:
-        result = await self._db.execute(
-            select(Message).where(Message.id == message_id)
-        )
+        result = await self._db.execute(select(Message).where(Message.id == message_id))
         return result.scalar_one_or_none()
 
     async def get_by_client_msg_id(self, sender_id: str, client_msg_id: str) -> Message | None:
