@@ -85,6 +85,14 @@ class TopicService:
     ) -> tuple[list[Topic], str | None]:
         return await self._topic_repo.list_by_group(group_id, cursor=cursor, limit=limit)
 
+    async def assert_author_or_owner(self, topic: Topic, user_id: str) -> None:
+        """Only the topic author or the group owner may modify a topic/its media."""
+        if topic.author_id == user_id:
+            return
+        membership = await self._membership_repo.get(topic.group_id, user_id)
+        if membership is None or membership.role != "owner":
+            raise ForbiddenError("Only the author or group owner can modify this topic")
+
     async def update_topic(
         self,
         topic_id: str,
@@ -93,11 +101,7 @@ class TopicService:
         status: str | None = None,
     ) -> Topic:
         topic = await self.get_topic_or_404(topic_id)
-        # Only author or group owner may edit
-        if topic.author_id != user_id:
-            membership = await self._membership_repo.get(topic.group_id, user_id)
-            if membership is None or membership.role != "owner":
-                raise ForbiddenError("Only the author or group owner can edit this topic")
+        await self.assert_author_or_owner(topic, user_id)
         topic = await self._topic_repo.update(topic, body=body, status=status)
         await self._db.commit()
         await self._db.refresh(topic)
