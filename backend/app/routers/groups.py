@@ -13,6 +13,7 @@ async def _to_group_out(svc: GroupService, group) -> GroupOut:
     """Serialize a Group with its derived main chatroom id."""
     out = GroupOut.model_validate(group)
     out.main_chatroom_id = await svc.get_main_chatroom_id(group.id)
+    out.member_count = await svc.get_member_count(group.id)
     return out
 
 

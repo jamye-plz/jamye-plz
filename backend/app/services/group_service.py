@@ -41,6 +41,9 @@ class GroupService:
         chatroom = await self._chatroom_repo.get_main_by_group(group_id)
         return chatroom.id if chatroom else None
 
+    async def get_member_count(self, group_id: str) -> int:
+        return await self._group_repo.member_count(group_id)
+
     async def get_group_or_404(self, group_id: str) -> Group:
         group = await self._group_repo.get_by_id(group_id)
         if group is None:
