@@ -15,5 +15,5 @@ export function logout(): Promise<void> {
 
 // OAuth login URLs — just redirect, no fetch needed
 export function getOAuthLoginUrl(provider: 'kakao' | 'google'): string {
-	return `/api/auth/${provider}/login`;
+	return `/api/auth/${provider}`;
 }
