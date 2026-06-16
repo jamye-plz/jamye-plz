@@ -26,6 +26,8 @@ dev = [
     "httpx>=0.28.0",
     "anyio>=4.7.0",
     "factory-boy>=3.3.0",
+    "poethepoet>=0.30.0",
+    "ruff>=0.8.0",
 ]
 
 [build-system]
@@ -45,3 +47,12 @@ python_functions = ["test_*"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+# Developer tasks — run with `uv run poe <task>` (package.json-scripts style).
+[tool.poe.tasks]
+dev = "uvicorn app.main:app --reload --port 8000"
+start = "uvicorn app.main:app --port 8000"
+tables = { script = "app.cli:create_tables" }
+test = "pytest"
+lint = "ruff check ."
+format = "ruff format ."
