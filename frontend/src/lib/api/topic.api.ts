@@ -41,7 +41,7 @@ export function confirmMedia(
 	height: number | null,
 	contentType: string
 ): Promise<Topic> {
-	return apiPost<Topic>(`/groups/${groupId}/topics/${topicId}/media`, {
+	return apiPost<Topic>(`/groups/${groupId}/topics/${topicId}/media/confirm`, {
 		object_key: objectKey,
 		width,
 		height,
