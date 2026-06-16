@@ -1,6 +1,8 @@
 """MessageRepository — CRUD for Message model with idempotency support."""
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
@@ -50,18 +52,25 @@ class MessageRepository:
         cursor: str | None = None,
         limit: int = 50,
     ) -> tuple[list[Message], str | None]:
+        # Keyset pagination on (created_at, id): the cursor filter must use the
+        # same key as ORDER BY, otherwise random UUID ids skip/duplicate rows.
         query = (
             select(Message)
             .where(Message.chatroom_id == chatroom_id)
-            .order_by(Message.created_at.desc())
+            .order_by(Message.created_at.desc(), Message.id.desc())
         )
         if cursor:
-            query = query.where(Message.id < cursor)
+            cur_created, cur_id = cursor.split("|", 1)
+            query = query.where(
+                tuple_(Message.created_at, Message.id)
+                < tuple_(datetime.fromisoformat(cur_created), cur_id)
+            )
         query = query.limit(limit + 1)
         result = await self._db.execute(query)
         rows = list(result.scalars().all())
         next_cursor: str | None = None
         if len(rows) > limit:
-            next_cursor = rows[limit - 1].id
             rows = rows[:limit]
+            last = rows[-1]
+            next_cursor = f"{last.created_at.isoformat()}|{last.id}"
         return rows, next_cursor
