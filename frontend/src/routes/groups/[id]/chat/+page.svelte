@@ -18,7 +18,10 @@
 
 	const messagesQuery = createQuery(() => ({
 		queryKey: ['messages', chatroomId],
-		queryFn: () => (chatroomId ? listMessages(chatroomId) : Promise.resolve({ items: [], next_cursor: null })),
+		queryFn: () =>
+			chatroomId
+				? listMessages(groupId, chatroomId)
+				: Promise.resolve({ items: [], next_cursor: null }),
 		enabled: !!chatroomId
 	}));
 
