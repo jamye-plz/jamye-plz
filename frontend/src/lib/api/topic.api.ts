@@ -9,37 +9,39 @@ export function listTopics(groupId: string, cursor?: string, date?: string): Pro
 	return apiGet<TopicPage>(`/groups/${groupId}/topics${qs ? `?${qs}` : ''}`);
 }
 
-export function getTopic(id: string): Promise<Topic> {
-	return apiGet<Topic>(`/topics/${id}`);
+export function getTopic(groupId: string, id: string): Promise<Topic> {
+	return apiGet<Topic>(`/groups/${groupId}/topics/${id}`);
 }
 
 export function seedTopic(groupId: string, title: string): Promise<Topic> {
 	return apiPost<Topic>(`/groups/${groupId}/topics`, { title });
 }
 
-export function enrichTopic(id: string, body: string): Promise<Topic> {
-	return apiPatch<Topic>(`/topics/${id}`, { body });
+export function enrichTopic(groupId: string, id: string, body: string): Promise<Topic> {
+	return apiPatch<Topic>(`/groups/${groupId}/topics/${id}`, { body });
 }
 
 export function presignMedia(
+	groupId: string,
 	topicId: string,
 	contentType: string,
 	byteSize: number
 ): Promise<PresignResponse> {
-	return apiPost<PresignResponse>(`/topics/${topicId}/media/presign`, {
+	return apiPost<PresignResponse>(`/groups/${groupId}/topics/${topicId}/media/presign`, {
 		content_type: contentType,
 		byte_size: byteSize
 	});
 }
 
 export function confirmMedia(
+	groupId: string,
 	topicId: string,
 	objectKey: string,
 	width: number | null,
 	height: number | null,
 	contentType: string
 ): Promise<Topic> {
-	return apiPost<Topic>(`/topics/${topicId}/media`, {
+	return apiPost<Topic>(`/groups/${groupId}/topics/${topicId}/media`, {
 		object_key: objectKey,
 		width,
 		height,
@@ -47,8 +49,8 @@ export function confirmMedia(
 	});
 }
 
-export function putTags(topicId: string, tags: TopicTag[]): Promise<Topic> {
-	return apiPut<Topic>(`/topics/${topicId}/tags`, { tags });
+export function putTags(groupId: string, topicId: string, tags: TopicTag[]): Promise<Topic> {
+	return apiPut<Topic>(`/groups/${groupId}/topics/${topicId}/tags`, { tags });
 }
 
 /** Direct PUT to presigned MinIO URL (no /api prefix, no credentials header) */

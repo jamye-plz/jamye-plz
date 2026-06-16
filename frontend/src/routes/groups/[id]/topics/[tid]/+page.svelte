@@ -9,7 +9,7 @@
 
 	const topicQuery = createQuery(() => ({
 		queryKey: ['topic', topicId],
-		queryFn: () => getTopic(topicId)
+		queryFn: () => getTopic(groupId, topicId)
 	}));
 </script>
 
