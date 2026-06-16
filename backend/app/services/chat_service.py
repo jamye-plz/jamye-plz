@@ -26,6 +26,7 @@ class ChatService:
         """Return all chatrooms for a group (main + topic chatrooms)."""
         from sqlalchemy import select
         from app.models.chatroom import Chatroom as ChatroomModel
+
         result = await self._db.execute(
             select(ChatroomModel).where(ChatroomModel.group_id == group_id)
         )
@@ -54,9 +55,7 @@ class ChatService:
     ) -> tuple[Message, bool]:
         """Return (message, is_new). Raises MessageIdempotencyError on duplicate."""
         if client_msg_id:
-            existing = await self._message_repo.get_by_client_msg_id(
-                sender_id, client_msg_id
-            )
+            existing = await self._message_repo.get_by_client_msg_id(sender_id, client_msg_id)
             if existing:
                 raise MessageIdempotencyError()
         message = await self._message_repo.create(
@@ -69,12 +68,25 @@ class ChatService:
         await self._db.refresh(message)
         return message, True
 
+    async def get_main_chatroom(self, group_id: str) -> Chatroom:
+        chatroom = await self._chatroom_repo.get_main_by_group(group_id)
+        if chatroom is None:
+            raise NotFoundError("Chatroom", f"main:{group_id}")
+        return chatroom
+
+    async def post_system_message(self, chatroom_id: str, body: str) -> Message:
+        """Persist a system message (sender_id/client_msg_id null, type=system)."""
+        message = await self._message_repo.create(
+            chatroom_id=chatroom_id, body=body, sender_id=None, type="system"
+        )
+        await self._db.commit()
+        await self._db.refresh(message)
+        return message
+
     async def list_messages(
         self,
         chatroom_id: str,
         cursor: str | None = None,
         limit: int = 50,
     ) -> tuple[list[Message], str | None]:
-        return await self._message_repo.list_by_chatroom(
-            chatroom_id, cursor=cursor, limit=limit
-        )
+        return await self._message_repo.list_by_chatroom(chatroom_id, cursor=cursor, limit=limit)

@@ -13,9 +13,7 @@ class GroupRepository:
         self._db = db
 
     async def get_by_id(self, group_id: str) -> Group | None:
-        result = await self._db.execute(
-            select(Group).where(Group.id == group_id)
-        )
+        result = await self._db.execute(select(Group).where(Group.id == group_id))
         return result.scalar_one_or_none()
 
     async def create(self, name: str, owner_id: str, max_members: int = 12) -> Group:
@@ -34,9 +32,7 @@ class GroupRepository:
         return list(result.scalars().all())
 
     async def member_count(self, group_id: str) -> int:
-        result = await self._db.execute(
-            select(Membership).where(Membership.group_id == group_id)
-        )
+        result = await self._db.execute(select(Membership).where(Membership.group_id == group_id))
         return len(result.scalars().all())
 
 
@@ -61,9 +57,7 @@ class MembershipRepository:
         return membership
 
     async def list_by_group(self, group_id: str) -> list[Membership]:
-        result = await self._db.execute(
-            select(Membership).where(Membership.group_id == group_id)
-        )
+        result = await self._db.execute(select(Membership).where(Membership.group_id == group_id))
         return list(result.scalars().all())
 
 
@@ -72,9 +66,7 @@ class ChatroomRepository:
         self._db = db
 
     async def get_by_id(self, chatroom_id: str) -> Chatroom | None:
-        result = await self._db.execute(
-            select(Chatroom).where(Chatroom.id == chatroom_id)
-        )
+        result = await self._db.execute(select(Chatroom).where(Chatroom.id == chatroom_id))
         return result.scalar_one_or_none()
 
     async def get_main_by_group(self, group_id: str) -> Chatroom | None:
@@ -82,6 +74,15 @@ class ChatroomRepository:
             select(Chatroom).where(
                 Chatroom.group_id == group_id,
                 Chatroom.type == "main",
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_topic(self, topic_id: str) -> Chatroom | None:
+        result = await self._db.execute(
+            select(Chatroom).where(
+                Chatroom.topic_id == topic_id,
+                Chatroom.type == "topic",
             )
         )
         return result.scalar_one_or_none()

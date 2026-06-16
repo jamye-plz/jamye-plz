@@ -90,24 +90,9 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 
 # ── WebSocket /api/ws ─────────────────────────────────────────────────────────
 
-# In-memory connection registry: chatroom_id -> set of WebSocket connections
-# (stateless per-process; swap for Redis pub/sub in production)
-_connections: dict[str, set[WebSocket]] = {}
-
-
-async def _ws_broadcast(chatroom_id: str, message: dict[str, Any], exclude: WebSocket | None = None) -> None:
-    """Broadcast a message to all connections in a chatroom."""
-    sockets = _connections.get(chatroom_id, set()).copy()
-    disconnected: set[WebSocket] = set()
-    for ws in sockets:
-        if ws is exclude:
-            continue
-        try:
-            await ws.send_json(message)
-        except Exception:
-            disconnected.add(ws)
-    for ws in disconnected:
-        _connections.get(chatroom_id, set()).discard(ws)
+# Connection registry + broadcast live in app.core.ws_hub so HTTP handlers
+# (e.g. new-topic reminders) can fan out to the same subscribers.
+from app.core import ws_hub
 
 
 @app.websocket("/api/ws")
@@ -172,10 +157,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         chatroom = await chat_svc.require_member_access(chatroom_id, user_id)
                         # Leave previous chatroom
                         if active_chatroom and active_chatroom != chatroom_id:
-                            _connections.setdefault(active_chatroom, set()).discard(websocket)
+                            ws_hub.leave(active_chatroom, websocket)
                         active_chatroom = chatroom_id
-                        _connections.setdefault(chatroom_id, set()).add(websocket)
-                        await websocket.send_json({"type": "system", "body": f"Joined chatroom {chatroom_id}"})
+                        ws_hub.join(chatroom_id, websocket)
+                        await websocket.send_json(
+                            {"type": "system", "body": f"Joined chatroom {chatroom_id}"}
+                        )
                     except AppError as exc:
                         await websocket.send_json({"type": "error", "detail": exc.detail})
                     break
@@ -186,7 +173,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 client_msg_id: str | None = data.get("client_msg_id")
 
                 if not chatroom_id or not body:
-                    await websocket.send_json({"type": "error", "detail": "chatroom_id and body required"})
+                    await websocket.send_json(
+                        {"type": "error", "detail": "chatroom_id and body required"}
+                    )
                     continue
 
                 async for db in get_db():
@@ -213,7 +202,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         # Echo to sender
                         await websocket.send_json(msg_payload)
                         # Broadcast to other members
-                        await _ws_broadcast(chatroom_id, msg_payload, exclude=websocket)
+                        await ws_hub.broadcast(chatroom_id, msg_payload, exclude=websocket)
                     except MessageIdempotencyError:
                         await websocket.send_json(
                             {"type": "duplicate", "client_msg_id": client_msg_id}
@@ -227,13 +216,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 pass
 
             else:
-                await websocket.send_json({"type": "error", "detail": f"Unknown message type: {msg_type}"})
+                await websocket.send_json(
+                    {"type": "error", "detail": f"Unknown message type: {msg_type}"}
+                )
 
     except WebSocketDisconnect:
         pass
     finally:
         if active_chatroom:
-            _connections.setdefault(active_chatroom, set()).discard(websocket)
+            ws_hub.leave(active_chatroom, websocket)
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

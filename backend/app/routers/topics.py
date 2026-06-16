@@ -2,9 +2,12 @@
 
 from fastapi import APIRouter, Query
 
+from app.core import ws_hub
 from app.core.deps import CurrentUser, DbSession
 from app.schemas.topic import TopicCreate, TopicOut, TopicPage, TopicPatch
+from app.services.chat_service import ChatService
 from app.services.group_service import GroupService
+from app.services.notification_service import NotificationService
 from app.services.topic_service import TopicService
 
 router = APIRouter(prefix="/groups/{group_id}/topics", tags=["topics"])
@@ -23,6 +26,38 @@ async def create_topic(
     topic = await topic_svc.create_topic(
         group_id=group_id, author_id=current_user.id, title=body.title
     )
+
+    # New-topic reminder (T11): post a system message into the group main chat,
+    # broadcast it to live subscribers, and create in-app notifications.
+    chat_svc = ChatService(db)
+    main = await chat_svc.get_main_chatroom(group_id)
+    reminder = f"{current_user.nickname}님이 새로운 주제를 올렸어요: {topic.title}"
+    sys_msg = await chat_svc.post_system_message(main.id, reminder)
+    await ws_hub.broadcast(
+        main.id,
+        {
+            "type": "system",
+            "id": sys_msg.id,
+            "chatroom_id": main.id,
+            "body": sys_msg.body,
+            "created_at": sys_msg.created_at.isoformat(),
+        },
+    )
+
+    notif_svc = NotificationService(db)
+    for member in await group_svc.list_members(group_id):
+        if member.user_id != current_user.id:
+            await notif_svc.create_notification(
+                user_id=member.user_id,
+                type="new_topic",
+                payload={
+                    "group_id": group_id,
+                    "topic_id": topic.id,
+                    "title": topic.title,
+                    "author": current_user.nickname,
+                },
+            )
+
     return await topic_svc.to_topic_out(topic)
 
 
@@ -68,7 +103,5 @@ async def patch_topic(
     await group_svc.require_membership(group_id, current_user.id)
     topic_svc = TopicService(db)
     await topic_svc.get_topic_in_group_or_404(topic_id, group_id)
-    topic = await topic_svc.update_topic(
-        topic_id=topic_id, user_id=current_user.id, body=body.body
-    )
+    topic = await topic_svc.update_topic(topic_id=topic_id, user_id=current_user.id, body=body.body)
     return await topic_svc.to_topic_out(topic)

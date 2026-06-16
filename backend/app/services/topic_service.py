@@ -7,7 +7,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.models.topic import Topic
 from app.models.topic_media import TopicMedia
 from app.models.topic_tag import TopicTag
-from app.repositories.group_repository import MembershipRepository
+from app.repositories.group_repository import ChatroomRepository, MembershipRepository
 from app.repositories.topic_repository import (
     TopicMediaRepository,
     TopicRepository,
@@ -25,6 +25,7 @@ class TopicService:
         self._tag_repo = TopicTagRepository(db)
         self._membership_repo = MembershipRepository(db)
         self._user_repo = UserRepository(db)
+        self._chatroom_repo = ChatroomRepository(db)
 
     async def to_topic_out(self, topic: Topic) -> TopicOut:
         """Assemble the full topic detail (author, tags, media) for the API."""
@@ -32,6 +33,7 @@ class TopicService:
         author = await self._user_repo.get_by_id(topic.author_id)
         tags = await self._tag_repo.list_by_topic(topic.id)
         media_items = await self._media_repo.list_by_topic(topic.id)
+        chatroom = await self._chatroom_repo.get_by_topic(topic.id)
         media_out = [
             TopicMediaOut(
                 id=m.id,
@@ -54,15 +56,15 @@ class TopicService:
             status=topic.status,
             tags=[TopicTagOut.model_validate(t) for t in tags],
             media=media_out,
-            chatroom_id=None,
+            chatroom_id=chatroom.id if chatroom else None,
             created_at=topic.created_at,
             updated_at=topic.updated_at,
         )
 
     async def create_topic(self, group_id: str, author_id: str, title: str) -> Topic:
-        topic = await self._topic_repo.create(
-            group_id=group_id, author_id=author_id, title=title
-        )
+        topic = await self._topic_repo.create(group_id=group_id, author_id=author_id, title=title)
+        # Each topic gets its own chatroom, isolated from the group main chat.
+        await self._chatroom_repo.create(group_id=group_id, type="topic", topic_id=topic.id)
         await self._db.commit()
         await self._db.refresh(topic)
         return topic
