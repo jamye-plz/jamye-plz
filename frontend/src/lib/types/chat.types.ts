@@ -37,5 +37,5 @@ export type WsServerMessage =
 			created_at: string;
 	  }
 	| { type: 'duplicate'; client_msg_id: string }
-	| { type: 'system'; body: string }
+	| { type: 'system'; id?: string; chatroom_id?: string; body: string; created_at?: string }
 	| { type: 'error'; detail: string };

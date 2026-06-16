@@ -31,7 +31,7 @@
 		</div>
 		{#if topicQuery.data}
 			<a
-				href="/groups/{groupId}/chat"
+				href="/groups/{groupId}/topics/{topicId}/chat"
 				class="shrink-0 p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
 				aria-label="주제 채팅"
 			>
@@ -96,7 +96,7 @@
 
 			<div class="border-t border-border pt-4">
 				<a
-					href="/groups/{groupId}/chat"
+					href="/groups/{groupId}/topics/{topicId}/chat"
 					class="block w-full text-center py-3 rounded-xl bg-accent text-white font-medium text-sm hover:bg-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent"
 				>
 					채팅에 참여하기
