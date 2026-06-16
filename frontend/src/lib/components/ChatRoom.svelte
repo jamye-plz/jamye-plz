@@ -2,6 +2,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages } from '$lib/api/chat.api';
+	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
@@ -12,6 +13,15 @@
 		title,
 		backHref
 	}: { groupId: string; chatroomId: string; title: string; backHref: string } = $props();
+
+	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
+	const myId = $derived(meQuery.data?.id ?? null);
+
+	// My messages: optimistic placeholders (sender_id null) and acknowledged /
+	// reloaded ones (sender_id === my id).
+	function isMine(msg: ChatMessage): boolean {
+		return msg.sender_id === null || msg.sender_id === myId;
+	}
 
 	const messagesQuery = createQuery(() => ({
 		queryKey: ['messages', chatroomId],
@@ -179,10 +189,10 @@
 						<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
 					</div>
 				{:else}
-					<div class="flex gap-2 {msg.sender_id === null ? 'justify-end' : 'justify-start'}">
+					<div class="flex gap-2 {isMine(msg) ? 'justify-end' : 'justify-start'}">
 						<div
 							class="max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed
-								{msg.sender_id === null
+								{isMine(msg)
 								? 'bg-accent text-white rounded-br-sm'
 								: 'bg-surface-elevated text-text-primary rounded-bl-sm'}
 								{msg.pending ? 'opacity-60' : ''}"
