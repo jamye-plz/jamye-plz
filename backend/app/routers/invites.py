@@ -18,7 +18,7 @@ async def create_invite(
     db: DbSession,
 ):
     group_svc = GroupService(db)
-    await group_svc.require_membership(group_id, current_user.id)
+    await group_svc.require_owner(group_id, current_user.id)
     invite_svc = InviteService(db)
     return await invite_svc.create_invite(
         group_id=group_id,
@@ -35,7 +35,8 @@ redeem_router = APIRouter(prefix="/invites", tags=["invites"])
 @redeem_router.post("/{code}/redeem", response_model=dict)
 async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     invite_svc = InviteService(db)
-    invite = await invite_svc.validate_and_consume(code, current_user.id)
+    invite = await invite_svc.validate(code)
     group_svc = GroupService(db)
     membership = await group_svc.join_via_invite(invite.group_id, current_user.id)
+    await invite_svc.consume(invite)
     return {"group_id": invite.group_id, "membership_id": membership.id}

@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
-    ForbiddenError,
     InviteExhaustedError,
     InviteExpiredError,
     NotFoundError,
@@ -39,7 +38,8 @@ class InviteService:
         await self._db.refresh(invite)
         return invite
 
-    async def validate_and_consume(self, code: str, user_id: str) -> Invite:
+    async def validate(self, code: str) -> Invite:
+        """Check existence, expiry, and exhaustion. Does NOT increment usage."""
         invite = await self._invite_repo.get_by_code(code)
         if invite is None:
             raise NotFoundError("Invite", code)
@@ -48,6 +48,10 @@ class InviteService:
             raise InviteExpiredError()
         if invite.max_uses is not None and invite.used_count >= invite.max_uses:
             raise InviteExhaustedError()
+        return invite
+
+    async def consume(self, invite: Invite) -> Invite:
+        """Increment usage and commit. Call only after a successful join."""
         invite = await self._invite_repo.increment_used(invite)
         await self._db.commit()
         return invite
