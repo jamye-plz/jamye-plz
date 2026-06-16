@@ -56,6 +56,12 @@ class NotificationService:
         await self._db.commit()
         return sub
 
+    async def delete_user_subscriptions(self, user_id: str) -> None:
+        """Remove all push subscriptions for a user (client unsubscribe)."""
+        for sub in await self._push_repo.list_by_user(user_id):
+            await self._push_repo.delete(sub)
+        await self._db.commit()
+
     async def delete_push_subscription(self, endpoint: str, user_id: str) -> None:
         sub = await self._push_repo.get_by_endpoint(endpoint)
         if sub is None:
