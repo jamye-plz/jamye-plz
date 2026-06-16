@@ -17,6 +17,7 @@ class GroupOut(BaseModel):
     owner_id: str
     max_members: int
     created_at: datetime
+    main_chatroom_id: str | None = None
 
 
 class MembershipOut(BaseModel):

@@ -39,6 +39,10 @@ class GroupService:
     async def list_user_groups(self, user_id: str) -> list[Group]:
         return await self._group_repo.list_by_user(user_id)
 
+    async def get_main_chatroom_id(self, group_id: str) -> str | None:
+        chatroom = await self._chatroom_repo.get_main_by_group(group_id)
+        return chatroom.id if chatroom else None
+
     async def get_group_or_404(self, group_id: str) -> Group:
         group = await self._group_repo.get_by_id(group_id)
         if group is None:
