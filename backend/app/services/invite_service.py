@@ -1,0 +1,66 @@
+"""InviteService — invite code generation and redemption."""
+
+import secrets
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import (
+    InviteExhaustedError,
+    InviteExpiredError,
+    NotFoundError,
+)
+from app.models.invite import Invite
+from app.repositories.invite_repository import InviteRepository
+
+
+class InviteService:
+    def __init__(self, db: AsyncSession) -> None:
+        self._db = db
+        self._invite_repo = InviteRepository(db)
+
+    async def create_invite(
+        self,
+        group_id: str,
+        created_by: str,
+        expires_at: datetime | None = None,
+        max_uses: int | None = None,
+    ) -> Invite:
+        code = secrets.token_urlsafe(12)
+        invite = await self._invite_repo.create(
+            group_id=group_id,
+            created_by=created_by,
+            code=code,
+            expires_at=expires_at,
+            max_uses=max_uses,
+        )
+        await self._db.commit()
+        await self._db.refresh(invite)
+        return invite
+
+    async def validate(self, code: str) -> Invite:
+        """Row-lock the invite and check existence/expiry/exhaustion.
+
+        The lock is held until the caller commits, so redemption (validate →
+        join → consume → commit) is atomic against concurrent redeemers. Does
+        NOT increment usage.
+        """
+        invite = await self._invite_repo.get_by_code_for_update(code)
+        if invite is None:
+            raise NotFoundError("Invite", code)
+        now = datetime.now(timezone.utc)
+        if invite.expires_at and invite.expires_at < now:
+            raise InviteExpiredError()
+        if invite.max_uses is not None and invite.used_count >= invite.max_uses:
+            raise InviteExhaustedError()
+        return invite
+
+    async def consume(self, invite: Invite) -> Invite:
+        """Increment usage. The caller commits (keeps redemption in one txn)."""
+        return await self._invite_repo.increment_used(invite)
+
+    async def get_invite_or_404(self, code: str) -> Invite:
+        invite = await self._invite_repo.get_by_code(code)
+        if invite is None:
+            raise NotFoundError("Invite", code)
+        return invite
