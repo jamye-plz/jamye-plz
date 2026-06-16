@@ -19,14 +19,23 @@ export interface ChatPage {
 	next_cursor: string | null;
 }
 
-// WebSocket protocol types
+// WebSocket protocol types — must match backend/app/main.py /api/ws handler.
 export type WsClientMessage =
-	| { type: 'join_room'; chatroom_id: string }
-	| { type: 'leave_room'; chatroom_id: string }
-	| { type: 'send_message'; chatroom_id: string; body: string; client_msg_id: string };
+	| { type: 'join'; chatroom_id: string }
+	| { type: 'send_message'; chatroom_id: string; body: string; client_msg_id: string }
+	| { type: 'ack'; message_id: string };
 
 export type WsServerMessage =
-	| { type: 'message'; id: string; chatroom_id: string; sender_id: string; body: string; message_type: MessageType; created_at: string }
-	| { type: 'message_ack'; client_msg_id: string; message_id: string }
-	| { type: 'system'; chatroom_id: string; body: string }
-	| { type: 'error'; code: string; detail: string };
+	| {
+			type: 'message';
+			id: string;
+			chatroom_id: string;
+			sender_id: string | null;
+			client_msg_id: string | null;
+			body: string;
+			msg_type: MessageType;
+			created_at: string;
+	  }
+	| { type: 'duplicate'; client_msg_id: string }
+	| { type: 'system'; body: string }
+	| { type: 'error'; detail: string };

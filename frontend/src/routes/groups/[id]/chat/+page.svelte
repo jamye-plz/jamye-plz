@@ -44,7 +44,7 @@
 
 		socket.onopen = () => {
 			connected = true;
-			const joinMsg: WsClientMessage = { type: 'join_room', chatroom_id: chatroomId };
+			const joinMsg: WsClientMessage = { type: 'join', chatroom_id: chatroomId };
 			socket.send(JSON.stringify(joinMsg));
 		};
 
@@ -57,10 +57,19 @@
 						chatroom_id: data.chatroom_id,
 						sender_id: data.sender_id,
 						body: data.body,
-						type: data.message_type,
-						created_at: data.created_at
+						type: data.msg_type,
+						created_at: data.created_at,
+						client_msg_id: data.client_msg_id ?? undefined
 					};
-					messages = [...messages, msg];
+					// Reconcile the optimistic message instead of duplicating it.
+					const idx = data.client_msg_id
+						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
+						: -1;
+					if (idx >= 0) {
+						messages = messages.map((m, i) => (i === idx ? msg : m));
+					} else {
+						messages = [...messages, msg];
+					}
 					scrollToBottom();
 				}
 			} catch {
@@ -75,10 +84,7 @@
 		ws = socket;
 
 		return () => {
-			if (socket.readyState === WebSocket.OPEN) {
-				const leaveMsg: WsClientMessage = { type: 'leave_room', chatroom_id: chatroomId };
-				socket.send(JSON.stringify(leaveMsg));
-			}
+			// Server drops the socket from the room on disconnect; just close.
 			socket.close();
 			ws = null;
 		};
