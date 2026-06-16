@@ -30,6 +30,6 @@ async def list_messages(
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
     chat_svc = ChatService(db)
-    await chat_svc.get_chatroom_or_404(chatroom_id)
+    await chat_svc.get_chatroom_in_group_or_404(chatroom_id, group_id)
     items, next_cursor = await chat_svc.list_messages(chatroom_id, cursor=cursor, limit=limit)
     return MessagePage(items=items, next_cursor=next_cursor)

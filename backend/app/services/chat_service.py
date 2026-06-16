@@ -31,6 +31,13 @@ class ChatService:
         )
         return list(result.scalars().all())
 
+    async def get_chatroom_in_group_or_404(self, chatroom_id: str, group_id: str) -> Chatroom:
+        """Load chatroom and verify it belongs to the given group (prevents IDOR)."""
+        chatroom = await self._chatroom_repo.get_by_id(chatroom_id)
+        if chatroom is None or chatroom.group_id != group_id:
+            raise NotFoundError("Chatroom", chatroom_id)
+        return chatroom
+
     async def require_member_access(self, chatroom_id: str, user_id: str) -> Chatroom:
         chatroom = await self.get_chatroom_or_404(chatroom_id)
         membership = await self._membership_repo.get(chatroom.group_id, user_id)

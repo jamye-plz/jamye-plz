@@ -192,6 +192,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 async for db in get_db():
                     try:
                         chat_svc = ChatService(db)
+                        # Enforce group membership even if the client skipped `join`.
+                        await chat_svc.require_member_access(chatroom_id, user_id)
                         message, _ = await chat_svc.send_message(
                             chatroom_id=chatroom_id,
                             sender_id=user_id,
