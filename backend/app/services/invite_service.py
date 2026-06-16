@@ -39,8 +39,13 @@ class InviteService:
         return invite
 
     async def validate(self, code: str) -> Invite:
-        """Check existence, expiry, and exhaustion. Does NOT increment usage."""
-        invite = await self._invite_repo.get_by_code(code)
+        """Row-lock the invite and check existence/expiry/exhaustion.
+
+        The lock is held until the caller commits, so redemption (validate →
+        join → consume → commit) is atomic against concurrent redeemers. Does
+        NOT increment usage.
+        """
+        invite = await self._invite_repo.get_by_code_for_update(code)
         if invite is None:
             raise NotFoundError("Invite", code)
         now = datetime.now(timezone.utc)
@@ -51,10 +56,8 @@ class InviteService:
         return invite
 
     async def consume(self, invite: Invite) -> Invite:
-        """Increment usage and commit. Call only after a successful join."""
-        invite = await self._invite_repo.increment_used(invite)
-        await self._db.commit()
-        return invite
+        """Increment usage. The caller commits (keeps redemption in one txn)."""
+        return await self._invite_repo.increment_used(invite)
 
     async def get_invite_or_404(self, code: str) -> Invite:
         invite = await self._invite_repo.get_by_code(code)

@@ -66,7 +66,8 @@ class GroupService:
         return await self._membership_repo.list_by_group(group_id)
 
     async def join_via_invite(self, group_id: str, user_id: str) -> Membership:
-        """Add a user to a group. Caller must validate the invite beforehand."""
+        """Add a user to a group. Caller validates the invite and commits, so
+        the whole redemption stays in one transaction (does NOT commit here)."""
         existing = await self._membership_repo.get(group_id, user_id)
         if existing:
             raise AlreadyMemberError()
@@ -74,8 +75,6 @@ class GroupService:
         count = await self._group_repo.member_count(group_id)
         if count >= group.max_members:
             raise GroupFullError()
-        membership = await self._membership_repo.create(
+        return await self._membership_repo.create(
             group_id=group_id, user_id=user_id, role="member"
         )
-        await self._db.commit()
-        return membership

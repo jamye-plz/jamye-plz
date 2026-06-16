@@ -35,8 +35,11 @@ redeem_router = APIRouter(prefix="/invites", tags=["invites"])
 @redeem_router.post("/{code}/join", response_model=dict)
 async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     invite_svc = InviteService(db)
-    invite = await invite_svc.validate(code)
     group_svc = GroupService(db)
+    # One transaction: validate() row-locks the invite, join + consume run
+    # under that lock, and the single commit makes redemption atomic.
+    invite = await invite_svc.validate(code)
     membership = await group_svc.join_via_invite(invite.group_id, current_user.id)
     await invite_svc.consume(invite)
+    await db.commit()
     return {"group_id": invite.group_id, "membership_id": membership.id}
