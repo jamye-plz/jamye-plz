@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { getGroup } from '$lib/api/group.api';
-	import { listTopics } from '$lib/api/topic.api';
+	import { listTopics, seedTopic } from '$lib/api/topic.api';
 
 	// Svelte 5: page is a rune-based store
 	const groupId = $derived(page.params.id);
+
+	const queryClient = useQueryClient();
 
 	const groupQuery = createQuery(() => ({
 		queryKey: ['group', groupId],
@@ -17,6 +19,23 @@
 		queryKey: ['topics', groupId],
 		queryFn: () => listTopics(groupId)
 	}));
+
+	let newTitle = $state('');
+
+	const createTopic = createMutation(() => ({
+		mutationFn: (title: string) => seedTopic(groupId, title),
+		onSuccess: () => {
+			newTitle = '';
+			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
+		}
+	}));
+
+	function submitTopic(e: SubmitEvent) {
+		e.preventDefault();
+		const title = newTitle.trim();
+		if (!title || createTopic.isPending) return;
+		createTopic.mutate(title);
+	}
 </script>
 
 <div class="min-h-screen bg-background">
@@ -55,6 +74,28 @@
 	</header>
 
 	<main class="px-4 py-6 space-y-4 max-w-lg mx-auto">
+		<form onsubmit={submitTopic} class="flex items-center gap-2">
+			<input
+				bind:value={newTitle}
+				type="text"
+				placeholder="새 주제 던지기..."
+				maxlength="256"
+				aria-label="새 주제 제목"
+				class="flex-1 px-3 py-2.5 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent"
+			/>
+			<button
+				type="submit"
+				disabled={!newTitle.trim() || createTopic.isPending}
+				class="shrink-0 px-4 py-2.5 rounded-xl bg-accent text-white font-medium text-sm disabled:opacity-40 transition-opacity hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent"
+			>
+				{createTopic.isPending ? '...' : '던지기'}
+			</button>
+		</form>
+
+		{#if createTopic.isError}
+			<p class="text-danger text-xs px-1">주제를 만들지 못했어요. 다시 시도해 주세요.</p>
+		{/if}
+
 		{#if topicsQuery.isPending}
 			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
 		{:else if topicsQuery.isError}
