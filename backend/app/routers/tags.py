@@ -21,7 +21,7 @@ async def sync_tags(
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
     topic_svc = TopicService(db)
-    await topic_svc.get_topic_or_404(topic_id)
+    await topic_svc.get_topic_in_group_or_404(topic_id, group_id)
     return await topic_svc.sync_tags(topic_id, body.tags)
 
 
@@ -35,4 +35,5 @@ async def list_tags(
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
     topic_svc = TopicService(db)
+    await topic_svc.get_topic_in_group_or_404(topic_id, group_id)
     return await topic_svc.list_tags(topic_id)

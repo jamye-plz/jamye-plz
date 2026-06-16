@@ -27,6 +27,7 @@ async def presign_upload(
 ):
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
+    await TopicService(db).get_topic_in_group_or_404(topic_id, group_id)
 
     settings = get_settings()
     object_key = f"topics/{topic_id}/{uuid.uuid4()}"
@@ -53,6 +54,7 @@ async def confirm_upload(
 ):
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
+    await TopicService(db).get_topic_in_group_or_404(topic_id, group_id)
     topic_svc = TopicService(db)
     media = await topic_svc.confirm_media(
         topic_id=topic_id,
@@ -74,5 +76,6 @@ async def list_media(
 ):
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
+    await TopicService(db).get_topic_in_group_or_404(topic_id, group_id)
     topic_svc = TopicService(db)
     return await topic_svc.list_media(topic_id)

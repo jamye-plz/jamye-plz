@@ -16,15 +16,36 @@ class TopicPatch(BaseModel):
     body: str | None = Field(None, min_length=1)
 
 
+class TopicTagOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tag: str
+    source: str
+
+
+class TopicMediaOut(BaseModel):
+    id: str
+    object_key: str
+    url: str
+    width: int | None = None
+    height: int | None = None
+    content_type: str
+
+
 class TopicOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
     group_id: str
     author_id: str
+    author_nickname: str = ""
+    author_avatar_url: str | None = None
     title: str
     body: str | None = None
     status: str
+    tags: list[TopicTagOut] = []
+    media: list[TopicMediaOut] = []
+    chatroom_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
