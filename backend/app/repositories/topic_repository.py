@@ -1,6 +1,8 @@
 """TopicRepository — CRUD for Topic, TopicMedia, TopicTag models."""
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.topic import Topic
@@ -43,16 +45,27 @@ class TopicRepository:
         cursor: str | None = None,
         limit: int = 20,
     ) -> tuple[list[Topic], str | None]:
-        query = select(Topic).where(Topic.group_id == group_id).order_by(Topic.created_at.desc())
+        # Keyset pagination on (created_at, id): ordering and cursor filter must
+        # use the same key, otherwise random UUID ids skip/duplicate rows.
+        query = (
+            select(Topic)
+            .where(Topic.group_id == group_id)
+            .order_by(Topic.created_at.desc(), Topic.id.desc())
+        )
         if cursor:
-            query = query.where(Topic.id < cursor)
+            cur_created, cur_id = cursor.split("|", 1)
+            query = query.where(
+                tuple_(Topic.created_at, Topic.id)
+                < tuple_(datetime.fromisoformat(cur_created), cur_id)
+            )
         query = query.limit(limit + 1)
         result = await self._db.execute(query)
         rows = list(result.scalars().all())
         next_cursor: str | None = None
         if len(rows) > limit:
-            next_cursor = rows[limit - 1].id
             rows = rows[:limit]
+            last = rows[-1]
+            next_cursor = f"{last.created_at.isoformat()}|{last.id}"
         return rows, next_cursor
 
 
