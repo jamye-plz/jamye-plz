@@ -8,5 +8,16 @@ import { defineConfig } from 'vite';
 // 재활성화한다(manifest/injectManifest/service-worker.ts 포함). 현재는 PWA 미빌드.
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()]
+	plugins: [tailwindcss(), sveltekit()],
+	server: {
+		proxy: {
+			// Forward API + WebSocket to the FastAPI backend during dev so the
+			// httpOnly auth cookie stays same-origin (localhost:5173).
+			'/api': {
+				target: 'http://localhost:8000',
+				changeOrigin: true,
+				ws: true
+			}
+		}
+	}
 });
