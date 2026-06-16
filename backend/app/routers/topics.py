@@ -103,5 +103,11 @@ async def patch_topic(
     await group_svc.require_membership(group_id, current_user.id)
     topic_svc = TopicService(db)
     await topic_svc.get_topic_in_group_or_404(topic_id, group_id)
-    topic = await topic_svc.update_topic(topic_id=topic_id, user_id=current_user.id, body=body.body)
+    # Enriching a seed topic with a body marks it enriched (API contract semantics).
+    topic = await topic_svc.update_topic(
+        topic_id=topic_id,
+        user_id=current_user.id,
+        body=body.body,
+        status="enriched" if body.body is not None else None,
+    )
     return await topic_svc.to_topic_out(topic)
