@@ -1,0 +1,38 @@
+# jamye-plz — local dev infrastructure
+#
+# Postgres only. Backend (uv) and frontend (npm) run on the host and connect
+# to this DB at localhost:5432. Defaults mirror backend/.env.example
+# (DATABASE_URL=postgresql+asyncpg://jamye:password@localhost:5432/jamye).
+#
+# Override values via infra/.env (copy from infra/.env.example).
+#
+# Usage (run from this directory):
+#   podman compose up -d          # start in background
+#   podman compose ps             # status
+#   podman compose logs -f db     # follow logs
+#   podman compose down           # stop (data persists in the named volume)
+#   podman compose down -v        # stop and wipe data
+
+services:
+  db:
+    image: docker.io/library/postgres:18
+    container_name: jamye-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jamye}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-jamye}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18+ stores data in a major-version subdir; mount the parent
+      # (not /var/lib/postgresql/data) per the official image convention.
+      - jamye-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jamye-pgdata:
