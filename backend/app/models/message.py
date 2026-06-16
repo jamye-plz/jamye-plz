@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -20,7 +20,7 @@ class Message(Base):
             "sender_id",
             "client_msg_id",
             unique=True,
-            postgresql_where="client_msg_id IS NOT NULL",
+            postgresql_where=text("client_msg_id IS NOT NULL"),
         ),
     )
 
