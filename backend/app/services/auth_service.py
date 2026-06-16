@@ -44,6 +44,23 @@ class AuthService:
         # TODO(oma-deferred): integrate google when key is provisioned
         return "/api/auth/google/stub"
 
+    async def stub_login(self, provider: str) -> tuple[User, str]:
+        """Issue a session for a deterministic stub user when OAuth keys are absent.
+
+        # TODO(oma-deferred): remove once real OAuth keys are provisioned.
+        """
+        provider_id = f"{provider}_stub_dev"
+        user = await self._user_repo.get_by_provider(provider, provider_id)
+        if user is None:
+            user = await self._user_repo.create(
+                provider=provider,
+                provider_id=provider_id,
+                nickname=f"{provider.capitalize()}Dev",
+            )
+            await self._db.commit()
+        token = create_access_token(user.id)
+        return user, token
+
     async def kakao_callback(self, code: str) -> tuple[User, str]:
         settings = get_settings()
         if settings.kakao_enabled:
