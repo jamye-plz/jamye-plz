@@ -1,0 +1,18 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Env (keep example)
+.env
+!.env.example
+
+# Local DB / coverage
+*.sqlite3
+.coverage
+htmlcov/
