@@ -71,6 +71,7 @@ class MediaPresignOut(BaseModel):
 
 class MediaConfirmRequest(BaseModel):
     object_key: str = Field(min_length=1, max_length=512)
+    content_type: str = Field(min_length=1, max_length=64)
     width: int | None = Field(None, ge=1)
     height: int | None = Field(None, ge=1)
     byte_size: int | None = Field(None, ge=1)

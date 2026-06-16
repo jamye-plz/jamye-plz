@@ -62,7 +62,7 @@ async def confirm_upload(
     media = await topic_svc.confirm_media(
         topic_id=topic_id,
         object_key=body.object_key,
-        content_type="image",
+        content_type=body.content_type,
         width=body.width,
         height=body.height,
         byte_size=body.byte_size,
