@@ -65,16 +65,9 @@ services.caddy = {
       Cross-Origin-Embedder-Policy "require-corp"
     }
 
-    # FastAPI WebSocket 패스스루 (native WS)
-    @ws {
-      header Connection *Upgrade*
-      header Upgrade websocket
-    }
-    handle /ws {
-      reverse_proxy @ws 127.0.0.1:8000
-    }
-
-    # REST API
+    # 백엔드(REST + WebSocket): /api/* 전부 FastAPI로 프록시.
+    # reverse_proxy가 WebSocket 업그레이드를 자동 처리하므로 /api/ws도 이 한 블록으로 통과한다.
+    # API 계약의 모든 경로가 /api prefix를 쓰므로(see ./api-contract.md), 이 매처와 정확히 일치한다.
     handle /api/* {
       reverse_proxy 127.0.0.1:8000
     }

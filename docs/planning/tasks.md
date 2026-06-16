@@ -15,7 +15,7 @@ v1 구현 태스크 16개를 우선순위·의존성·병렬 트랙 기준으로
 | T1 | 기반 | 모노레포 구조 + nix flake devshell + podman 이미지 스캐폴딩 | — |
 | T2 | 기반 | FastAPI 구조(router/service/repository) + Postgres 연결 + Alembic | T1 |
 | T3 | 기반 | 데이터 모델 마이그레이션 (전체 엔티티) | T2 |
-| T4 | E1 | 카카오·구글 OAuth + JWT(httpOnly 쿠키) + /me + 프로필 | T3 |
+| T4 | E1 | 카카오·구글 OAuth + JWT(httpOnly 쿠키) + `/api/me` + 프로필 | T3 |
 | T5 | 기반 | SvelteKit(adapter-static SPA) + Tailwind + shadcn-svelte + PWA + 인증 가드/라우팅 | T1 |
 
 ### P1 — 핵심 기능

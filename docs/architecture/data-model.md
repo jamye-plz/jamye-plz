@@ -96,6 +96,7 @@ erDiagram
         id PK
         chatroom_id FK
         sender_id FK "null for system"
+        client_msg_id "null for system; UNIQUE(sender_id,client_msg_id)"
         body
         type "user|system"
         created_at
@@ -252,12 +253,14 @@ erDiagram
 | id | PK | |
 | chatroom_id | → `chatrooms` | FK |
 | sender_id | → `users` | nullable (system은 null) |
+| client_msg_id | 클라 생성 멱등 키 | nullable (system은 null) |
 | body | 본문 | |
 | type | `user` \| `system` | |
 | created_at | timestamp | |
 
-- 리마인드(새 주제/첫 채팅)는 메인 채팅방에 `type=system` 메시지로 들어간다.
-- 클라는 `client_msg_id`로 낙관적 전송하고 서버 `message_ack`로 중복을 막는다(WS 프로토콜은 [`./api-contract.md`](./api-contract.md) 참고).
+- **제약**: `UNIQUE(sender_id, client_msg_id)` — `client_msg_id IS NOT NULL`인 행만 대상이다(PostgreSQL은 NULL을 서로 다른 값으로 취급하므로 `sender_id`·`client_msg_id`가 모두 null인 system 메시지는 제약에서 자연 제외된다). WS 재연결이나 ack 유실 후 클라가 같은 `client_msg_id`로 재전송해도 서버가 같은 키를 중복 영속하지 않아 **멱등성**이 보장된다.
+- 리마인드(새 주제/첫 채팅)는 메인 채팅방에 `type=system` 메시지로 들어간다(`sender_id`·`client_msg_id` 모두 null).
+- 클라는 `client_msg_id`로 낙관적 전송하고 서버 `message_ack`로 확정한다. 위 unique 제약이 멱등성의 실제 보장 장치다(WS 프로토콜은 [`./api-contract.md`](./api-contract.md) 참고).
 
 ### push_subscriptions
 Web Push 구독 정보(VAPID).
