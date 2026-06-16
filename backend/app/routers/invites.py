@@ -32,7 +32,7 @@ async def create_invite(
 redeem_router = APIRouter(prefix="/invites", tags=["invites"])
 
 
-@redeem_router.post("/{code}/redeem", response_model=dict)
+@redeem_router.post("/{code}/join", response_model=dict)
 async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     invite_svc = InviteService(db)
     invite = await invite_svc.validate(code)
