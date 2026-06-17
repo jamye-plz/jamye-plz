@@ -40,7 +40,11 @@ export default defineConfig({
 				]
 			},
 			injectManifest: {
-				globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}']
+				globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}'],
+				// adapter-static writes the SPA fallback (index.html) after Vite PWA's
+				// scan, so precache it explicitly (fetched at SW install). New revision
+				// per build busts the cached shell on each deploy.
+				additionalManifestEntries: [{ url: '/index.html', revision: `build-${Date.now()}` }]
 			},
 			// Keep the dev server free of the SW; test PWA via `bun run preview`.
 			devOptions: {

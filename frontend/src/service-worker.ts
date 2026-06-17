@@ -1,15 +1,30 @@
 /// <reference types="@vite-pwa/sveltekit/dist/worker" />
 /// <reference lib="webworker" />
 
-import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import {
+	cleanupOutdatedCaches,
+	createHandlerBoundToURL,
+	precacheAndRoute
+} from 'workbox-precaching';
+import { NavigationRoute, registerRoute } from 'workbox-routing';
 
 declare let self: ServiceWorkerGlobalScope;
 
+// __WB_MANIFEST is injected exactly once by Vite PWA; capture it before reuse.
+const manifest = self.__WB_MANIFEST;
+
 // Precache all static assets injected by Vite PWA
-precacheAndRoute(self.__WB_MANIFEST);
+precacheAndRoute(manifest);
 
 // Clean up old caches when SW is activated
 cleanupOutdatedCaches();
+
+// SPA navigation fallback: serve the precached app shell for any navigation
+// (offline launches, deep links like /groups/...). Only registered when the
+// fallback document was actually precached, so SW install never fails.
+if (manifest.some((e) => (typeof e === 'string' ? e : e.url).endsWith('/index.html'))) {
+	registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+}
 
 self.addEventListener('activate', (event) => {
 	event.waitUntil(self.clients.claim());
