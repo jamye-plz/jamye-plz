@@ -99,4 +99,4 @@ AI 런타임은 별도 Web Worker에서 Transformers.js(`@huggingface/transforme
 - 배포 전략 → [`./deployment.md`](./deployment.md)
 - 제품 비전·범위 → [`../product/vision-and-scope.md`](../product/vision-and-scope.md)
 - 기능 명세 → [`../product/features.md`](../product/features.md)
-- 태스크 → [`../planning/tasks.md`](../planning/tasks.md)
+- 태스크 → [`../planning/milestone.md`](../planning/milestone.md)

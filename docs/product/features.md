@@ -156,5 +156,5 @@ flowchart TD
 - [api-contract](../architecture/api-contract.md) — REST + WebSocket 계약
 - [on-device-ai](../architecture/on-device-ai.md) — WASM 온디바이스 AI
 - [deployment](../architecture/deployment.md) — NixOS 하이브리드 배포
-- [tasks](../planning/tasks.md) — 태스크 분해
+- [tasks](../planning/milestone.md) — 태스크 분해
 - [프로젝트 README](../README.md)

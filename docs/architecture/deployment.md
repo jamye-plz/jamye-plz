@@ -150,4 +150,4 @@ virtualisation.oci-containers = {
 - 스택·배포 결정 근거(ADR-6) → [`./tech-stack.md`](./tech-stack.md)
 - DB 스키마·백업 대상 → [`./data-model.md`](./data-model.md)
 - 온디바이스 AI·COOP/COEP 요구 → [`./on-device-ai.md`](./on-device-ai.md)
-- 태스크(T15 배포) → [`../planning/tasks.md`](../planning/tasks.md)
+- 태스크(T15 배포) → [`../planning/milestone.md`](../planning/milestone.md)

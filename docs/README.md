@@ -45,7 +45,7 @@
 ### 🗂️ 실행 (`planning/`)
 | 문서 | 내용 |
 |---|---|
-| [tasks.md](planning/tasks.md) | 태스크 분해 16개(P0/P1/P2), 의존성, 병렬 트랙 |
+| [milestone.md](planning/milestone.md) | 마일스톤(M0~M4+배포) + 태스크 매핑(T1~16)·의존성·트랙 |
 
 ---
 
@@ -66,4 +66,4 @@
 3. [architecture/tech-stack.md](architecture/tech-stack.md) — 무엇으로 만드는가 + 왜 그 선택인가
 4. [architecture/data-model.md](architecture/data-model.md) · [api-contract.md](architecture/api-contract.md) · [on-device-ai.md](architecture/on-device-ai.md) — 어떻게 설계되는가
 5. [architecture/deployment.md](architecture/deployment.md) — 어디에 어떻게 올리는가
-6. [planning/tasks.md](planning/tasks.md) — 어떤 순서로 만드는가
+6. [planning/milestone.md](planning/milestone.md) — 어떤 순서로 만드는가
