@@ -48,6 +48,16 @@
 	let ws = $state<WebSocket | null>(null);
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
+	let inputEl = $state<HTMLTextAreaElement | null>(null);
+
+	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
+	$effect(() => {
+		inputText; // track changes (incl. reset after send)
+		if (inputEl) {
+			inputEl.style.height = 'auto';
+			inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
+		}
+	});
 
 	$effect(() => {
 		if (messagesQuery.data) {
@@ -191,28 +201,30 @@
 
 <div class="flex flex-col h-screen bg-background">
 	<header
-		class="shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3"
+		class="shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3"
 	>
-		<button
-			onclick={() => goto(backHref)}
-			class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<div class="flex-1 min-w-0">
-			<h1 class="text-base font-semibold text-text-primary truncate">{title}</h1>
+		<div class="mx-auto w-full max-w-2xl flex items-center gap-3">
+			<button
+				onclick={() => goto(backHref)}
+				class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+				aria-label="뒤로 가기"
+			>
+				←
+			</button>
+			<div class="flex-1 min-w-0">
+				<h1 class="text-base font-semibold text-text-primary truncate">{title}</h1>
+			</div>
+			<div
+				class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-text-muted'}"
+				aria-label={connected ? '연결됨' : '연결 중'}
+				title={connected ? '연결됨' : '연결 중...'}
+			></div>
 		</div>
-		<div
-			class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-text-muted'}"
-			aria-label={connected ? '연결됨' : '연결 중'}
-			title={connected ? '연결됨' : '연결 중...'}
-		></div>
 	</header>
 
 	{#if pinnedBody || canEditPinned}
 		<div class="shrink-0 border-b border-border bg-surface px-4 py-3">
-			<div class="flex items-start gap-2">
+			<div class="mx-auto w-full max-w-2xl flex items-start gap-2">
 				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
 					{#if pinnedBody}
 						<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
@@ -234,11 +246,12 @@
 
 	<section
 		bind:this={messagesEl}
-		class="flex-1 overflow-y-auto px-4 py-4 space-y-3"
+		class="flex-1 overflow-y-auto px-4 py-4"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
 	>
+		<div class="mx-auto w-full max-w-2xl space-y-3">
 		{#if messagesQuery.isPending && messages.length === 0}
 			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
 		{:else if messages.length === 0}
@@ -299,16 +312,18 @@
 					{/if}
 				{/each}
 		{/if}
+		</div>
 	</section>
 
 	<footer class="shrink-0 border-t border-border px-4 py-3 bg-background">
-		<div class="flex items-end gap-2 max-w-lg mx-auto">
+		<div class="flex items-end gap-2 max-w-2xl mx-auto">
 			<textarea
+				bind:this={inputEl}
 				bind:value={inputText}
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent max-h-32 overflow-y-auto"
+				class="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent max-h-40 overflow-y-auto"
 				aria-label="메시지 입력"
 			></textarea>
 			<button
