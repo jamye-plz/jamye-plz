@@ -3,7 +3,11 @@
 from fastapi import APIRouter
 
 from app.core.deps import CurrentUser, DbSession
-from app.core.exceptions import AlreadyMemberError
+from app.core.exceptions import (
+    AlreadyMemberError,
+    InviteExhaustedError,
+    InviteExpiredError,
+)
 from app.schemas.invite import InviteCreate, InviteOut
 from app.services.group_service import GroupService
 from app.services.invite_service import InviteService
@@ -45,7 +49,17 @@ async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
         return {"group_id": group_id, "joined": False}
     # New member: validate() row-locks the invite + checks expiry/exhaustion,
     # then join + consume run under that lock, and the single commit is atomic.
-    locked = await invite_svc.validate(code)
+    try:
+        locked = await invite_svc.validate(code)
+    except (InviteExhaustedError, InviteExpiredError):
+        # A concurrent redeem of the same limited/expiring invite (e.g. two tabs)
+        # may have already joined this user while we waited on the row lock. Drop
+        # the lock and re-check membership so the redeem stays idempotent instead
+        # of surfacing an exhausted/expired failure to an already-joined user.
+        await db.rollback()
+        if await group_svc.is_member(group_id, current_user.id):
+            return {"group_id": group_id, "joined": False}
+        raise
     try:
         membership = await group_svc.join_via_invite(group_id, current_user.id)
         await invite_svc.consume(locked)
