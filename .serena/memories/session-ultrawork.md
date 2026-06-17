@@ -82,3 +82,24 @@
 - **M0 = 1차 완성 & QA (+실 OAuth)** [최우선]: ①실 OAuth 콜백(code→token→profile) ②채팅 발신자정보(MessageOut+WS+history join, FE 렌더) ③초대 참여 화면(joinByCode) ④주제 enrich UI(enrichTopic, author게이트) ⑤인앱 알림 화면(list+read) ⑥일별 타임라인+무한스크롤(T7) ⑦Alembic 도입(T2/T3) ⑧PWA 재활성+로그인→온보딩 플로우(T5) ⑨QA(FE 타입에러·접근성·반응형·핵심 pytest).
 - M1 사진 업로드(T8, 로컬MinIO+presign실경로+크롭/압축) → M2 알림완성(첫채팅 리마인드+Web Push self-VAPID+iOS유도) → M3 온디바이스AI(태깅·비생성추천) → M4 마감 → ✋사용성테스트 → 배포(T15/T16).
 - OAuth 키: 코드 먼저, 키는 나중 .env 주입(그동안 dev 스텁 유지).
+
+### M0 종료 [브랜치 feat/m0, 미푸시·미머지, 피드백 주도] — 2026-06-17 사용자 결정으로 여기서 마무리(잔여는 이월):
+
+✅ 완료:
+- ① 실 OAuth 콜백: kakao/google authorization-code→token 교환→프로필 fetch→user upsert(httpx), CSRF state(oauth_state 쿠키 검증)+세션 쿠키+프론트 303 리다이렉트, 실패시 /login?error=oauth. **사용자가 콘솔 키 프로비저닝 완료, 실 로그인 동작 검증(구글 아바타 lh3.googleusercontent.com 정상 저장·서빙)**. kakao_enabled=client_id만(secret 선택). _issue_session은 최초생성시만 nick/avatar(재로그인 보존).
+- ② 채팅 발신자 표시: MessageOut/WS payload/history에 sender_nickname+sender_avatar_url. FE: sender-run 그룹핑(연속 동일발신자는 첫 메시지에만 아바타+닉), 분 단위 타임스탬프 중복제거(같은 HH:MM 묶음 마지막에만), 말풍선 조기 줄바꿈 fix(상대 content-col flex-1 + break-words), 입력창 자동높이(scrollHeight≤160) + max-w-2xl 반응형.
+- ③ 초대 링크 입장: 멱등 redeem(이미멤버=joined:false, rollback 전 group_id 캡처), /invite/[code] 랜딩, 생성화면 링크 복사 + Web Share(navigator.share, 미지원시 숨김).
+- ④ 주제 enrich: 작성자 전용(assert_author, 비작성자 403), 채팅 상단 고정본문 편집 모달(canEditPinned/onEditPinned).
+- ⑤ 인앱 알림 화면: /notifications, 백엔드 뷰모델(type+payload→title/body/action_url/read+unread_count), 그룹명 포함 title, 클릭시 읽음(204)+이동.
+- ⑥ 일별 타임라인 + 무한스크롤: createInfiniteQuery(cursor) + 날짜 그룹핑(오늘/어제/날짜), IntersectionObserver sentinel.
+- ⑦ Alembic 도입: async env.py(Base.metadata+settings url), 초기 마이그레이션 0a5d7bbeb961, scratch DB autogenerate→실DB stamp(데이터 보존), poe tables→migrate/makemigration, create_all/app.cli 제거, `alembic check` 드리프트 없음.
+- ⑧ PWA 재활성: vite-plugin-pwa@^1.3.0(vite8 지원) package.json 명시(@vite-pwa/sveltekit는 1.1.0이 최신 유지), SvelteKitPWA injectManifest 재등록 + svelte.config serviceWorker.register:false, manifest(잼얘좀, desc "재밌는 얘기 좀 해봐", standalone, #09090b), app.html manifest 절대링크, +layout PROD SW 등록(virtual:pwa-register), **1×1 placeholder→실 192/512 아이콘(qlmanage SVG렌더+sips)**, favicon.svg/png, preview/server.allowedHosts(.loca.lt/.trycloudflare/.ngrok). **모바일 localtunnel로 설치 확인**(단 preview 터널=백엔드 미연결→설치 후 검은화면은 정상, 실배포 https에서 해소).
+- 부가: 프로필 설정(/settings 닉네임수정·로그아웃·provider/가입일), member_count(GroupOut).
+
+⏭️ M0 잔여 → 이월:
+- ⑧ 온보딩(미구현, 다음으로 명시): (a)설치 유도 UI(beforeinstallprompt/iOS 홈화면추가 안내) 없음 → M2/T14, (b)/onboarding 페이지는 있으나 로그인 후 신규유저 분기 미연결(현재 OAuth유저는 제공자 닉네임으로 /groups 직행).
+- ⑨ QA: FE 타입에러 4건(page.params noUncheckedIndexedAccess) 미정리, 접근성/반응형 정밀점검·핵심 pytest 미작성.
+
+검증 메모: 실 OAuth 키 설정 후 dev 스텁 비활성 → 라이브 검증은 실유저 토큰(create_access_token)으로 httpx/websockets. DB ad-hoc 스크립트는 MissingGreenlet/pool_pre_ping 크로스루프 플레이크 → 라이브 서버(poe dev reload) HTTP/WS 경로로 검증.
+
+다음 단계: feat/m0 푸시+PR 여부 사용자 확인 → **M1 사진 업로드**(T8: 로컬 MinIO+presign 실경로+크롭/압축) → M2 알림완성(첫채팅 리마인드+Web Push self-VAPID+iOS설치유도+온보딩) → M3 온디바이스AI → M4 마감 → ✋사용성테스트 → 배포(T15/T16).
