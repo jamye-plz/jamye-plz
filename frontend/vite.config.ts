@@ -1,14 +1,47 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
-// TODO(oma-deferred): @vite-pwa/sveltekit(^1.1.0)가 vite 8(rolldown) 빌드의 closeBundle 훅에서
-// "Cannot read properties of undefined (reading 'promise')"로 실패한다. 후속 PR에서
-// vite 7로 정렬하거나 vite-pwa의 vite 8 지원 버전으로 올린 뒤 SvelteKitPWA 플러그인을
-// 재활성화한다(manifest/injectManifest/service-worker.ts 포함). 현재는 PWA 미빌드.
-
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		sveltekit(),
+		SvelteKitPWA({
+			strategies: 'injectManifest',
+			srcDir: 'src',
+			filename: 'service-worker.ts',
+			registerType: 'autoUpdate',
+			injectRegister: 'auto',
+			manifest: {
+				name: '잼얘좀',
+				short_name: '잼얘좀',
+				description: '재밌는 얘기 좀 해봐',
+				lang: 'ko',
+				theme_color: '#09090b',
+				background_color: '#09090b',
+				display: 'standalone',
+				start_url: '/',
+				icons: [
+					{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+					{ src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+					{
+						src: '/icons/icon-512.png',
+						sizes: '512x512',
+						type: 'image/png',
+						purpose: 'maskable'
+					}
+				]
+			},
+			injectManifest: {
+				globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}']
+			},
+			// Keep the dev server free of the SW; test PWA via `bun run preview`.
+			devOptions: {
+				enabled: false
+			}
+		})
+	],
 	server: {
 		proxy: {
 			// Forward API + WebSocket to the FastAPI backend during dev so the

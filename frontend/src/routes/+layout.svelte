@@ -1,9 +1,16 @@
 <script lang="ts">
 	import '../app.css';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	let { children } = $props();
+
+	// Register the PWA service worker (production build only; dev runs SW-free).
+	onMount(() => {
+		if (import.meta.env.PROD) {
+			import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }));
+		}
+	});
 
 	const queryClient = new QueryClient({
 		defaultOptions: {
@@ -26,7 +33,7 @@
 
 <svelte:head>
 	<title>잼얘좀</title>
-	<meta name="description" content="폐쇄 그룹에서 주제를 던지고 실시간으로 떠드는 공간" />
+	<meta name="description" content="재밌는 얘기 좀 해봐" />
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
