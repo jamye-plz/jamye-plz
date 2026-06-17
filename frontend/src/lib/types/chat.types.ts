@@ -32,6 +32,7 @@ export type WsServerMessage =
 			chatroom_id: string;
 			sender_id: string | null;
 			sender_nickname?: string | null;
+			sender_avatar_url?: string | null;
 			client_msg_id: string | null;
 			body: string;
 			msg_type: MessageType;

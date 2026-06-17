@@ -76,6 +76,7 @@
 						chatroom_id: data.chatroom_id,
 						sender_id: data.sender_id,
 						sender_nickname: data.sender_nickname ?? undefined,
+						sender_avatar_url: data.sender_avatar_url ?? undefined,
 						body: data.body,
 						type: data.msg_type,
 						created_at: data.created_at,
@@ -160,6 +161,32 @@
 			sendMessage();
 		}
 	}
+
+	function hm(iso: string): string {
+		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+	}
+
+	// Avatar + nickname show only on the first message of a same-sender run.
+	function showHeader(i: number): boolean {
+		const m = messages[i];
+		if (m.type === 'system') return false;
+		const prev = messages[i - 1];
+		if (!prev || prev.type === 'system') return true;
+		return prev.sender_id !== m.sender_id;
+	}
+
+	// Time shows only on the last message of a same-minute run (dedupe HH:MM).
+	function showTime(i: number): boolean {
+		const m = messages[i];
+		if (m.type === 'system') return false;
+		const next = messages[i + 1];
+		if (!next || next.type === 'system') return true;
+		return hm(next.created_at) !== hm(m.created_at);
+	}
+
+	function initial(name: string | undefined): string {
+		return name?.trim()?.[0]?.toUpperCase() ?? '?';
+	}
 </script>
 
 <div class="flex flex-col h-screen bg-background">
@@ -217,28 +244,60 @@
 		{:else if messages.length === 0}
 			<p class="text-text-muted text-sm text-center py-8">첫 메시지를 남겨보세요</p>
 		{:else}
-			{#each messages as msg (msg.id)}
-				{#if msg.type === 'system'}
-					<div class="text-center">
-						<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
-					</div>
-				{:else}
-					<div class="flex flex-col gap-0.5 {isMine(msg) ? 'items-end' : 'items-start'}">
-						{#if !isMine(msg) && msg.sender_nickname}
-							<span class="text-xs text-text-muted px-1">{msg.sender_nickname}</span>
-						{/if}
-						<div
-							class="max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed
-								{isMine(msg)
-								? 'bg-accent text-white rounded-br-sm'
-								: 'bg-surface-elevated text-text-primary rounded-bl-sm'}
-								{msg.pending ? 'opacity-60' : ''}"
-						>
-							{msg.body}
+			{#each messages as msg, i (msg.id)}
+					{#if msg.type === 'system'}
+						<div class="text-center">
+							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
 						</div>
-					</div>
-				{/if}
-			{/each}
+					{:else if isMine(msg)}
+						<div class="flex items-end justify-end gap-1.5">
+							{#if showTime(i)}
+								<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
+							{/if}
+							<div
+								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
+							>
+								{msg.body}
+							</div>
+						</div>
+					{:else}
+						<div class="flex items-start gap-2">
+							<div class="w-8 shrink-0">
+								{#if showHeader(i)}
+									{#if msg.sender_avatar_url}
+										<img
+											src={msg.sender_avatar_url}
+											alt={msg.sender_nickname ?? ''}
+											class="w-8 h-8 rounded-full object-cover bg-surface-elevated"
+										/>
+									{:else}
+										<div
+											class="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold"
+											aria-hidden="true"
+										>
+											{initial(msg.sender_nickname)}
+										</div>
+									{/if}
+								{/if}
+							</div>
+							<div class="min-w-0 space-y-0.5">
+								{#if showHeader(i) && msg.sender_nickname}
+									<span class="block text-xs text-text-muted px-1">{msg.sender_nickname}</span>
+								{/if}
+								<div class="flex items-end gap-1.5">
+									<div
+										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed bg-surface-elevated text-text-primary rounded-bl-sm"
+									>
+										{msg.body}
+									</div>
+									{#if showTime(i)}
+										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
+									{/if}
+								</div>
+							</div>
+						</div>
+					{/if}
+				{/each}
 		{/if}
 	</section>
 

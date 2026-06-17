@@ -105,16 +105,19 @@ class ChatService:
             chatroom_id, cursor=cursor, limit=limit
         )
         nicknames: dict[str, str] = {}
+        avatars: dict[str, str | None] = {}
         for sid in {m.sender_id for m in messages if m.sender_id}:
             user = await self._user_repo.get_by_id(sid)
             if user:
                 nicknames[sid] = user.nickname
+                avatars[sid] = user.avatar_url
         out = [
             MessageOut(
                 id=m.id,
                 chatroom_id=m.chatroom_id,
                 sender_id=m.sender_id,
                 sender_nickname=nicknames.get(m.sender_id) if m.sender_id else None,
+                sender_avatar_url=avatars.get(m.sender_id) if m.sender_id else None,
                 client_msg_id=m.client_msg_id,
                 body=m.body,
                 type=m.type,
