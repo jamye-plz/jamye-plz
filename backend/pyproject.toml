@@ -52,7 +52,8 @@ target-version = "py312"
 [tool.poe.tasks]
 dev = "uvicorn app.main:app --reload --port 8000"
 start = "uvicorn app.main:app --port 8000"
-tables = { script = "app.cli:create_tables" }
+migrate = "alembic upgrade head"
+makemigration = "alembic revision --autogenerate"
 test = "pytest"
 lint = "ruff check ."
 format = "ruff format ."
