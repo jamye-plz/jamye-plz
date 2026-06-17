@@ -11,8 +11,19 @@
 		groupId,
 		chatroomId,
 		title,
-		backHref
-	}: { groupId: string; chatroomId: string; title: string; backHref: string } = $props();
+		backHref,
+		pinnedBody,
+		canEditPinned = false,
+		onEditPinned
+	}: {
+		groupId: string;
+		chatroomId: string;
+		title: string;
+		backHref: string;
+		pinnedBody?: string | null;
+		canEditPinned?: boolean;
+		onEditPinned?: () => void;
+	} = $props();
 
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
 	const myId = $derived(meQuery.data?.id ?? null);
@@ -37,6 +48,16 @@
 	let ws = $state<WebSocket | null>(null);
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
+	let inputEl = $state<HTMLTextAreaElement | null>(null);
+
+	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
+	$effect(() => {
+		inputText; // track changes (incl. reset after send)
+		if (inputEl) {
+			inputEl.style.height = 'auto';
+			inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
+		}
+	});
 
 	$effect(() => {
 		if (messagesQuery.data) {
@@ -64,6 +85,8 @@
 						id: data.id,
 						chatroom_id: data.chatroom_id,
 						sender_id: data.sender_id,
+						sender_nickname: data.sender_nickname ?? undefined,
+						sender_avatar_url: data.sender_avatar_url ?? undefined,
 						body: data.body,
 						type: data.msg_type,
 						created_at: data.created_at,
@@ -143,76 +166,169 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// Ignore Enter while an IME composition is active (Korean/Japanese/Chinese):
+		// that Enter commits the composition, and sending on it duplicates the last
+		// syllable (e.g. "안녕" sent, then the committed "녕" sent again). The next,
+		// non-composing Enter is the real send.
+		if (e.isComposing || e.keyCode === 229) return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			sendMessage();
 		}
 	}
+
+	function hm(iso: string): string {
+		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+	}
+
+	// Avatar + nickname show only on the first message of a same-sender run.
+	function showHeader(i: number): boolean {
+		const m = messages[i];
+		if (m.type === 'system') return false;
+		const prev = messages[i - 1];
+		if (!prev || prev.type === 'system') return true;
+		return prev.sender_id !== m.sender_id;
+	}
+
+	// Time shows only on the last message of a same-minute run (dedupe HH:MM).
+	function showTime(i: number): boolean {
+		const m = messages[i];
+		if (m.type === 'system') return false;
+		const next = messages[i + 1];
+		if (!next || next.type === 'system') return true;
+		return hm(next.created_at) !== hm(m.created_at);
+	}
+
+	function initial(name: string | undefined): string {
+		return name?.trim()?.[0]?.toUpperCase() ?? '?';
+	}
 </script>
 
 <div class="flex flex-col h-screen bg-background">
 	<header
-		class="shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3"
+		class="shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3"
 	>
-		<button
-			onclick={() => goto(backHref)}
-			class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<div class="flex-1 min-w-0">
-			<h1 class="text-base font-semibold text-text-primary truncate">{title}</h1>
+		<div class="mx-auto w-full max-w-2xl flex items-center gap-3">
+			<button
+				onclick={() => goto(backHref)}
+				class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+				aria-label="뒤로 가기"
+			>
+				←
+			</button>
+			<div class="flex-1 min-w-0">
+				<h1 class="text-base font-semibold text-text-primary truncate">{title}</h1>
+			</div>
+			<div
+				class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-text-muted'}"
+				aria-label={connected ? '연결됨' : '연결 중'}
+				title={connected ? '연결됨' : '연결 중...'}
+			></div>
 		</div>
-		<div
-			class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-text-muted'}"
-			aria-label={connected ? '연결됨' : '연결 중'}
-			title={connected ? '연결됨' : '연결 중...'}
-		></div>
 	</header>
+
+	{#if pinnedBody || canEditPinned}
+		<div class="shrink-0 border-b border-border bg-surface px-4 py-3">
+			<div class="mx-auto w-full max-w-2xl flex items-start gap-2">
+				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
+					{#if pinnedBody}
+						<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
+					{:else}
+						<p class="text-sm text-text-muted italic">아직 본문이 없어요</p>
+					{/if}
+				</div>
+				{#if canEditPinned}
+					<button
+						onclick={onEditPinned}
+						class="shrink-0 text-xs font-medium text-accent hover:text-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent rounded px-1"
+					>
+						{pinnedBody ? '수정' : '본문 추가'}
+					</button>
+				{/if}
+			</div>
+		</div>
+	{/if}
 
 	<section
 		bind:this={messagesEl}
-		class="flex-1 overflow-y-auto px-4 py-4 space-y-3"
+		class="flex-1 overflow-y-auto px-4 py-4"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
 	>
+		<div class="mx-auto w-full max-w-2xl space-y-3">
 		{#if messagesQuery.isPending && messages.length === 0}
 			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
 		{:else if messages.length === 0}
 			<p class="text-text-muted text-sm text-center py-8">첫 메시지를 남겨보세요</p>
 		{:else}
-			{#each messages as msg (msg.id)}
-				{#if msg.type === 'system'}
-					<div class="text-center">
-						<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
-					</div>
-				{:else}
-					<div class="flex gap-2 {isMine(msg) ? 'justify-end' : 'justify-start'}">
-						<div
-							class="max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed
-								{isMine(msg)
-								? 'bg-accent text-white rounded-br-sm'
-								: 'bg-surface-elevated text-text-primary rounded-bl-sm'}
-								{msg.pending ? 'opacity-60' : ''}"
-						>
-							{msg.body}
+			{#each messages as msg, i (msg.id)}
+					{#if msg.type === 'system'}
+						<div class="text-center">
+							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
 						</div>
-					</div>
-				{/if}
-			{/each}
+					{:else if isMine(msg)}
+						<div class="flex items-end justify-end gap-1.5">
+							{#if showTime(i)}
+								<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
+							{/if}
+							<div
+								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
+							>
+								{msg.body}
+							</div>
+						</div>
+					{:else}
+						<div class="flex items-start gap-2">
+							<div class="w-8 shrink-0">
+								{#if showHeader(i)}
+									{#if msg.sender_avatar_url}
+										<img
+											src={msg.sender_avatar_url}
+											alt={msg.sender_nickname ?? ''}
+											class="w-8 h-8 rounded-full object-cover bg-surface-elevated"
+										/>
+									{:else}
+										<div
+											class="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold"
+											aria-hidden="true"
+										>
+											{initial(msg.sender_nickname)}
+										</div>
+									{/if}
+								{/if}
+							</div>
+							<div class="flex-1 min-w-0 space-y-0.5">
+								{#if showHeader(i) && msg.sender_nickname}
+									<span class="block text-xs text-text-muted px-1">{msg.sender_nickname}</span>
+								{/if}
+								<div class="flex items-end gap-1.5">
+									<div
+										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
+									>
+										{msg.body}
+									</div>
+									{#if showTime(i)}
+										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
+									{/if}
+								</div>
+							</div>
+						</div>
+					{/if}
+				{/each}
 		{/if}
+		</div>
 	</section>
 
 	<footer class="shrink-0 border-t border-border px-4 py-3 bg-background">
-		<div class="flex items-end gap-2 max-w-lg mx-auto">
+		<div class="flex items-end gap-2 max-w-2xl mx-auto">
 			<textarea
+				bind:this={inputEl}
 				bind:value={inputText}
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent max-h-32 overflow-y-auto"
+				class="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent max-h-40 overflow-y-auto"
 				aria-label="메시지 입력"
 			></textarea>
 			<button

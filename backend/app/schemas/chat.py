@@ -11,6 +11,8 @@ class MessageOut(BaseModel):
     id: str
     chatroom_id: str
     sender_id: str | None = None
+    sender_nickname: str | None = None
+    sender_avatar_url: str | None = None
     client_msg_id: str | None = None
     body: str
     type: str

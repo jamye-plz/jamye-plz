@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import { getOAuthLoginUrl } from '$lib/api/auth.api';
+
+	const loginError = $derived(page.url.searchParams.get('error'));
 </script>
 
 <main class="min-h-screen flex items-center justify-center bg-background px-4">
@@ -8,6 +11,12 @@
 			<h1 class="text-3xl font-bold text-text-primary">잼얘좀</h1>
 			<p class="text-text-secondary text-sm">폐쇄 그룹에서 주제를 던지고 실시간으로 떠드는 공간</p>
 		</div>
+
+		{#if loginError}
+			<p class="text-sm text-danger text-center" role="alert">
+				로그인에 실패했어요. 다시 시도해 주세요.
+			</p>
+		{/if}
 
 		<div class="space-y-3">
 			<a

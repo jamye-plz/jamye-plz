@@ -62,7 +62,11 @@ class Settings(BaseSettings):
 
     @property
     def kakao_enabled(self) -> bool:
-        return bool(self.kakao_client_id and self.kakao_client_secret)
+        # Kakao's client secret is off by default, so the REST API key (client_id)
+        # alone enables real OAuth. If "Client Secret" is enabled in the Kakao
+        # console, KAKAO_CLIENT_SECRET must also be set (kakao_callback sends it
+        # when present) or the token exchange will fail.
+        return bool(self.kakao_client_id)
 
     @property
     def google_enabled(self) -> bool:

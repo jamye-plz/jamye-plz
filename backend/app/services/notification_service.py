@@ -35,6 +35,41 @@ class NotificationService:
     async def list_notifications(self, user_id: str, limit: int = 50) -> list[Notification]:
         return await self._notif_repo.list_by_user(user_id, limit=limit)
 
+    @staticmethod
+    def _to_view(notif: Notification) -> dict[str, Any]:
+        """Derive a client-facing view (title/body/action_url) from type+payload."""
+        payload = notif.payload or {}
+        if notif.type in ("new_topic", "chat_started"):
+            author = payload.get("author") or "누군가"
+            group_name = payload.get("group_name")
+            action = "새로운 주제를 올렸어요" if notif.type == "new_topic" else "채팅을 시작했어요"
+            who = f"{author}님이 {action}"
+            title = f"{group_name}에서 {who}" if group_name else who
+            body = payload.get("title", "")
+            gid, tid = payload.get("group_id"), payload.get("topic_id")
+            action_url = f"/groups/{gid}/topics/{tid}/chat" if gid and tid else None
+        else:
+            title = payload.get("title", "알림")
+            body = payload.get("body", "")
+            action_url = payload.get("action_url")
+        return {
+            "id": notif.id,
+            "user_id": notif.user_id,
+            "kind": notif.type,
+            "title": title,
+            "body": body,
+            "action_url": action_url,
+            "read": notif.read_at is not None,
+            "created_at": notif.created_at,
+        }
+
+    async def list_view(
+        self, user_id: str, limit: int = 50
+    ) -> tuple[list[dict[str, Any]], int]:
+        notifs = await self._notif_repo.list_by_user(user_id, limit=limit)
+        unread_count = await self._notif_repo.count_unread(user_id)
+        return [self._to_view(n) for n in notifs], unread_count
+
     async def mark_read(self, notification_id: str, user_id: str) -> Notification:
         notif = await self._notif_repo.get_by_id(notification_id)
         if notif is None:

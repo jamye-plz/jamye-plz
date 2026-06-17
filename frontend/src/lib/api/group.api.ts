@@ -23,6 +23,12 @@ export function createInvite(groupId: string, params?: CreateInviteParams): Prom
 	return apiPost<Invite>(`/groups/${groupId}/invites`, params ?? {});
 }
 
-export function joinByCode(code: string): Promise<Group> {
-	return apiPost<Group>(`/invites/${code}/join`);
+export interface JoinResult {
+	group_id: string;
+	membership_id?: string;
+	joined: boolean;
+}
+
+export function joinByCode(code: string): Promise<JoinResult> {
+	return apiPost<JoinResult>(`/invites/${code}/join`);
 }

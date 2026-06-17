@@ -10,6 +10,11 @@ const config = {
 			// SPA fallback: all paths serve index.html
 			fallback: 'index.html'
 		}),
+		// Let @vite-pwa/sveltekit own the service worker instead of SvelteKit's
+		// built-in registration (our SW uses workbox's __WB_MANIFEST).
+		serviceWorker: {
+			register: false
+		},
 		alias: {
 			$lib: './src/lib'
 		}
