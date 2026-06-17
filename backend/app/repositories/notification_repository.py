@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
@@ -35,6 +35,14 @@ class NotificationRepository:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def count_unread(self, user_id: str) -> int:
+        result = await self._db.execute(
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.user_id == user_id, Notification.read_at.is_(None))
+        )
+        return int(result.scalar_one())
 
     async def mark_read(self, notification: Notification) -> Notification:
         notification.read_at = datetime.now(timezone.utc)
