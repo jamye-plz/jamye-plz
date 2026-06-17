@@ -268,7 +268,7 @@
 								<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
 							{/if}
 							<div
-								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
+								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
 								{msg.body}
 							</div>
@@ -293,13 +293,13 @@
 									{/if}
 								{/if}
 							</div>
-							<div class="min-w-0 space-y-0.5">
+							<div class="flex-1 min-w-0 space-y-0.5">
 								{#if showHeader(i) && msg.sender_nickname}
 									<span class="block text-xs text-text-muted px-1">{msg.sender_nickname}</span>
 								{/if}
 								<div class="flex items-end gap-1.5">
 									<div
-										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed bg-surface-elevated text-text-primary rounded-bl-sm"
+										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
 									>
 										{msg.body}
 									</div>
