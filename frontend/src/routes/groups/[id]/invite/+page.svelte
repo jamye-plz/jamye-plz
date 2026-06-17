@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -8,6 +9,11 @@
 
 	const groupId = $derived(page.params.id);
 	let copied = $state(false);
+	let canShare = $state(false);
+
+	onMount(() => {
+		canShare = browser && typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+	});
 
 	const invite = createMutation(() => ({
 		mutationFn: () => createInvite(groupId)
@@ -24,6 +30,18 @@
 			setTimeout(() => (copied = false), 1500);
 		} catch {
 			// clipboard unavailable — user can still select the link manually
+		}
+	}
+
+	async function shareLink(code: string) {
+		try {
+			await navigator.share({
+				title: '잼얘좀 초대',
+				text: '잼얘좀 그룹에 초대합니다. 링크를 열어 참여하세요.',
+				url: inviteLink(code)
+			});
+		} catch {
+			// user cancelled or share failed — no-op
 		}
 	}
 
@@ -67,7 +85,7 @@
 		{/if}
 
 		{#if invite.data}
-			<div class="space-y-2 rounded-xl bg-surface border border-border p-4">
+			<div class="space-y-3 rounded-xl bg-surface border border-border p-4">
 				<span class="text-xs text-text-muted">초대 링크</span>
 				<div class="flex items-center gap-2">
 					<code class="flex-1 font-mono text-sm text-text-primary break-all">{inviteLink(invite.data.code)}</code>
@@ -78,6 +96,14 @@
 						{copied ? '복사됨' : '복사'}
 					</button>
 				</div>
+				{#if canShare}
+					<button
+						onclick={() => shareLink(invite.data!.code)}
+						class="w-full py-2.5 rounded-lg bg-accent text-white text-sm font-medium transition-opacity hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent"
+					>
+						공유하기
+					</button>
+				{/if}
 			</div>
 		{/if}
 	</main>
