@@ -43,6 +43,8 @@ export default defineConfig({
 		})
 	],
 	server: {
+		// Allow tunnel hosts (localtunnel / cloudflared / ngrok) for mobile testing.
+		allowedHosts: ['.loca.lt', '.trycloudflare.com', '.ngrok-free.app', '.ngrok.io'],
 		proxy: {
 			// Forward API + WebSocket to the FastAPI backend during dev so the
 			// httpOnly auth cookie stays same-origin (localhost:5173).
@@ -52,5 +54,8 @@ export default defineConfig({
 				ws: true
 			}
 		}
+	},
+	preview: {
+		allowedHosts: ['.loca.lt', '.trycloudflare.com', '.ngrok-free.app', '.ngrok.io']
 	}
 });
