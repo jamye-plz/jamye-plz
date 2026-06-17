@@ -1,11 +1,14 @@
-"""AuthService — OAuth login/token issuance.
+"""AuthService — OAuth login and JWT issuance.
 
-Real OAuth calls are made only when provider keys are provisioned.
-Falls back to deterministic local stubs when keys are absent.
-# TODO(oma-deferred): integrate kakao when key is provisioned
-# TODO(oma-deferred): integrate google when key is provisioned
+When provider keys are set, the real OAuth flow runs (authorization-code →
+token exchange → profile fetch → user upsert). Without keys, a deterministic
+local stub is used so development works offline.
 """
 
+import logging
+from urllib.parse import urlencode
+
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -13,87 +16,123 @@ from app.core.security import create_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 
+logger = logging.getLogger(__name__)
+
+# ── Provider endpoints ─────────────────────────────────────────────────────────
+KAKAO_AUTH_URL = "https://kauth.kakao.com/oauth/authorize"
+KAKAO_TOKEN_URL = "https://kauth.kakao.com/oauth/token"
+KAKAO_PROFILE_URL = "https://kapi.kakao.com/v2/user/me"
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
+
 
 class AuthService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
         self._user_repo = UserRepository(db)
 
-    def get_kakao_auth_url(self) -> str:
-        settings = get_settings()
-        if settings.kakao_enabled:
-            return (
-                "https://kauth.kakao.com/oauth/authorize"
-                f"?client_id={settings.kakao_client_id}"
-                f"&redirect_uri={settings.kakao_redirect_uri}"
-                "&response_type=code"
-            )
-        # TODO(oma-deferred): integrate kakao when key is provisioned
-        return "/api/auth/kakao/stub"
+    # ── Authorization URLs ─────────────────────────────────────────────────────
 
-    def get_google_auth_url(self) -> str:
-        settings = get_settings()
-        if settings.google_enabled:
-            return (
-                "https://accounts.google.com/o/oauth2/v2/auth"
-                f"?client_id={settings.google_client_id}"
-                f"&redirect_uri={settings.google_redirect_uri}"
-                "&response_type=code"
-                "&scope=openid%20email%20profile"
-            )
-        # TODO(oma-deferred): integrate google when key is provisioned
-        return "/api/auth/google/stub"
+    def get_kakao_auth_url(self, state: str) -> str:
+        s = get_settings()
+        params = {
+            "client_id": s.kakao_client_id,
+            "redirect_uri": s.kakao_redirect_uri,
+            "response_type": "code",
+            "scope": "profile_nickname,profile_image",
+            "state": state,
+        }
+        return f"{KAKAO_AUTH_URL}?{urlencode(params)}"
 
-    async def stub_login(self, provider: str) -> tuple[User, str]:
-        """Issue a session for a deterministic stub user when OAuth keys are absent.
+    def get_google_auth_url(self, state: str) -> str:
+        s = get_settings()
+        params = {
+            "client_id": s.google_client_id,
+            "redirect_uri": s.google_redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+        }
+        return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
-        # TODO(oma-deferred): remove once real OAuth keys are provisioned.
-        """
-        provider_id = f"{provider}_stub_dev"
+    # ── User upsert + token ────────────────────────────────────────────────────
+
+    async def _issue_session(
+        self, provider: str, provider_id: str, nickname: str, avatar_url: str | None
+    ) -> tuple[User, str]:
+        """Find-or-create the user and mint a JWT. On re-login we keep the
+        user's existing nickname/avatar (they may have edited their profile)."""
         user = await self._user_repo.get_by_provider(provider, provider_id)
         if user is None:
             user = await self._user_repo.create(
                 provider=provider,
                 provider_id=provider_id,
-                nickname=f"{provider.capitalize()}Dev",
+                nickname=nickname,
+                avatar_url=avatar_url,
             )
             await self._db.commit()
-        token = create_access_token(user.id)
-        return user, token
+        return user, create_access_token(user.id)
+
+    async def stub_login(self, provider: str) -> tuple[User, str]:
+        """Issue a session for a deterministic stub user when keys are absent."""
+        provider_id = f"{provider}_stub_dev"
+        return await self._issue_session(
+            provider, provider_id, f"{provider.capitalize()}Dev", None
+        )
+
+    # ── Real OAuth callbacks ───────────────────────────────────────────────────
 
     async def kakao_callback(self, code: str) -> tuple[User, str]:
-        settings = get_settings()
-        if settings.kakao_enabled:
-            # TODO(oma-deferred): integrate kakao when key is provisioned
-            # Real path: exchange code for access token, fetch user profile
-            raise NotImplementedError("Kakao OAuth real path not implemented")
-        # Deterministic fallback for demo/development
-        provider_id = f"kakao_stub_{code[:8]}"
-        user = await self._user_repo.get_by_provider("kakao", provider_id)
-        if user is None:
-            user = await self._user_repo.create(
-                provider="kakao",
-                provider_id=provider_id,
-                nickname=f"KakaoUser_{code[:6]}",
+        s = get_settings()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            token_data = {
+                "grant_type": "authorization_code",
+                "client_id": s.kakao_client_id,
+                "redirect_uri": s.kakao_redirect_uri,
+                "code": code,
+            }
+            if s.kakao_client_secret:
+                token_data["client_secret"] = s.kakao_client_secret
+            tr = await client.post(KAKAO_TOKEN_URL, data=token_data)
+            tr.raise_for_status()
+            access_token = tr.json()["access_token"]
+
+            pr = await client.get(
+                KAKAO_PROFILE_URL, headers={"Authorization": f"Bearer {access_token}"}
             )
-            await self._db.commit()
-        token = create_access_token(user.id)
-        return user, token
+            pr.raise_for_status()
+            profile = pr.json()
+
+        provider_id = str(profile["id"])
+        account = profile.get("kakao_account", {}).get("profile", {})
+        nickname = account.get("nickname") or f"카카오{provider_id[:6]}"
+        avatar_url = account.get("profile_image_url")
+        return await self._issue_session("kakao", provider_id, nickname, avatar_url)
 
     async def google_callback(self, code: str) -> tuple[User, str]:
-        settings = get_settings()
-        if settings.google_enabled:
-            # TODO(oma-deferred): integrate google when key is provisioned
-            raise NotImplementedError("Google OAuth real path not implemented")
-        # Deterministic fallback for demo/development
-        provider_id = f"google_stub_{code[:8]}"
-        user = await self._user_repo.get_by_provider("google", provider_id)
-        if user is None:
-            user = await self._user_repo.create(
-                provider="google",
-                provider_id=provider_id,
-                nickname=f"GoogleUser_{code[:6]}",
+        s = get_settings()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            tr = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": s.google_client_id,
+                    "client_secret": s.google_client_secret,
+                    "redirect_uri": s.google_redirect_uri,
+                    "code": code,
+                },
             )
-            await self._db.commit()
-        token = create_access_token(user.id)
-        return user, token
+            tr.raise_for_status()
+            access_token = tr.json()["access_token"]
+
+            ir = await client.get(
+                GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
+            )
+            ir.raise_for_status()
+            info = ir.json()
+
+        provider_id = info["sub"]
+        nickname = info.get("name") or (info.get("email") or "").split("@")[0] or f"구글{provider_id[:6]}"
+        avatar_url = info.get("picture")
+        return await self._issue_session("google", provider_id, nickname, avatar_url)
