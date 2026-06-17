@@ -166,6 +166,11 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		// Ignore Enter while an IME composition is active (Korean/Japanese/Chinese):
+		// that Enter commits the composition, and sending on it duplicates the last
+		// syllable (e.g. "안녕" sent, then the committed "녕" sent again). The next,
+		// non-composing Enter is the real send.
+		if (e.isComposing || e.keyCode === 229) return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			sendMessage();
