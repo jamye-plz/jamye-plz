@@ -45,6 +45,7 @@ async def create_topic(
     )
 
     notif_svc = NotificationService(db)
+    group = await group_svc.get_group_or_404(group_id)
     for member in await group_svc.list_members(group_id):
         if member.user_id != current_user.id:
             await notif_svc.create_notification(
@@ -52,6 +53,7 @@ async def create_topic(
                 type="new_topic",
                 payload={
                     "group_id": group_id,
+                    "group_name": group.name,
                     "topic_id": topic.id,
                     "title": topic.title,
                     "author": current_user.nickname,

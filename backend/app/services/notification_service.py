@@ -41,11 +41,10 @@ class NotificationService:
         payload = notif.payload or {}
         if notif.type in ("new_topic", "chat_started"):
             author = payload.get("author") or "누군가"
-            title = (
-                f"{author}님이 새로운 주제를 올렸어요"
-                if notif.type == "new_topic"
-                else f"{author}님이 채팅을 시작했어요"
-            )
+            group_name = payload.get("group_name")
+            action = "새로운 주제를 올렸어요" if notif.type == "new_topic" else "채팅을 시작했어요"
+            who = f"{author}님이 {action}"
+            title = f"{group_name}에서 {who}" if group_name else who
             body = payload.get("title", "")
             gid, tid = payload.get("group_id"), payload.get("topic_id")
             action_url = f"/groups/{gid}/topics/{tid}/chat" if gid and tid else None
