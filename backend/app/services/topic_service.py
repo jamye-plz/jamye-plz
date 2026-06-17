@@ -95,6 +95,11 @@ class TopicService:
         if membership is None or membership.role != "owner":
             raise ForbiddenError("Only the author or group owner can modify this topic")
 
+    async def assert_author(self, topic: Topic, user_id: str) -> None:
+        """Only the topic author may edit the topic body (enrich)."""
+        if topic.author_id != user_id:
+            raise ForbiddenError("Only the topic author can edit this topic")
+
     async def update_topic(
         self,
         topic_id: str,
@@ -103,7 +108,7 @@ class TopicService:
         status: str | None = None,
     ) -> Topic:
         topic = await self.get_topic_or_404(topic_id)
-        await self.assert_author_or_owner(topic, user_id)
+        await self.assert_author(topic, user_id)
         topic = await self._topic_repo.update(topic, body=body, status=status)
         await self._db.commit()
         await self._db.refresh(topic)

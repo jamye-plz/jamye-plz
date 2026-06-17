@@ -12,13 +12,17 @@
 		chatroomId,
 		title,
 		backHref,
-		pinnedBody
+		pinnedBody,
+		canEditPinned = false,
+		onEditPinned
 	}: {
 		groupId: string;
 		chatroomId: string;
 		title: string;
 		backHref: string;
 		pinnedBody?: string | null;
+		canEditPinned?: boolean;
+		onEditPinned?: () => void;
 	} = $props();
 
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
@@ -179,9 +183,25 @@
 		></div>
 	</header>
 
-	{#if pinnedBody}
-		<div class="shrink-0 border-b border-border bg-surface px-4 py-3 max-h-40 overflow-y-auto">
-			<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
+	{#if pinnedBody || canEditPinned}
+		<div class="shrink-0 border-b border-border bg-surface px-4 py-3">
+			<div class="flex items-start gap-2">
+				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
+					{#if pinnedBody}
+						<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
+					{:else}
+						<p class="text-sm text-text-muted italic">아직 본문이 없어요</p>
+					{/if}
+				</div>
+				{#if canEditPinned}
+					<button
+						onclick={onEditPinned}
+						class="shrink-0 text-xs font-medium text-accent hover:text-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent rounded px-1"
+					>
+						{pinnedBody ? '수정' : '본문 추가'}
+					</button>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
