@@ -65,6 +65,10 @@ class AuthService:
         user's existing nickname/avatar (they may have edited their profile)."""
         user = await self._user_repo.get_by_provider(provider, provider_id)
         if user is None:
+            # Normalize provider values to the DB column limits (nickname 64,
+            # avatar_url 512) so long names/URLs don't fail the INSERT.
+            nickname = (nickname or provider.capitalize())[:64]
+            avatar_url = avatar_url[:512] if avatar_url else None
             user = await self._user_repo.create(
                 provider=provider,
                 provider_id=provider_id,
