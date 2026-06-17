@@ -62,7 +62,8 @@ class Settings(BaseSettings):
 
     @property
     def kakao_enabled(self) -> bool:
-        return bool(self.kakao_client_id and self.kakao_client_secret)
+        # Kakao's client secret is optional; the REST API key (client_id) is enough.
+        return bool(self.kakao_client_id)
 
     @property
     def google_enabled(self) -> bool:
