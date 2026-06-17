@@ -37,19 +37,21 @@ redeem_router = APIRouter(prefix="/invites", tags=["invites"])
 async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     invite_svc = InviteService(db)
     group_svc = GroupService(db)
-    # One transaction: validate() row-locks the invite, join + consume run
-    # under that lock, and the single commit makes redemption atomic.
-    invite = await invite_svc.validate(code)
-    # Capture before any commit/rollback — rollback expires the ORM instance,
-    # and a later lazy attribute access would fail outside the async context.
+    # Existing members enter regardless of the invite's expiry/exhaustion state,
+    # so check membership BEFORE validate() (which would 410 a used/expired code).
+    invite = await invite_svc.get_invite_or_404(code)
     group_id = invite.group_id
+    if await group_svc.is_member(group_id, current_user.id):
+        return {"group_id": group_id, "joined": False}
+    # New member: validate() row-locks the invite + checks expiry/exhaustion,
+    # then join + consume run under that lock, and the single commit is atomic.
+    locked = await invite_svc.validate(code)
     try:
         membership = await group_svc.join_via_invite(group_id, current_user.id)
-        await invite_svc.consume(invite)
+        await invite_svc.consume(locked)
         await db.commit()
         return {"group_id": group_id, "membership_id": membership.id, "joined": True}
     except AlreadyMemberError:
-        # Idempotent: re-using a link you already redeemed just sends you in
-        # (no use is consumed). The lock is released on rollback.
+        # Concurrent double-redeem race: someone joined between our check and join.
         await db.rollback()
         return {"group_id": group_id, "joined": False}

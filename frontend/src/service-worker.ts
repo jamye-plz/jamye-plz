@@ -23,7 +23,13 @@ cleanupOutdatedCaches();
 // (offline launches, deep links like /groups/...). Only registered when the
 // fallback document was actually precached, so SW install never fails.
 if (manifest.some((e) => (typeof e === 'string' ? e : e.url).endsWith('/index.html'))) {
-	registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+	registerRoute(
+		new NavigationRoute(createHandlerBoundToURL('/index.html'), {
+			// Backend navigations (OAuth callbacks, etc.) must hit the network,
+			// not the cached app shell — otherwise the auth cookie is never set.
+			denylist: [/^\/api\//]
+		})
+	);
 }
 
 self.addEventListener('activate', (event) => {

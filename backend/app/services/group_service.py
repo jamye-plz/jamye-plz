@@ -56,6 +56,9 @@ class GroupService:
             raise ForbiddenError("You are not a member of this group")
         return membership
 
+    async def is_member(self, group_id: str, user_id: str) -> bool:
+        return await self._membership_repo.get(group_id, user_id) is not None
+
     async def require_owner(self, group_id: str, user_id: str) -> Membership:
         membership = await self.require_membership(group_id, user_id)
         if membership.role != "owner":
