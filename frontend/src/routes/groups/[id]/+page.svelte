@@ -109,7 +109,7 @@
 				{#each topicsQuery.data.items as topic (topic.id)}
 					<li>
 						<a
-							href="/groups/{groupId}/topics/{topic.id}"
+							href="/groups/{groupId}/topics/{topic.id}/chat"
 							class="block px-4 py-4 rounded-xl bg-surface hover:bg-surface-elevated border border-border transition-colors focus-visible:outline-2 focus-visible:outline-accent"
 							aria-label={topic.title}
 						>

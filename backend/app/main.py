@@ -137,6 +137,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
     await websocket.accept()
 
+    # Resolve the sender's nickname once for this connection.
+    sender_nickname: str | None = None
+    async for db in get_db():
+        sender = await UserRepository(db).get_by_id(user_id)
+        sender_nickname = sender.nickname if sender else None
+        break
+
     active_chatroom: str | None = None
 
     try:
@@ -194,6 +201,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             "id": message.id,
                             "chatroom_id": message.chatroom_id,
                             "sender_id": message.sender_id,
+                            "sender_nickname": sender_nickname,
                             "client_msg_id": message.client_msg_id,
                             "body": message.body,
                             "msg_type": message.type,

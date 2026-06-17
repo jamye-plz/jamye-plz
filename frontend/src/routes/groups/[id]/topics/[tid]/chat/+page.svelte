@@ -21,5 +21,6 @@
 	{groupId}
 	{chatroomId}
 	title={topicQuery.data?.title ?? '주제 채팅'}
-	backHref={`/groups/${groupId}/topics/${topicId}`}
+	pinnedBody={topicQuery.data?.body}
+	backHref={`/groups/${groupId}`}
 />

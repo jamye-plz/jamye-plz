@@ -11,8 +11,15 @@
 		groupId,
 		chatroomId,
 		title,
-		backHref
-	}: { groupId: string; chatroomId: string; title: string; backHref: string } = $props();
+		backHref,
+		pinnedBody
+	}: {
+		groupId: string;
+		chatroomId: string;
+		title: string;
+		backHref: string;
+		pinnedBody?: string | null;
+	} = $props();
 
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
 	const myId = $derived(meQuery.data?.id ?? null);
@@ -64,6 +71,7 @@
 						id: data.id,
 						chatroom_id: data.chatroom_id,
 						sender_id: data.sender_id,
+						sender_nickname: data.sender_nickname ?? undefined,
 						body: data.body,
 						type: data.msg_type,
 						created_at: data.created_at,
@@ -171,6 +179,12 @@
 		></div>
 	</header>
 
+	{#if pinnedBody}
+		<div class="shrink-0 border-b border-border bg-surface px-4 py-3 max-h-40 overflow-y-auto">
+			<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
+		</div>
+	{/if}
+
 	<section
 		bind:this={messagesEl}
 		class="flex-1 overflow-y-auto px-4 py-4 space-y-3"
@@ -189,7 +203,10 @@
 						<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
 					</div>
 				{:else}
-					<div class="flex gap-2 {isMine(msg) ? 'justify-end' : 'justify-start'}">
+					<div class="flex flex-col gap-0.5 {isMine(msg) ? 'items-end' : 'items-start'}">
+						{#if !isMine(msg) && msg.sender_nickname}
+							<span class="text-xs text-text-muted px-1">{msg.sender_nickname}</span>
+						{/if}
 						<div
 							class="max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-relaxed
 								{isMine(msg)
