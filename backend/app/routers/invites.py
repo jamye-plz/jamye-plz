@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.core.deps import CurrentUser, DbSession
+from app.core.exceptions import AlreadyMemberError
 from app.schemas.invite import InviteCreate, InviteOut
 from app.services.group_service import GroupService
 from app.services.invite_service import InviteService
@@ -39,7 +40,16 @@ async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     # One transaction: validate() row-locks the invite, join + consume run
     # under that lock, and the single commit makes redemption atomic.
     invite = await invite_svc.validate(code)
-    membership = await group_svc.join_via_invite(invite.group_id, current_user.id)
-    await invite_svc.consume(invite)
-    await db.commit()
-    return {"group_id": invite.group_id, "membership_id": membership.id}
+    # Capture before any commit/rollback — rollback expires the ORM instance,
+    # and a later lazy attribute access would fail outside the async context.
+    group_id = invite.group_id
+    try:
+        membership = await group_svc.join_via_invite(group_id, current_user.id)
+        await invite_svc.consume(invite)
+        await db.commit()
+        return {"group_id": group_id, "membership_id": membership.id, "joined": True}
+    except AlreadyMemberError:
+        # Idempotent: re-using a link you already redeemed just sends you in
+        # (no use is consumed). The lock is released on rollback.
+        await db.rollback()
+        return {"group_id": group_id, "joined": False}

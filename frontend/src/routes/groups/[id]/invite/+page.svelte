@@ -2,6 +2,7 @@
 	import { createMutation } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
 	import { createInvite } from '$lib/api/group.api';
 	import { ApiError } from '$lib/api/client';
 
@@ -12,13 +13,17 @@
 		mutationFn: () => createInvite(groupId)
 	}));
 
-	async function copyCode(code: string) {
+	function inviteLink(code: string): string {
+		return browser ? `${location.origin}/invite/${code}` : `/invite/${code}`;
+	}
+
+	async function copyLink(code: string) {
 		try {
-			await navigator.clipboard.writeText(code);
+			await navigator.clipboard.writeText(inviteLink(code));
 			copied = true;
 			setTimeout(() => (copied = false), 1500);
 		} catch {
-			// clipboard unavailable — user can still select the code manually
+			// clipboard unavailable — user can still select the link manually
 		}
 	}
 
@@ -46,7 +51,7 @@
 
 	<main class="px-4 py-6 space-y-4 max-w-lg mx-auto">
 		<p class="text-text-secondary text-sm">
-			초대 코드를 만들어 공유하면, 받은 사람이 코드로 그룹에 참여할 수 있어요.
+			초대 링크를 만들어 공유하면, 받은 사람이 링크를 열어 바로 그룹에 참여할 수 있어요.
 		</p>
 
 		<button
@@ -54,7 +59,7 @@
 			disabled={invite.isPending}
 			class="w-full py-3 rounded-xl bg-accent text-white font-medium text-sm disabled:opacity-40 transition-opacity hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent"
 		>
-			{invite.isPending ? '만드는 중...' : '초대 코드 만들기'}
+			{invite.isPending ? '만드는 중...' : '초대 링크 만들기'}
 		</button>
 
 		{#if invite.isError}
@@ -63,11 +68,11 @@
 
 		{#if invite.data}
 			<div class="space-y-2 rounded-xl bg-surface border border-border p-4">
-				<span class="text-xs text-text-muted">초대 코드</span>
+				<span class="text-xs text-text-muted">초대 링크</span>
 				<div class="flex items-center gap-2">
-					<code class="flex-1 font-mono text-base text-text-primary break-all">{invite.data.code}</code>
+					<code class="flex-1 font-mono text-sm text-text-primary break-all">{inviteLink(invite.data.code)}</code>
 					<button
-						onclick={() => copyCode(invite.data!.code)}
+						onclick={() => copyLink(invite.data!.code)}
 						class="shrink-0 px-3 py-1.5 rounded-lg bg-surface-elevated border border-border text-text-secondary text-sm hover:text-text-primary transition-colors focus-visible:outline-2 focus-visible:outline-accent"
 					>
 						{copied ? '복사됨' : '복사'}
