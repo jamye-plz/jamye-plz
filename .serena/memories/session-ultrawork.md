@@ -54,3 +54,31 @@
 
 ## Still open (PM PLAN)
 - 데이터모델(user/group/membership/invite/topic/topic_media/tag/chatroom/message/push_subscription), REST API 계약, WS 프로토콜(메시지타입/방참여/presence), 권한정책(서비스레이어), AI web worker 통합, Docker/podman 이미지, flake 작성, FastAPI 구조, monorepo(frontend/+backend/+nix/) 단일 repo 권장.
+
+---
+
+## SESSION 2 — IMPL ultrawork [2026-06-17]
+### 환경 [2026-06-17 정정]: serena MCP ✅ 정상(메모리 + 코드분석 LSP 모두 동작 — `.serena/project.yml`에서 nix/terraform/dart 제거 후 해결). oma CLI ✅ 정상(`/Users/poby/.bun/bin/oma` v9.8.0, hm-session-vars PATH 적용, bare `oma`/`state:emit` 호출 가능). → 이전 "DOWN/미설치/네이티브 폴백" 기록은 오판으로 정정. 앞으로 serena 심볼 도구(find_symbol/find_referencing_symbols/replace_symbol_body) + oma L1 이벤트 정식 경로 사용. DB=podman jamye-db(postgres:18) up. 마이그레이션 없이 create_all 스텁 사용중(M0 ⑦에서 Alembic 도입 예정).
+
+### PR #2 머지 완료 — v1 백본 구현됨 (main merge `c5e3f68`, squash 아님 merge-commit). 후속 리뷰 29 스레드 전부 resolve.
+구현·머지된 것: FastAPI router/service/repo, 모델 11개, 그룹/멤버십/초대(원자적)/권한(IDOR fix), 토픽 시드+enrich(enriched status), 주제별+메인 채팅방 분리+영속+keyset 히스토리, WS(native, join/send/ack), 새주제 리마인드(system msg+broadcast+인앱알림), OAuth 골격+dev스텁, JWT쿠키, push 구독 엔드포인트, member_count, media MIME/keyset/text()index. infra/docker-compose(pg18), bun, poethepoet(uv run poe dev/tables).
+
+### 1차 SCOPE 잔여 (구현 평가 기준):
+- 🔴 T8 사진: presign/confirm 백엔드 스텁만. 업로드/크롭/압축 UI 없음, MinIO 미연동.
+- 🟡 T7 FE: 일별 그룹핑·무한스크롤 없음(백엔드 cursor/date 준비됨).
+- 🟡 T11: 새주제 리마인드만. 첫-채팅 리마인드 없음.
+- 🔴 T14: push 발송(pywebpush+VAPID) 없음(VAPID는 self-gen 가능), iOS 설치유도 없음.
+- 🔴 T12 WASM 자동태깅 / 🔴 T13 살붙이기 추천: 의존성만, 구현 0.
+- 🟡 T4 실 OAuth: 콜백 501(키 필요=사용자 프로비저닝). dev스텁만 동작.
+- 🟡 인프라/품질: Alembic 없음(T2/T3), PWA 비활성(vite8 비호환), shadcn-svelte 미도입, pytest tests 없음(T16), FE 타입에러 4건(page.params noUncheckedIndexedAccess).
+
+### 사용자 제약: 배포(T15/T16) 전에 1차 기능 개발 완료 + **사용자 직접 사용성 테스트** 필수 gate.
+
+### PLAN_GATE 사용자 결정 [2026-06-17]: **M0 먼저** — "완료로 표시한 기능 QA·완성이 최우선. 1차 스코프 완성이 1순위." + 실 OAuth를 M0에 포함. 배포 전 사용자 직접 사용성 테스트 gate.
+
+### 완성 갭 감사 결과(코드 확인): joinByCode/enrichTopic/listNotifications/markRead = **API 헬퍼만 있고 화면 미연결**. 초대 참여 화면❌, 주제 enrich 입력 UI❌(상세 읽기전용), 인앱 알림 화면❌, 채팅 발신자 이름/아바타 미표시(타입필드만), 일별 타임라인/무한스크롤❌, PWA 비활성. → "완료" 백본이지만 UX 루프 미완.
+
+### 개정 로드맵 (M0 우선):
+- **M0 = 1차 완성 & QA (+실 OAuth)** [최우선]: ①실 OAuth 콜백(code→token→profile) ②채팅 발신자정보(MessageOut+WS+history join, FE 렌더) ③초대 참여 화면(joinByCode) ④주제 enrich UI(enrichTopic, author게이트) ⑤인앱 알림 화면(list+read) ⑥일별 타임라인+무한스크롤(T7) ⑦Alembic 도입(T2/T3) ⑧PWA 재활성+로그인→온보딩 플로우(T5) ⑨QA(FE 타입에러·접근성·반응형·핵심 pytest).
+- M1 사진 업로드(T8, 로컬MinIO+presign실경로+크롭/압축) → M2 알림완성(첫채팅 리마인드+Web Push self-VAPID+iOS유도) → M3 온디바이스AI(태깅·비생성추천) → M4 마감 → ✋사용성테스트 → 배포(T15/T16).
+- OAuth 키: 코드 먼저, 키는 나중 .env 주입(그동안 dev 스텁 유지).
