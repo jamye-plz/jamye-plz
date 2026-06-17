@@ -53,6 +53,10 @@ target-version = "py312"
 dev = "uvicorn app.main:app --reload --port 8000"
 start = "uvicorn app.main:app --port 8000"
 migrate = "alembic upgrade head"
+# Baseline an existing pre-Alembic DB (schema created by the old create_all but
+# missing alembic_version): run `poe stamp` ONCE to mark it at head, then use
+# `poe migrate` for subsequent upgrades. Fresh/empty DBs just use `poe migrate`.
+stamp = "alembic stamp head"
 makemigration = "alembic revision --autogenerate"
 test = "pytest"
 lint = "ruff check ."
