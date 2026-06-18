@@ -104,6 +104,16 @@ in
         default = true;
         description = "Provision a local PostgreSQL with the database and (peer-auth) role.";
       };
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.postgresql_18;
+        defaultText = lib.literalExpression "pkgs.postgresql_18";
+        description = ''
+          PostgreSQL package for the local cluster. Applied with mkDefault, so a
+          host that already pins services.postgresql.package keeps its version
+          (the host runs a single cluster) — override here only on a dedicated host.
+        '';
+      };
       name = lib.mkOption {
         type = lib.types.str;
         default = "jamye";
@@ -167,7 +177,12 @@ in
     # ── PostgreSQL (local, peer auth) ───────────────────────────────────────
     services.postgresql = lib.mkIf cfg.database.createLocally {
       enable = true;
-      package = pkgs.postgresql_18;
+      # Priority 900 sits between an explicit host pin (100) and both nixpkgs'
+      # and our own mkDefault (1000): we still override nixpkgs' stateVersion
+      # default (so the cluster stays on cfg.database.package), but a host that
+      # already runs services.postgresql for other data and pins its package
+      # keeps that pin — its single cluster is not forced to this major version.
+      package = lib.mkOverride 900 cfg.database.package;
       ensureDatabases = [ cfg.database.name ];
       ensureUsers = [
         {

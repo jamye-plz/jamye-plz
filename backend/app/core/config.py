@@ -24,6 +24,10 @@ INSECURE_JWT_SECRETS = frozenset(
 _MIN_JWT_SECRET_LEN = 32
 
 
+def _is_localhost(url: str) -> bool:
+    return "localhost" in url or "127.0.0.1" in url
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -119,6 +123,29 @@ class Settings(BaseSettings):
                 "JWT_SECRET must be a unique high-entropy value "
                 f"(>= {_MIN_JWT_SECRET_LEN} chars, not a public placeholder) "
                 "when APP_ENV=production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _reject_localhost_public_urls(self) -> "Settings":
+        # In production these are the localhost dev defaults if the secrets/env
+        # file forgot to set them. FRONTEND_ORIGIN drives the post-login redirect
+        # + CORS; the redirect URIs are sent to the OAuth providers. Localhost
+        # there means broken/round-trip-to-localhost logins — fail closed.
+        if not self.is_production:
+            return self
+        offenders = [
+            name
+            for name, value, used in (
+                ("FRONTEND_ORIGIN", self.frontend_origin, True),
+                ("KAKAO_REDIRECT_URI", self.kakao_redirect_uri, self.kakao_enabled),
+                ("GOOGLE_REDIRECT_URI", self.google_redirect_uri, self.google_enabled),
+            )
+            if used and _is_localhost(value)
+        ]
+        if offenders:
+            raise ValueError(
+                f"{', '.join(offenders)} must not point at localhost when APP_ENV=production"
             )
         return self
 
