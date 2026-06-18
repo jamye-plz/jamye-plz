@@ -21,8 +21,9 @@
       !(builtins.elem base ["node_modules" "build" ".svelte-kit" ".vercel" ".vite"]);
   };
 
-  # ⇣ Replace with the hash printed by the first `nix build .#frontend`.
-  nodeModulesHash = lib.fakeHash;
+  # bun-install FOD hash (aarch64-linux). Regenerate if package.json/bun.lock
+  # change: set to lib.fakeHash, `nix build .#frontend`, paste the new `got:`.
+  nodeModulesHash = "sha256-TyY2GGs/SL2/rtavzggUo/pCVuKTTQ8bw8gG5lT7hDA=";
 
   nodeModules = pkgs.stdenv.mkDerivation {
     pname = "jamye-frontend-node-modules";
