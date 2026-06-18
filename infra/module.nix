@@ -158,6 +158,13 @@ in
         assertion = !cfg.database.createLocally || cfg.databaseUrl != null;
         message = "services.jamye-plz: database.createLocally needs databaseUrl set (the peer-auth socket DSN). Leave it at the default, or set createLocally = false for an external DB via environmentFile.";
       }
+      {
+        # With no local cluster, the default Unix-socket DSN points at a socket
+        # that is never created. Require an explicit external DSN, or null so
+        # DATABASE_URL comes from environmentFile.
+        assertion = cfg.database.createLocally || cfg.databaseUrl != defaultDatabaseUrl;
+        message = "services.jamye-plz: with database.createLocally = false, set databaseUrl to the external DSN (or null + DATABASE_URL via environmentFile); the default Unix-socket DSN targets a local cluster that is not provisioned.";
+      }
     ];
 
     # ── Service user ────────────────────────────────────────────────────────
