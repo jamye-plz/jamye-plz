@@ -22,23 +22,24 @@ let
   defaultDatabaseUrl =
     "postgresql+asyncpg://${cfg.database.user}@/${cfg.database.name}?host=/run/postgresql";
 
-  # Env shared by the backend and migration units. Secrets arrive via
-  # environmentFile. APP_ENV is NOT set here — see the wrappers below.
-  commonEnv = {
-    DATABASE_URL = cfg.databaseUrl;
-  };
-
-  # APP_ENV=production is exported inside the ExecStart wrapper rather than via
-  # Environment=, because systemd's EnvironmentFile= overrides Environment=, so a
-  # supplied env file containing APP_ENV=development (e.g. copied from
-  # .env.example) would silently disable the production security guards. Setting
-  # it after the env file is loaded, right before exec, makes it authoritative.
-  startBackend = pkgs.writeShellScript "jamye-plz-backend-start" ''
+  # APP_ENV and DATABASE_URL are exported inside the ExecStart wrappers rather
+  # than via Environment=, because systemd's EnvironmentFile= overrides
+  # Environment=. A supplied env file (e.g. copied from .env.example) carrying
+  # APP_ENV=development or a TCP/password DATABASE_URL would otherwise silently
+  # disable the production guards or bypass the peer-auth socket DSN. Exporting
+  # after the env file is loaded, right before exec, makes them authoritative.
+  # (DATABASE_URL is configured via services.jamye-plz.databaseUrl, NOT the
+  # secrets file; the default peer-auth DSN carries no password.)
+  exports = ''
     export APP_ENV=production
+    export DATABASE_URL=${lib.escapeShellArg cfg.databaseUrl}
+  '';
+  startBackend = pkgs.writeShellScript "jamye-plz-backend-start" ''
+    ${exports}
     exec ${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}
   '';
   startMigrate = pkgs.writeShellScript "jamye-plz-migrate-start" ''
-    export APP_ENV=production
+    ${exports}
     exec ${pkg.backend}/bin/alembic upgrade head
   '';
 in
@@ -158,7 +159,6 @@ in
       requires = lib.optional cfg.database.createLocally "postgresql.service";
       before = [ "jamye-plz-backend.service" ];
       wantedBy = [ "multi-user.target" ];
-      environment = commonEnv;
       serviceConfig = {
         Type = "oneshot";
         User = cfg.user;
@@ -177,7 +177,6 @@ in
       requires = [ "jamye-plz-migrate.service" ]
         ++ lib.optional cfg.database.createLocally "postgresql.service";
       wantedBy = [ "multi-user.target" ];
-      environment = commonEnv;
       serviceConfig = {
         User = cfg.user;
         Group = cfg.user;

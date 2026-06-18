@@ -13,6 +13,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Insecure default signing key; rejected in production by _require_prod_secrets.
 DEV_JWT_SECRET = "dev-secret-please-change-in-production"
 
+# Public placeholder secrets that must never reach production. Mirror any
+# JWT_SECRET sample published in backend/.env.example here.
+INSECURE_JWT_SECRETS = frozenset(
+    {
+        DEV_JWT_SECRET,
+        "change-me-to-a-random-256-bit-secret",  # backend/.env.example placeholder
+    }
+)
+_MIN_JWT_SECRET_LEN = 32
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -100,8 +110,16 @@ class Settings(BaseSettings):
         # signing key or an empty one (would make JWTs forgeable). This catches
         # a misrendered/incomplete secrets env file at startup, before the
         # backend serves traffic.
-        if self.is_production and (not self.jwt_secret or self.jwt_secret == DEV_JWT_SECRET):
-            raise ValueError("JWT_SECRET must be set to a non-default value when APP_ENV=production")
+        if self.is_production and (
+            not self.jwt_secret
+            or self.jwt_secret in INSECURE_JWT_SECRETS
+            or len(self.jwt_secret) < _MIN_JWT_SECRET_LEN
+        ):
+            raise ValueError(
+                "JWT_SECRET must be a unique high-entropy value "
+                f"(>= {_MIN_JWT_SECRET_LEN} chars, not a public placeholder) "
+                "when APP_ENV=production"
+            )
         return self
 
 
