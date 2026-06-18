@@ -4,3 +4,8 @@
 .agents/state/
 .agents/backup/
 .migration-backup/
+
+# Nix build artifacts
+result
+result-*
+.direnv/
