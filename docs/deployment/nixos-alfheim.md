@@ -12,7 +12,7 @@
                                             caddy (yggdrasil)  ← 여기서 TLS 종단
                                             (cloudflare DNS-ACME 인증서)
                                                     │  reverse_proxy
-                                                    │  http://alfheim.<tailnet>:8080
+                                                    │  http://alfheim.tail6fc192.ts.net:8080
                                         ─── tailnet (WireGuard) ───
                                                     │
                          ┌────────────────────── alfheim ───────────────────────┐
@@ -75,7 +75,7 @@ nix build .#frontend
 
 ```bash
 # alfheim의 SSH host key에서 age recipient 도출
-ssh-keyscan -t ed25519 alfheim.<tailnet>.ts.net | ssh-to-age
+ssh-keyscan -t ed25519 alfheim.tail6fc192.ts.net | ssh-to-age
 ```
 
 `.sops.yaml`에 추가:
@@ -121,8 +121,10 @@ jamye:
 ### `flake.nix` (homelab) — 입력 추가
 
 ```nix
-inputs.jamye-plz.url = "github:jamye-plz/jamye-plz";   # 또는 본인 fork/branch
-# inputs.jamye-plz.inputs.nixpkgs.follows = "nixpkgs"; # 선택: uv2nix는 자체 nixpkgs를 pin
+# 검증 단계: feat/nix-deploy 브랜치를 가리킴. main 병합 후 ?ref 제거.
+inputs.jamye-plz.url = "github:jamye-plz/jamye-plz?ref=feat/nix-deploy";
+# nixpkgs는 follows 하지 마세요 — uv2nix가 자체 nixpkgs(unstable)를 pin 합니다.
+# (백엔드/프론트는 jamye의 nixpkgs로, systemd/caddy/postgres 옵션은 homelab nixpkgs로 평가됩니다.)
 ```
 
 `inputs`를 호스트 모듈로 전달하세요(이 flake는 이미 호스트에 `specialArgs`/
@@ -174,7 +176,7 @@ inputs.jamye-plz.url = "github:jamye-plz/jamye-plz";   # 또는 본인 fork/bran
 
 ```nix
 virtualHosts."jamye-plz.ridewithmin.com".extraConfig = ''
-  reverse_proxy http://alfheim.<tailnet>.ts.net:8080
+  reverse_proxy http://alfheim.tail6fc192.ts.net:8080
 '';
 ```
 
