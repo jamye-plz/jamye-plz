@@ -22,7 +22,7 @@
   };
 
   # ⇣ Replace with the hash printed by the first `nix build .#frontend`.
-  nodeModulesHash = "sha256-f8qjLuYp+dG1PA+DXI8HJXcfqJIZzaMhMylKbY2CfJs=";
+  nodeModulesHash = lib.fakeHash;
 
   nodeModules = pkgs.stdenv.mkDerivation {
     pname = "jamye-frontend-node-modules";
@@ -30,6 +30,11 @@
     inherit src;
     nativeBuildInputs = [pkgs.bun];
     dontConfigure = true;
+    # A FOD output must not reference store paths. stdenv's fixupPhase would
+    # run patchShebangs (rewriting node_modules script shebangs to the store's
+    # bash) and strip — both inject store refs. Vendored node_modules needs
+    # neither, so skip fixup entirely.
+    dontFixup = true;
     buildPhase = ''
       runHook preBuild
       export HOME="$TMPDIR"
