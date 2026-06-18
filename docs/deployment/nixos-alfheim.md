@@ -19,8 +19,8 @@
                          │  caddy :8080  (auto_https off, 앱 내부 라우팅)         │
                          │    ├ /api/*  → 127.0.0.1:8000  (uvicorn, WS 포함)      │
                          │    └ /*      → 정적 SPA (Nix store), try_files          │
-                         │  jamye-backend.service (uvicorn)                       │
-                         │  jamye-migrate.service (alembic upgrade head, oneshot) │
+                         │  jamye-plz-backend.service (uvicorn)                       │
+                         │  jamye-plz-migrate.service (alembic upgrade head, oneshot) │
                          │  postgresql (로컬, Unix-socket peer 인증)              │
                          └────────────────────────────────────────────────────────┘
 ```
@@ -34,7 +34,7 @@
 - **데이터베이스**는 비밀번호 없는 Unix-socket peer 인증을 사용 — 암호화할 게 없습니다.
 
 이 리포가 제공하는 것: `packages.{backend,frontend,backendSrc}` 와
-`nixosModules.jamye`. 아래의 배선(wiring)은 **homelab** 리포에 들어갑니다.
+`nixosModules.jamye-plz`. 아래의 배선(wiring)은 **homelab** 리포에 들어갑니다.
 
 ---
 
@@ -45,7 +45,7 @@
 | `packages.<sys>.backend` | uv2nix virtualenv (`bin/uvicorn`, `bin/alembic`) |
 | `packages.<sys>.backendSrc` | 마이그레이션용 `alembic.ini` + `alembic/` |
 | `packages.<sys>.frontend` | 정적 SvelteKit SPA 빌드 |
-| `nixosModules.jamye` | systemd + Caddy + PostgreSQL 배선 |
+| `nixosModules.jamye-plz` | systemd + Caddy + PostgreSQL 배선 |
 
 ---
 
@@ -101,11 +101,11 @@ sops updatekeys secrets/*.yaml
 ### 3. jamye 시크릿 생성 (homelab 리포)
 
 ```bash
-sops secrets/jamye.yaml
+sops secrets/jamye-plz.yaml
 ```
 
 ```yaml
-jamye:
+jamye-plz:
   jwt_secret: "<openssl rand -hex 32>"
   kakao_client_id: "..."
   kakao_client_secret: ""        # Kakao 콘솔에서 "Client Secret"을 켰을 때만
@@ -131,45 +131,57 @@ inputs.jamye-plz.url = "github:jamye-plz/jamye-plz?ref=feat/nix-deploy";
 `extraSpecialArgs`를 쓰므로 그대로 재사용해 `hosts/alfheim/default.nix` 안에서
 `inputs.jamye-plz`가 보이게 합니다).
 
-### `hosts/alfheim/default.nix` — 모듈 import + 시크릿 렌더
+### `services/jamye-plz.nix` (신규) + `hosts/alfheim`에서 import
+
+add-service 규약대로 호스트에 직접 선언하지 않고 `services/jamye-plz.nix`에 모아
+선언한 뒤, alfheim에서 import 합니다. (`inputs`는 `specialArgs`로 모든 모듈에서
+보입니다.)
+
+**`services/jamye-plz.nix`** (신규):
 
 ```nix
 { config, inputs, ... }:
 {
-  imports = [
-    ./hardware-configuration.nix
-    ./disko.nix
-    inputs.jamye-plz.nixosModules.jamye
-  ];
+  imports = [ inputs.jamye-plz.nixosModules.default ];
 
   # 시크릿 → sops-nix가 렌더하는 env 파일
-  sops.secrets."jamye/jwt_secret"        = { sopsFile = ../../secrets/jamye.yaml; };
-  sops.secrets."jamye/kakao_client_id"   = { sopsFile = ../../secrets/jamye.yaml; };
-  sops.secrets."jamye/kakao_client_secret" = { sopsFile = ../../secrets/jamye.yaml; };
-  sops.secrets."jamye/google_client_id"  = { sopsFile = ../../secrets/jamye.yaml; };
-  sops.secrets."jamye/google_client_secret" = { sopsFile = ../../secrets/jamye.yaml; };
+  sops.secrets."jamye-plz/jwt_secret"          = { sopsFile = ../secrets/jamye-plz.yaml; };
+  sops.secrets."jamye-plz/kakao_client_id"     = { sopsFile = ../secrets/jamye-plz.yaml; };
+  sops.secrets."jamye-plz/kakao_client_secret" = { sopsFile = ../secrets/jamye-plz.yaml; };
+  sops.secrets."jamye-plz/google_client_id"    = { sopsFile = ../secrets/jamye-plz.yaml; };
+  sops.secrets."jamye-plz/google_client_secret"= { sopsFile = ../secrets/jamye-plz.yaml; };
 
-  sops.templates."jamye.env" = {
-    owner = "jamye";
-    restartUnits = [ "jamye-backend.service" ];
+  sops.templates."jamye-plz.env" = {
+    owner = "jamye";                              # 모듈의 services.jamye-plz.user 기본값
+    restartUnits = [ "jamye-plz-backend.service" ];
     content = ''
-      JWT_SECRET=${config.sops.placeholder."jamye/jwt_secret"}
-      KAKAO_CLIENT_ID=${config.sops.placeholder."jamye/kakao_client_id"}
-      KAKAO_CLIENT_SECRET=${config.sops.placeholder."jamye/kakao_client_secret"}
-      GOOGLE_CLIENT_ID=${config.sops.placeholder."jamye/google_client_id"}
-      GOOGLE_CLIENT_SECRET=${config.sops.placeholder."jamye/google_client_secret"}
+      JWT_SECRET=${config.sops.placeholder."jamye-plz/jwt_secret"}
+      KAKAO_CLIENT_ID=${config.sops.placeholder."jamye-plz/kakao_client_id"}
+      KAKAO_CLIENT_SECRET=${config.sops.placeholder."jamye-plz/kakao_client_secret"}
+      GOOGLE_CLIENT_ID=${config.sops.placeholder."jamye-plz/google_client_id"}
+      GOOGLE_CLIENT_SECRET=${config.sops.placeholder."jamye-plz/google_client_secret"}
       KAKAO_REDIRECT_URI=https://jamye-plz.ridewithmin.com/api/auth/kakao/callback
       GOOGLE_REDIRECT_URI=https://jamye-plz.ridewithmin.com/api/auth/google/callback
       FRONTEND_ORIGIN=https://jamye-plz.ridewithmin.com
     '';
   };
 
-  services.jamye = {
+  services.jamye-plz = {
     enable = true;
     listenPort = 8080;
-    environmentFile = config.sops.templates."jamye.env".path;
+    environmentFile = config.sops.templates."jamye-plz.env".path;
   };
 }
+```
+
+**`hosts/alfheim/default.nix`** — import 한 줄만 추가:
+
+```nix
+imports = [
+  ./hardware-configuration.nix
+  ./disko.nix
+  ../../services/jamye-plz.nix      # ← 추가
+];
 ```
 
 ### `services/ingress.nix` (yggdrasil) — virtualHost 1개
@@ -216,8 +228,8 @@ curl -fsS https://jamye-plz.ridewithmin.com/api/docs
 alfheim에서:
 
 ```bash
-systemctl status jamye-migrate jamye-backend caddy postgresql
-journalctl -u jamye-backend -f
+systemctl status jamye-plz-migrate jamye-plz-backend caddy postgresql
+journalctl -u jamye-plz-backend -f
 curl -fsS http://127.0.0.1:8000/api/docs            # 백엔드 직접
 curl -fsS http://127.0.0.1:8080/                    # 로컬 caddy
 ```

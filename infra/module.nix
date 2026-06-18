@@ -6,8 +6,8 @@
 # host, reachable over the tailnet (tailscale0 is a trusted firewall interface),
 # which the ingress node reverse-proxies to.
 #
-#   imports = [ inputs.jamye-plz.nixosModules.jamye ];
-#   services.jamye = {
+#   imports = [ inputs.jamye-plz.nixosModules.default ];
+#   services.jamye-plz = {
 #     enable = true;
 #     listenPort = 8080;                       # ingress → http://<host>.tailnet:8080
 #     environmentFile = config.sops.templates."jamye.env".path;  # secrets
@@ -15,10 +15,10 @@
 { self }:
 { config, lib, pkgs, ... }:
 let
-  cfg = config.services.jamye;
+  cfg = config.services.jamye-plz;
   pkg = self.packages.${pkgs.system};
 
-  # No-password connection: Unix-socket peer auth (OS user jamye → DB role jamye).
+  # No-password connection: Unix-socket peer auth (OS user → DB role of same name).
   defaultDatabaseUrl =
     "postgresql+asyncpg://${cfg.database.user}@/${cfg.database.name}?host=/run/postgresql";
 
@@ -30,7 +30,7 @@ let
   };
 in
 {
-  options.services.jamye = {
+  options.services.jamye-plz = {
     enable = lib.mkEnableOption "the jamye-plz application stack";
 
     listenPort = lib.mkOption {
@@ -47,7 +47,7 @@ in
 
     stateDir = lib.mkOption {
       type = lib.types.path;
-      default = "/var/lib/jamye";
+      default = "/var/lib/jamye-plz";
       description = "Writable state directory for the backend service.";
     };
 
@@ -114,11 +114,11 @@ in
     };
 
     # ── Migrations (alembic upgrade head), before the backend starts ────────
-    systemd.services.jamye-migrate = {
+    systemd.services.jamye-plz-migrate = {
       description = "jamye-plz database migrations (alembic upgrade head)";
       after = [ "network.target" ] ++ lib.optional cfg.database.createLocally "postgresql.service";
       requires = lib.optional cfg.database.createLocally "postgresql.service";
-      before = [ "jamye-backend.service" ];
+      before = [ "jamye-plz-backend.service" ];
       wantedBy = [ "multi-user.target" ];
       environment = commonEnv;
       serviceConfig = {
@@ -132,11 +132,11 @@ in
     };
 
     # ── Backend (uvicorn) ───────────────────────────────────────────────────
-    systemd.services.jamye-backend = {
+    systemd.services.jamye-plz-backend = {
       description = "jamye-plz FastAPI backend (uvicorn)";
-      after = [ "network.target" "jamye-migrate.service" ]
+      after = [ "network.target" "jamye-plz-migrate.service" ]
         ++ lib.optional cfg.database.createLocally "postgresql.service";
-      requires = [ "jamye-migrate.service" ]
+      requires = [ "jamye-plz-migrate.service" ]
         ++ lib.optional cfg.database.createLocally "postgresql.service";
       wantedBy = [ "multi-user.target" ];
       environment = commonEnv;
@@ -148,7 +148,7 @@ in
         ExecStart = "${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}";
         Restart = "on-failure";
         RestartSec = 2;
-        StateDirectory = "jamye";
+        StateDirectory = "jamye-plz";
         # Hardening
         NoNewPrivileges = true;
         ProtectSystem = "strict";

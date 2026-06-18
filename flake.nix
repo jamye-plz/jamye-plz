@@ -52,10 +52,10 @@
     });
 
     # Importable NixOS module — wire into an existing host config:
-    #   imports = [ inputs.jamye-plz.nixosModules.jamye ];
-    #   services.jamye = { enable = true; ... };
-    nixosModules.jamye = import ./infra/module.nix {inherit self;};
-    nixosModules.default = self.nixosModules.jamye;
+    #   imports = [ inputs.jamye-plz.nixosModules.default ];
+    #   services.jamye-plz = { enable = true; ... };
+    nixosModules.jamye-plz = import ./infra/module.nix {inherit self;};
+    nixosModules.default = self.nixosModules.jamye-plz;
 
     formatter = forAllSystems (system: (pkgsFor system).nixpkgs-fmt);
   };
