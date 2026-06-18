@@ -20,12 +20,22 @@
   # ship wheels, so no compilers are pulled in for the common case.
   overlay = workspace.mkPyprojectOverlay {sourcePreference = "wheel";};
 
-  # Per-package build-system fixups. Most wheels need nothing. If a future
-  # sdist-only dependency fails with "no build backend", add an override here,
-  # e.g.  somepkg = prev.somepkg.overrideAttrs (o: {
-  #          nativeBuildInputs = (o.nativeBuildInputs or []) ++ [ final.setuptools ];
-  #        });
-  pyprojectOverrides = _final: _prev: {};
+  # Per-package build-system fixups for sdist-only deps that build from source
+  # but don't declare their build backend in [build-system].requires.
+  #
+  # http-ece is the only sdist-only dependency (via pywebpush). It builds with
+  # legacy setuptools but never declares it, so the isolated build fails with
+  # "ModuleNotFoundError: No module named 'setuptools'". Inject setuptools+wheel.
+  pyprojectOverrides = final: _prev: {
+    http-ece = _prev.http-ece.overrideAttrs (old: {
+      nativeBuildInputs =
+        (old.nativeBuildInputs or [])
+        ++ final.resolveBuildSystem {
+          setuptools = [];
+          wheel = [];
+        };
+    });
+  };
 
   pythonSet =
     (pkgs.callPackage pyproject-nix.build.packages {inherit python;}).overrideScope
