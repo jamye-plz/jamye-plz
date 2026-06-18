@@ -127,11 +127,14 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _reject_localhost_public_urls(self) -> "Settings":
-        # In production these are the localhost dev defaults if the secrets/env
-        # file forgot to set them. FRONTEND_ORIGIN drives the post-login redirect
-        # + CORS; the redirect URIs are sent to the OAuth providers. Localhost
-        # there means broken/round-trip-to-localhost logins — fail closed.
+    def _require_secure_prod_urls(self) -> "Settings":
+        # Fail closed on dev-leftover URLs in production:
+        # - public web URLs (Secure cookies + OAuth redirects) must be HTTPS and
+        #   not localhost, else the Secure cookie can't be set / the browser is
+        #   bounced to an HTTP/localhost page and the session is lost;
+        # - DATABASE_URL must not be the localhost dev default (e.g. an external
+        #   databaseUrl=null deploy that forgot to supply it falls back to it),
+        #   else the app silently runs against the wrong database.
         if not self.is_production:
             return self
         offenders = [
@@ -141,11 +144,14 @@ class Settings(BaseSettings):
                 ("KAKAO_REDIRECT_URI", self.kakao_redirect_uri, self.kakao_enabled),
                 ("GOOGLE_REDIRECT_URI", self.google_redirect_uri, self.google_enabled),
             )
-            if used and _is_localhost(value)
+            if used and (_is_localhost(value) or not value.startswith("https://"))
         ]
+        if _is_localhost(self.database_url):
+            offenders.append("DATABASE_URL")
         if offenders:
             raise ValueError(
-                f"{', '.join(offenders)} must not point at localhost when APP_ENV=production"
+                f"{', '.join(offenders)} must use HTTPS and a non-localhost host "
+                "when APP_ENV=production"
             )
         return self
 
