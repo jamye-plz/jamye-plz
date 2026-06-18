@@ -22,18 +22,22 @@ let
   defaultDatabaseUrl =
     "postgresql+asyncpg://${cfg.database.user}@/${cfg.database.name}?host=/run/postgresql";
 
-  # APP_ENV and DATABASE_URL are exported inside the ExecStart wrappers rather
-  # than via Environment=, because systemd's EnvironmentFile= overrides
-  # Environment=. A supplied env file (e.g. copied from .env.example) carrying
-  # APP_ENV=development or a TCP/password DATABASE_URL would otherwise silently
-  # disable the production guards or bypass the peer-auth socket DSN. Exporting
-  # after the env file is loaded, right before exec, makes them authoritative.
-  # (DATABASE_URL is configured via services.jamye-plz.databaseUrl, NOT the
-  # secrets file; the default peer-auth DSN carries no password.)
-  exports = ''
-    export APP_ENV=production
-    export DATABASE_URL=${lib.escapeShellArg cfg.databaseUrl}
-  '';
+  # APP_ENV (and the non-secret default DATABASE_URL) are exported inside the
+  # ExecStart wrappers rather than via Environment=, because systemd's
+  # EnvironmentFile= overrides Environment=. A supplied env file (e.g. copied
+  # from .env.example) carrying APP_ENV=development or a TCP/password
+  # DATABASE_URL would otherwise silently disable the production guards or
+  # bypass the peer-auth socket DSN. Exporting after the env file is loaded,
+  # right before exec, makes them authoritative.
+  #
+  # DATABASE_URL is exported here ONLY when databaseUrl != null (the default
+  # peer-auth DSN, which has no password). For an external DB whose DSN carries
+  # credentials, set databaseUrl = null and put DATABASE_URL in environmentFile
+  # so the secret never enters the world-readable Nix store / binary caches.
+  exports =
+    "export APP_ENV=production\n"
+    + lib.optionalString (cfg.databaseUrl != null)
+      "export DATABASE_URL=${lib.escapeShellArg cfg.databaseUrl}\n";
   startBackend = pkgs.writeShellScript "jamye-plz-backend-start" ''
     ${exports}
     exec ${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}
@@ -83,9 +87,15 @@ in
     };
 
     databaseUrl = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.nullOr lib.types.str;
       default = defaultDatabaseUrl;
-      description = "SQLAlchemy async DSN. Default uses a passwordless Unix-socket peer connection.";
+      description = ''
+        Non-secret SQLAlchemy async DSN, exported into the unit's environment.
+        Default is a passwordless Unix-socket peer connection. For an external
+        database whose DSN carries credentials, set this to null and provide
+        DATABASE_URL via environmentFile instead, so the password never enters
+        the world-readable Nix store.
+      '';
     };
 
     database = {
@@ -122,6 +132,21 @@ in
           !(cfg.database.createLocally && cfg.databaseUrl == defaultDatabaseUrl)
           || cfg.database.user == cfg.user;
         message = "services.jamye-plz: with the default peer-auth DSN, database.user must equal user (the units run as `user` but connect as `database.user`).";
+      }
+      {
+        # databaseUrl is exported into the Nix store, so it must not embed a
+        # password (userinfo `user:pass@`). Credentialed DSNs belong in
+        # environmentFile (set databaseUrl = null).
+        assertion =
+          cfg.databaseUrl == null
+          || builtins.match ".*://[^/@]*:[^/@]*@.*" cfg.databaseUrl == null;
+        message = "services.jamye-plz.databaseUrl must not contain a password (it is written to the world-readable Nix store). Set databaseUrl = null and pass a credentialed DATABASE_URL via environmentFile.";
+      }
+      {
+        # A local peer-auth DB needs the socket DSN exported; null would leave
+        # the backend with no DATABASE_URL (or a stale config default).
+        assertion = !cfg.database.createLocally || cfg.databaseUrl != null;
+        message = "services.jamye-plz: database.createLocally needs databaseUrl set (the peer-auth socket DSN). Leave it at the default, or set createLocally = false for an external DB via environmentFile.";
       }
     ];
 
