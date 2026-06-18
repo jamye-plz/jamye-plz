@@ -7,8 +7,11 @@ deterministic local fallbacks so the demo works without provisioning.
 
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Insecure default signing key; rejected in production by _require_prod_secrets.
+DEV_JWT_SECRET = "dev-secret-please-change-in-production"
 
 
 class Settings(BaseSettings):
@@ -23,7 +26,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://jamye:password@localhost:5432/jamye"
 
     # ── JWT ──────────────────────────────────────────────────────────────────
-    jwt_secret: str = "dev-secret-please-change-in-production"
+    jwt_secret: str = DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_expire_seconds: int = 604800  # 7 days
 
@@ -90,6 +93,16 @@ class Settings(BaseSettings):
         if not v.startswith(("postgresql", "sqlite")):
             raise ValueError("DATABASE_URL must start with postgresql or sqlite")
         return v
+
+    @model_validator(mode="after")
+    def _require_prod_secrets(self) -> "Settings":
+        # Fail closed: in production the app must never run on the public dev
+        # signing key or an empty one (would make JWTs forgeable). This catches
+        # a misrendered/incomplete secrets env file at startup, before the
+        # backend serves traffic.
+        if self.is_production and (not self.jwt_secret or self.jwt_secret == DEV_JWT_SECRET):
+            raise ValueError("JWT_SECRET must be set to a non-default value when APP_ENV=production")
+        return self
 
 
 @lru_cache

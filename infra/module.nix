@@ -22,12 +22,25 @@ let
   defaultDatabaseUrl =
     "postgresql+asyncpg://${cfg.database.user}@/${cfg.database.name}?host=/run/postgresql";
 
-  # Env shared by the backend and migration units. APP_ENV=production turns on
-  # production behaviour (e.g. Secure cookies). Secrets arrive via environmentFile.
+  # Env shared by the backend and migration units. Secrets arrive via
+  # environmentFile. APP_ENV is NOT set here — see the wrappers below.
   commonEnv = {
     DATABASE_URL = cfg.databaseUrl;
-    APP_ENV = "production";
   };
+
+  # APP_ENV=production is exported inside the ExecStart wrapper rather than via
+  # Environment=, because systemd's EnvironmentFile= overrides Environment=, so a
+  # supplied env file containing APP_ENV=development (e.g. copied from
+  # .env.example) would silently disable the production security guards. Setting
+  # it after the env file is loaded, right before exec, makes it authoritative.
+  startBackend = pkgs.writeShellScript "jamye-plz-backend-start" ''
+    export APP_ENV=production
+    exec ${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}
+  '';
+  startMigrate = pkgs.writeShellScript "jamye-plz-migrate-start" ''
+    export APP_ENV=production
+    exec ${pkg.backend}/bin/alembic upgrade head
+  '';
 in
 {
   options.services.jamye-plz = {
@@ -152,7 +165,7 @@ in
         Group = cfg.user;
         WorkingDirectory = pkg.backendSrc;
         EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
-        ExecStart = "${pkg.backend}/bin/alembic upgrade head";
+        ExecStart = startMigrate;
       };
     };
 
@@ -170,7 +183,7 @@ in
         Group = cfg.user;
         WorkingDirectory = cfg.stateDir;
         EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
-        ExecStart = "${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}";
+        ExecStart = startBackend;
         Restart = "on-failure";
         RestartSec = 2;
         # Hardening
