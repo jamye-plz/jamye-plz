@@ -21,9 +21,17 @@
       !(builtins.elem base ["node_modules" "build" ".svelte-kit" ".vercel" ".vite"]);
   };
 
-  # bun-install FOD hash (aarch64-linux). Regenerate if package.json/bun.lock
-  # change: set to lib.fakeHash, `nix build .#frontend`, paste the new `got:`.
-  nodeModulesHash = "sha256-TyY2GGs/SL2/rtavzggUo/pCVuKTTQ8bw8gG5lT7hDA=";
+  # bun-install FOD hash, keyed by target system. bun.lock pulls OS/CPU-gated
+  # native optionals (@rollup/rollup-linux-*-gnu, @tailwindcss/oxide-linux-*-gnu),
+  # so the node_modules tree — and thus this hash — is architecture-dependent.
+  # Add an entry after building on a new arch (set to lib.fakeHash, build, paste
+  # the `got:`). Unlisted systems fail fast with a clear message.
+  nodeModulesHashes = {
+    aarch64-linux = "sha256-TyY2GGs/SL2/rtavzggUo/pCVuKTTQ8bw8gG5lT7hDA=";
+  };
+  nodeModulesHash =
+    nodeModulesHashes.${pkgs.system}
+      or (throw "jamye-frontend: no node_modules hash for '${pkgs.system}'. Build it (lib.fakeHash → nix build .#frontend) and add the got: hash to nodeModulesHashes in infra/frontend.nix.");
 
   nodeModules = pkgs.stdenv.mkDerivation {
     pname = "jamye-frontend-node-modules";

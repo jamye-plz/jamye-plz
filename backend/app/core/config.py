@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     def vapid_enabled(self) -> bool:
         return bool(self.vapid_private_key and self.vapid_public_key)
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == "production"
+
     @field_validator("database_url")
     @classmethod
     def validate_db_url(cls, v: str) -> str:

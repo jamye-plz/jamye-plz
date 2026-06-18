@@ -92,6 +92,25 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # ── Safety assertions ───────────────────────────────────────────────────
+    assertions = [
+      {
+        # The service always runs APP_ENV=production; without secrets the
+        # backend falls back to the public dev JWT secret and empty OAuth keys
+        # (→ forgeable tokens + stub logins). Require an env file.
+        assertion = cfg.environmentFile != null;
+        message = "services.jamye-plz.environmentFile must be set: production needs a real JWT_SECRET and OAuth keys, otherwise the backend uses insecure dev defaults.";
+      }
+      {
+        # Default DSN is passwordless Unix-socket peer auth, so the OS user the
+        # units run as (cfg.user) must equal the DB role (cfg.database.user).
+        assertion =
+          !(cfg.database.createLocally && cfg.databaseUrl == defaultDatabaseUrl)
+          || cfg.database.user == cfg.user;
+        message = "services.jamye-plz: with the default peer-auth DSN, database.user must equal user (the units run as `user` but connect as `database.user`).";
+      }
+    ];
+
     # ── Service user ────────────────────────────────────────────────────────
     users.users.${cfg.user} = {
       isSystemUser = true;
@@ -99,6 +118,12 @@ in
       home = cfg.stateDir;
     };
     users.groups.${cfg.user} = { };
+
+    # State directory. Derived from the option (StateDirectory= is hard-coded to
+    # /var/lib/<name>, so it would not follow an overridden stateDir).
+    systemd.tmpfiles.rules = [
+      "d ${cfg.stateDir} 0750 ${cfg.user} ${cfg.user} -"
+    ];
 
     # ── PostgreSQL (local, peer auth) ───────────────────────────────────────
     services.postgresql = lib.mkIf cfg.database.createLocally {
@@ -148,7 +173,6 @@ in
         ExecStart = "${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}";
         Restart = "on-failure";
         RestartSec = 2;
-        StateDirectory = "jamye-plz";
         # Hardening
         NoNewPrivileges = true;
         ProtectSystem = "strict";
@@ -165,6 +189,16 @@ in
       enable = true;
       virtualHosts.":${toString cfg.listenPort}".extraConfig = ''
         encode zstd gzip
+
+        # Cross-origin isolation for on-device AI (multithreaded WASM /
+        # SharedArrayBuffer → self.crossOriginIsolated), per
+        # docs/architecture/{deployment,on-device-ai}.md. COEP=credentialless
+        # (not require-corp) so cross-origin avatar images (Kakao/Google profile
+        # photos) keep loading without CORP headers.
+        header {
+          Cross-Origin-Opener-Policy "same-origin"
+          Cross-Origin-Embedder-Policy "credentialless"
+        }
 
         @api path /api/*
         handle @api {
