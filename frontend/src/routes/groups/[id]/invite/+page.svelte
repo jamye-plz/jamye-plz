@@ -6,6 +6,8 @@
 	import { browser } from '$app/environment';
 	import { createInvite, getMembers } from '$lib/api/group.api';
 	import { ApiError } from '$lib/api/client';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Check from '@lucide/svelte/icons/check';
 
 	// Always defined for the [id] route; assert so dependent calls stay typed.
 	const groupId = $derived(page.params.id!);
@@ -103,9 +105,14 @@
 					<code class="flex-1 font-mono text-sm text-text-primary break-all">{inviteLink(invite.data.code)}</code>
 					<button
 						onclick={() => copyLink(invite.data!.code)}
-						class="shrink-0 px-3 py-1.5 rounded-lg bg-surface-elevated border border-border text-text-secondary text-sm hover:text-text-primary transition-colors focus-visible:outline-2 focus-visible:outline-accent"
+						aria-label={copied ? '복사됨' : '링크 복사'}
+						class="shrink-0 p-2 rounded-lg bg-surface-elevated border border-border text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-2 focus-visible:outline-accent"
 					>
-						{copied ? '복사됨' : '복사'}
+						{#if copied}
+							<Check class="w-4 h-4 text-accent" />
+						{:else}
+							<Copy class="w-4 h-4" />
+						{/if}
 					</button>
 				</div>
 				{#if canShare}
