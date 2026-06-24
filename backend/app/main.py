@@ -170,9 +170,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             ws_hub.leave(active_chatroom, websocket)
                         active_chatroom = chatroom_id
                         ws_hub.join(chatroom_id, websocket)
-                        await websocket.send_json(
-                            {"type": "system", "body": f"Joined chatroom {chatroom_id}"}
-                        )
+                        # No join ack: it surfaced as a "Joined chatroom <uuid>"
+                        # system line in the room. Errors still report via "error".
                     except AppError as exc:
                         await websocket.send_json({"type": "error", "detail": exc.detail})
                     break
