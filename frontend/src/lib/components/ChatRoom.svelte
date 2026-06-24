@@ -40,7 +40,13 @@
 			chatroomId
 				? listMessages(groupId, chatroomId)
 				: Promise.resolve({ items: [], next_cursor: null }),
-		enabled: !!chatroomId
+		enabled: !!chatroomId,
+		// Live messages arrive over WS into local state, not this cache, so a
+		// cached page goes stale the moment anyone sends a message. Always refetch
+		// when re-entering a room so the history reflects the latest server state
+		// (otherwise a just-sent message is missing until a hard refresh).
+		staleTime: 0,
+		refetchOnMount: 'always'
 	}));
 
 	let messages = $state<ChatMessage[]>([]);
