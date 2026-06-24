@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.core import ws_hub
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.routers import (
@@ -89,10 +90,8 @@ app.include_router(notifications.router, prefix=API_PREFIX)
 
 
 # ── WebSocket /api/ws ─────────────────────────────────────────────────────────
-
-# Connection registry + broadcast live in app.core.ws_hub so HTTP handlers
-# (e.g. new-topic reminders) can fan out to the same subscribers.
-from app.core import ws_hub
+# Connection registry + broadcast live in app.core.ws_hub (imported at the top)
+# so HTTP handlers (e.g. new-topic reminders) can fan out to the same subscribers.
 
 
 @app.websocket("/api/ws")
@@ -118,7 +117,6 @@ async def websocket_endpoint(websocket: WebSocket):
     from app.db.session import get_db
     from app.repositories.user_repository import UserRepository
     from app.services.chat_service import ChatService
-    from app.services.group_service import GroupService
     from app.core.exceptions import MessageIdempotencyError
 
     token = websocket.cookies.get("access_token")
@@ -164,7 +162,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 async for db in get_db():
                     try:
                         chat_svc = ChatService(db)
-                        chatroom = await chat_svc.require_member_access(chatroom_id, user_id)
+                        await chat_svc.require_member_access(chatroom_id, user_id)
                         # Leave previous chatroom
                         if active_chatroom and active_chatroom != chatroom_id:
                             ws_hub.leave(active_chatroom, websocket)
