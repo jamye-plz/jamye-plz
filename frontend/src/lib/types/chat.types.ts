@@ -9,8 +9,6 @@ export interface ChatMessage {
 	body: string;
 	type: MessageType;
 	created_at: string;
-	// Deep-link to a topic chatroom (set on the new-topic announcement message).
-	topic_id?: string | null;
 	// For optimistic messages awaiting ack
 	client_msg_id?: string;
 	pending?: boolean;
@@ -38,7 +36,6 @@ export type WsServerMessage =
 			client_msg_id: string | null;
 			body: string;
 			msg_type: MessageType;
-			topic_id?: string | null;
 			created_at: string;
 	  }
 	| { type: 'duplicate'; client_msg_id: string }

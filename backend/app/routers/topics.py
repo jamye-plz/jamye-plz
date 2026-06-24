@@ -28,13 +28,13 @@ async def create_topic(
     )
 
     # New-topic announcement (T11): the author posts a message into the group main
-    # chat that deep-links to the new topic's chatroom; also create in-app notifications.
+    # chat with an inline markdown link to the new topic's chatroom (rendered by
+    # the client); also create in-app notifications.
     chat_svc = ChatService(db)
     main = await chat_svc.get_main_chatroom(group_id)
-    announce = f"새로운 주제를 올렸어요: {topic.title}"
-    msg = await chat_svc.post_user_message(
-        main.id, sender_id=current_user.id, body=announce, topic_id=topic.id
-    )
+    chat_path = f"/groups/{group_id}/topics/{topic.id}/chat"
+    announce = f"새로운 주제를 올렸어요: [{topic.title}]({chat_path})"
+    msg = await chat_svc.post_user_message(main.id, sender_id=current_user.id, body=announce)
     await ws_hub.broadcast(
         main.id,
         {
@@ -47,7 +47,6 @@ async def create_topic(
             "client_msg_id": None,
             "body": msg.body,
             "msg_type": msg.type,
-            "topic_id": msg.topic_id,
             "created_at": msg.created_at.isoformat(),
         },
     )

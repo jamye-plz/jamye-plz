@@ -120,7 +120,6 @@
 						sender_avatar_url: data.sender_avatar_url ?? undefined,
 						body: data.body,
 						type: data.msg_type,
-						topic_id: data.topic_id ?? null,
 						created_at: data.created_at,
 						client_msg_id: data.client_msg_id ?? undefined
 					};
@@ -247,6 +246,28 @@
 		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 	}
 
+	// Split a message body into text + link segments: markdown links [text](href)
+	// and bare http(s) URLs. Internal hrefs (starting with "/") navigate via the
+	// SPA; external ones open in a new tab.
+	type BodySeg = { text: string; href?: string; internal?: boolean };
+	function linkify(body: string): BodySeg[] {
+		const segs: BodySeg[] = [];
+		const re = /\[([^\]]+)\]\((\/[^\s)]+|https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s]+)/g;
+		let last = 0;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(body)) !== null) {
+			if (m.index > last) segs.push({ text: body.slice(last, m.index) });
+			if (m[1] !== undefined) {
+				segs.push({ text: m[1], href: m[2], internal: m[2].startsWith('/') });
+			} else {
+				segs.push({ text: m[3], href: m[3], internal: false });
+			}
+			last = re.lastIndex;
+		}
+		if (last < body.length) segs.push({ text: body.slice(last) });
+		return segs;
+	}
+
 	// Local calendar-day key, so date dividers match the locally rendered times.
 	function ymd(iso: string): string {
 		const d = new Date(iso);
@@ -291,6 +312,23 @@
 		return name?.trim()?.[0]?.toUpperCase() ?? '?';
 	}
 </script>
+
+{#snippet messageBody(body: string, linkClass: string)}
+	{#each linkify(body) as seg}
+		{#if seg.href && seg.internal}
+			<a
+				href={seg.href}
+				onclick={(e) => {
+					e.preventDefault();
+					goto(seg.href!);
+				}}
+				class={linkClass}>{seg.text}</a
+			>
+		{:else if seg.href}
+			<a href={seg.href} target="_blank" rel="noopener noreferrer" class={linkClass}>{seg.text}</a>
+		{:else}{seg.text}{/if}
+	{/each}
+{/snippet}
 
 <div class="flex flex-col h-screen bg-background">
 	<header
@@ -368,7 +406,9 @@
 					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
-							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
+							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full"
+								>{@render messageBody(msg.body, 'underline underline-offset-2 hover:opacity-80')}</span
+							>
 						</div>
 					{:else if isMine(msg)}
 						<div class="flex items-end justify-end gap-1.5">
@@ -378,16 +418,7 @@
 							<div
 								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
-								{msg.body}
-								{#if msg.topic_id}
-									<button
-										type="button"
-										onclick={() => goto(`/groups/${groupId}/topics/${msg.topic_id}/chat`)}
-										class="mt-1.5 block text-xs font-medium text-white/90 hover:underline focus-visible:outline-2 focus-visible:outline-white rounded"
-									>
-										주제 채팅 열기 →
-									</button>
-								{/if}
+								{@render messageBody(msg.body, 'underline underline-offset-2 hover:opacity-80')}
 							</div>
 						</div>
 					{:else}
@@ -418,16 +449,7 @@
 									<div
 										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
 									>
-										{msg.body}
-										{#if msg.topic_id}
-											<button
-												type="button"
-												onclick={() => goto(`/groups/${groupId}/topics/${msg.topic_id}/chat`)}
-												class="mt-1.5 block text-xs font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent rounded"
-											>
-												주제 채팅 열기 →
-											</button>
-										{/if}
+										{@render messageBody(msg.body, 'text-accent underline underline-offset-2 hover:opacity-80')}
 									</div>
 									{#if showTime(i)}
 										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
