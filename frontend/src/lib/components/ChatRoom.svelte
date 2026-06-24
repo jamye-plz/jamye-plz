@@ -235,13 +235,15 @@
 		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 	}
 
-	// Avatar + nickname show only on the first message of a same-sender run.
+	// Avatar + nickname head each (sender, minute) group — a new header starts on
+	// a sender change OR a new minute, so the sender is shown per minute block,
+	// matching the minute-grouped timestamps below.
 	function showHeader(i: number): boolean {
 		const m = messages[i];
 		if (m.type === 'system') return false;
 		const prev = messages[i - 1];
 		if (!prev || prev.type === 'system') return true;
-		return prev.sender_id !== m.sender_id;
+		return prev.sender_id !== m.sender_id || hm(prev.created_at) !== hm(m.created_at);
 	}
 
 	// Time shows only on the last message of a same-minute run (dedupe HH:MM).
