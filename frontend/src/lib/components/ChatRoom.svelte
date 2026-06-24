@@ -112,6 +112,7 @@
 		socket.onmessage = (event) => {
 			try {
 				const data: WsServerMessage = JSON.parse(event.data as string);
+					const stick = isNearBottom();
 				if (data.type === 'message') {
 					const msg: ChatMessage = {
 						id: data.id,
@@ -128,7 +129,7 @@
 						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
 						: -1;
 					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
-					scrollToBottom();
+					if (stick) tick().then(scrollToBottom);
 				} else if (data.type === 'system') {
 					// e.g. "A posted a new topic!" reminder in the group main chat.
 					messages = [
@@ -142,7 +143,7 @@
 							created_at: data.created_at ?? new Date().toISOString()
 						}
 					];
-					scrollToBottom();
+					if (stick) tick().then(scrollToBottom);
 				}
 			} catch {
 				// ignore parse errors
@@ -160,6 +161,14 @@
 			ws = null;
 		};
 	});
+
+	// True when the viewport is at/near the newest message — used to decide
+	// whether a live message should auto-scroll (stick) or preserve the reader's
+	// position while they browse older history.
+	function isNearBottom(): boolean {
+		if (!messagesEl) return true;
+		return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+	}
 
 	function scrollToBottom() {
 		if (messagesEl) {
