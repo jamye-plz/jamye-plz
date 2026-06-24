@@ -2,6 +2,7 @@
 	import '../app.css';
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { onDestroy, onMount } from 'svelte';
+	import { page } from '$app/state';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
 	let { children } = $props();
@@ -32,9 +33,9 @@
 	});
 
 	// ── Pull-to-refresh (mobile) ───────────────────────────────────────────────
-	// Drag down past the top of a page-scrolled view to reload. Skipped when the
-	// gesture starts inside an inner scroll container (e.g. the chat history,
-	// which owns its own scroll-up-to-load-older), so the two don't fight.
+	// Drag down past the top of a page to reload. Enabled on every page EXCEPT the
+	// chat room: chat is live over WebSocket and scroll-up already pages in older
+	// history, so a reload gesture there would only fight those.
 	const PTR_TRIGGER = 64; // px of (resisted) pull needed to fire
 	const PTR_MAX = 110;
 	let pullY = $state(0);
@@ -42,22 +43,12 @@
 	let startY = 0;
 	let armed = false;
 
-	function innerScrollableAt(el: Element | null): boolean {
-		let node: Element | null = el;
-		while (node && node !== document.body && node !== document.documentElement) {
-			const oy = getComputedStyle(node).overflowY;
-			if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) {
-				return true;
-			}
-			node = node.parentElement;
-		}
-		return false;
-	}
+	// Chat routes own their own scroll; both end in "/chat".
+	const isChatRoute = $derived(page.route.id?.endsWith('/chat') ?? false);
 
 	function onTouchStart(e: TouchEvent) {
 		armed = false;
-		if (refreshing || e.touches.length !== 1) return;
-		if (innerScrollableAt(e.target as Element)) return; // let the inner list scroll
+		if (refreshing || isChatRoute || e.touches.length !== 1) return;
 		const sc = document.scrollingElement ?? document.documentElement;
 		if (sc.scrollTop > 0) return;
 		startY = e.touches[0].clientY;
