@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 
 from app.core.deps import CurrentUser, DbSession
-from app.schemas.group import GroupCreate, GroupOut, MembershipOut
+from app.schemas.group import GroupCreate, GroupMemberOut, GroupOut
 from app.services.group_service import GroupService
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -39,8 +39,8 @@ async def get_group(group_id: str, current_user: CurrentUser, db: DbSession):
     return await _to_group_out(svc, group)
 
 
-@router.get("/{group_id}/members", response_model=list[MembershipOut])
+@router.get("/{group_id}/members", response_model=list[GroupMemberOut])
 async def list_group_members(group_id: str, current_user: CurrentUser, db: DbSession):
     svc = GroupService(db)
     await svc.require_membership(group_id, current_user.id)
-    return await svc.list_members(group_id)
+    return await svc.list_members_out(group_id)

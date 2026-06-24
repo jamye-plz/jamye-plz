@@ -1,13 +1,25 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { createMutation } from '@tanstack/svelte-query';
+	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { createInvite } from '$lib/api/group.api';
+	import { createInvite, getMembers } from '$lib/api/group.api';
 	import { ApiError } from '$lib/api/client';
 
-	const groupId = $derived(page.params.id);
+	// Always defined for the [id] route; assert so dependent calls stay typed.
+	const groupId = $derived(page.params.id!);
+
+	const membersQuery = createQuery(() => ({
+		queryKey: ['members', groupId],
+		queryFn: () => getMembers(groupId),
+		enabled: !!groupId
+	}));
+
+	function initial(name: string): string {
+		return name?.trim()?.[0]?.toUpperCase() ?? '?';
+	}
+
 	let copied = $state(false);
 	let canShare = $state(false);
 
@@ -106,5 +118,48 @@
 				{/if}
 			</div>
 		{/if}
+
+		<section class="space-y-2 pt-2">
+			<h2 class="text-xs text-text-muted px-1">
+				참여 멤버{#if membersQuery.data}
+					({membersQuery.data.length})
+				{/if}
+			</h2>
+			{#if membersQuery.isPending}
+				<p class="text-sm text-text-muted px-1">불러오는 중...</p>
+			{:else if membersQuery.isError}
+				<p class="text-sm text-danger px-1" role="alert">멤버를 불러오지 못했어요.</p>
+			{:else if membersQuery.data}
+				<ul class="rounded-xl bg-surface border border-border divide-y divide-border">
+					{#each membersQuery.data as m (m.user_id)}
+						<li class="flex items-center gap-3 p-3">
+							{#if m.avatar_url}
+								<img
+									src={m.avatar_url}
+									alt={m.nickname}
+									class="w-9 h-9 rounded-full object-cover bg-surface-elevated shrink-0"
+								/>
+							{:else}
+								<div
+									class="w-9 h-9 rounded-full bg-accent/20 text-accent flex items-center justify-center text-sm font-semibold shrink-0"
+									aria-hidden="true"
+								>
+									{initial(m.nickname)}
+								</div>
+							{/if}
+							<span class="flex-1 text-sm text-text-primary truncate">{m.nickname}</span>
+							{#if m.role === 'owner'}
+								<span
+									class="shrink-0 text-[11px] font-medium text-accent bg-accent/10 px-2 py-0.5 rounded-full"
+									>그룹장</span
+								>
+							{:else}
+								<span class="shrink-0 text-[11px] text-text-muted">그룹원</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
 	</main>
 </div>

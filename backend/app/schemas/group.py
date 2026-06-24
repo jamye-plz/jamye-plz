@@ -29,3 +29,13 @@ class MembershipOut(BaseModel):
     user_id: str
     role: str
     joined_at: datetime
+
+
+class GroupMemberOut(BaseModel):
+    """A group member enriched with their display profile (nickname + avatar)."""
+
+    user_id: str
+    nickname: str
+    avatar_url: str | None = None
+    role: str
+    joined_at: datetime

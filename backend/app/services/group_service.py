@@ -15,6 +15,8 @@ from app.repositories.group_repository import (
     GroupRepository,
     MembershipRepository,
 )
+from app.repositories.user_repository import UserRepository
+from app.schemas.group import GroupMemberOut
 
 
 class GroupService:
@@ -23,6 +25,7 @@ class GroupService:
         self._group_repo = GroupRepository(db)
         self._membership_repo = MembershipRepository(db)
         self._chatroom_repo = ChatroomRepository(db)
+        self._user_repo = UserRepository(db)
 
     async def create_group(self, name: str, owner_id: str) -> Group:
         group = await self._group_repo.create(name=name, owner_id=owner_id)
@@ -67,6 +70,25 @@ class GroupService:
 
     async def list_members(self, group_id: str) -> list[Membership]:
         return await self._membership_repo.list_by_group(group_id)
+
+    async def list_members_out(self, group_id: str) -> list[GroupMemberOut]:
+        """Members enriched with each user's nickname + avatar, owner first."""
+        memberships = await self._membership_repo.list_by_group(group_id)
+        out: list[GroupMemberOut] = []
+        for m in memberships:
+            user = await self._user_repo.get_by_id(m.user_id)
+            out.append(
+                GroupMemberOut(
+                    user_id=m.user_id,
+                    nickname=user.nickname if user else "(알 수 없음)",
+                    avatar_url=user.avatar_url if user else None,
+                    role=m.role,
+                    joined_at=m.joined_at,
+                )
+            )
+        # Owner first, then members in join order.
+        out.sort(key=lambda x: (x.role != "owner", x.joined_at))
+        return out
 
     async def join_via_invite(self, group_id: str, user_id: str) -> Membership:
         """Add a user to a group. Caller validates the invite and commits, so
