@@ -418,7 +418,7 @@
 							<div
 								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
-								{@render messageBody(msg.body, 'font-semibold underline decoration-2 underline-offset-2 hover:opacity-80')}
+								{@render messageBody(msg.body, 'text-warning font-semibold underline decoration-2 underline-offset-2 hover:opacity-80')}
 							</div>
 						</div>
 					{:else}
