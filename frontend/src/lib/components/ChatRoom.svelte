@@ -235,6 +235,26 @@
 		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 	}
 
+	// Local calendar-day key, so date dividers match the locally rendered times.
+	function ymd(iso: string): string {
+		const d = new Date(iso);
+		return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+	}
+
+	function dateLabel(iso: string): string {
+		return new Date(iso).toLocaleDateString('ko-KR', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		});
+	}
+
+	// Show a date divider above the first message and wherever the day changes.
+	function showDateDivider(i: number): boolean {
+		if (i === 0) return true;
+		return ymd(messages[i].created_at) !== ymd(messages[i - 1].created_at);
+	}
+
 	// Avatar + nickname head each (sender, minute) group — a new header starts on
 	// a sender change OR a new minute, so the sender is shown per minute block,
 	// matching the minute-grouped timestamps below.
@@ -323,6 +343,13 @@
 			<p class="text-text-muted text-sm text-center py-8">첫 메시지를 남겨보세요</p>
 		{:else}
 			{#each messages as msg, i (msg.id)}
+					{#if showDateDivider(i)}
+						<div class="flex justify-center py-1">
+							<span class="text-[11px] text-text-muted bg-surface px-3 py-1 rounded-full">
+								{dateLabel(msg.created_at)}
+							</span>
+						</div>
+					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
 							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
