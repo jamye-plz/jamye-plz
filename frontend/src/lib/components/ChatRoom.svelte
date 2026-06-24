@@ -59,6 +59,9 @@
 	// Keyset cursor for paging OLDER history (null = no more / not loaded yet).
 	let nextCursor = $state<string | null>(null);
 	let loadingOlder = $state(false);
+	// Hide the list until the first page is pinned to the bottom, so entering a
+	// room never flashes at the oldest message before jumping to the newest.
+	let initialReady = $state(false);
 	let inputText = $state('');
 	let ws = $state<WebSocket | null>(null);
 	let connected = $state(false);
@@ -81,7 +84,15 @@
 		if (messagesQuery.data) {
 			messages = [...messagesQuery.data.items].reverse();
 			nextCursor = messagesQuery.data.next_cursor;
-			tick().then(scrollToBottom);
+			// Pin to the bottom before revealing: scroll after the DOM updates
+			// (tick) and again after layout settles (rAF), then show the list.
+			tick().then(() => {
+				scrollToBottom();
+				requestAnimationFrame(() => {
+					scrollToBottom();
+					initialReady = true;
+				});
+			});
 		}
 	});
 
@@ -334,7 +345,11 @@
 		aria-live="polite"
 		aria-atomic="false"
 	>
-		<div class="mx-auto w-full max-w-2xl space-y-3">
+		<div
+			class="mx-auto w-full max-w-2xl space-y-3 {messages.length > 0 && !initialReady
+				? 'opacity-0'
+				: ''}"
+		>
 		{#if loadingOlder}
 			<p class="text-text-muted text-xs text-center py-1">이전 메시지 불러오는 중...</p>
 		{/if}
