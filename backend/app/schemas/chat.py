@@ -16,6 +16,7 @@ class MessageOut(BaseModel):
     client_msg_id: str | None = None
     body: str
     type: str
+    topic_id: str | None = None
     created_at: datetime
 
 

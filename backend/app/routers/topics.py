@@ -27,20 +27,28 @@ async def create_topic(
         group_id=group_id, author_id=current_user.id, title=body.title
     )
 
-    # New-topic reminder (T11): post a system message into the group main chat,
-    # broadcast it to live subscribers, and create in-app notifications.
+    # New-topic announcement (T11): the author posts a message into the group main
+    # chat that deep-links to the new topic's chatroom; also create in-app notifications.
     chat_svc = ChatService(db)
     main = await chat_svc.get_main_chatroom(group_id)
-    reminder = f"{current_user.nickname}님이 새로운 주제를 올렸어요: {topic.title}"
-    sys_msg = await chat_svc.post_system_message(main.id, reminder)
+    announce = f"새로운 주제를 올렸어요: {topic.title}"
+    msg = await chat_svc.post_user_message(
+        main.id, sender_id=current_user.id, body=announce, topic_id=topic.id
+    )
     await ws_hub.broadcast(
         main.id,
         {
-            "type": "system",
-            "id": sys_msg.id,
+            "type": "message",
+            "id": msg.id,
             "chatroom_id": main.id,
-            "body": sys_msg.body,
-            "created_at": sys_msg.created_at.isoformat(),
+            "sender_id": current_user.id,
+            "sender_nickname": current_user.nickname,
+            "sender_avatar_url": current_user.avatar_url,
+            "client_msg_id": None,
+            "body": msg.body,
+            "msg_type": msg.type,
+            "topic_id": msg.topic_id,
+            "created_at": msg.created_at.isoformat(),
         },
     )
 

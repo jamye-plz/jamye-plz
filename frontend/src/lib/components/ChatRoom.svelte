@@ -109,6 +109,7 @@
 						sender_avatar_url: data.sender_avatar_url ?? undefined,
 						body: data.body,
 						type: data.msg_type,
+						topic_id: data.topic_id ?? null,
 						created_at: data.created_at,
 						client_msg_id: data.client_msg_id ?? undefined
 					};
@@ -363,6 +364,15 @@
 								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
 								{msg.body}
+								{#if msg.topic_id}
+									<button
+										type="button"
+										onclick={() => goto(`/groups/${groupId}/topics/${msg.topic_id}/chat`)}
+										class="mt-1.5 block text-xs font-medium text-white/90 hover:underline focus-visible:outline-2 focus-visible:outline-white rounded"
+									>
+										주제 채팅 열기 →
+									</button>
+								{/if}
 							</div>
 						</div>
 					{:else}
@@ -394,6 +404,15 @@
 										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
 									>
 										{msg.body}
+										{#if msg.topic_id}
+											<button
+												type="button"
+												onclick={() => goto(`/groups/${groupId}/topics/${msg.topic_id}/chat`)}
+												class="mt-1.5 block text-xs font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent rounded"
+											>
+												주제 채팅 열기 →
+											</button>
+										{/if}
 									</div>
 									{#if showTime(i)}
 										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>

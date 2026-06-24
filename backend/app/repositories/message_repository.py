@@ -33,6 +33,7 @@ class MessageRepository:
         sender_id: str | None = None,
         client_msg_id: str | None = None,
         type: str = "user",
+        topic_id: str | None = None,
     ) -> Message:
         message = Message(
             chatroom_id=chatroom_id,
@@ -40,6 +41,7 @@ class MessageRepository:
             client_msg_id=client_msg_id,
             body=body,
             type=type,
+            topic_id=topic_id,
         )
         self._db.add(message)
         await self._db.flush()
