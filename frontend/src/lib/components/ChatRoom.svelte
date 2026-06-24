@@ -407,7 +407,7 @@
 					{#if msg.type === 'system'}
 						<div class="text-center">
 							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full"
-								>{@render messageBody(msg.body, 'underline underline-offset-2 hover:opacity-80')}</span
+								>{@render messageBody(msg.body, 'text-accent font-semibold underline decoration-2 underline-offset-2 hover:opacity-80')}</span
 							>
 						</div>
 					{:else if isMine(msg)}
@@ -418,7 +418,7 @@
 							<div
 								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
-								{@render messageBody(msg.body, 'underline underline-offset-2 hover:opacity-80')}
+								{@render messageBody(msg.body, 'font-semibold underline decoration-2 underline-offset-2 hover:opacity-80')}
 							</div>
 						</div>
 					{:else}
@@ -449,7 +449,7 @@
 									<div
 										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
 									>
-										{@render messageBody(msg.body, 'text-accent underline underline-offset-2 hover:opacity-80')}
+										{@render messageBody(msg.body, 'text-accent font-semibold underline decoration-2 underline-offset-2 hover:opacity-80')}
 									</div>
 									{#if showTime(i)}
 										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
