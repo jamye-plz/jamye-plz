@@ -81,9 +81,7 @@ class AuthService:
     async def stub_login(self, provider: str) -> tuple[User, str]:
         """Issue a session for a deterministic stub user when keys are absent."""
         provider_id = f"{provider}_stub_dev"
-        return await self._issue_session(
-            provider, provider_id, f"{provider.capitalize()}Dev", None
-        )
+        return await self._issue_session(provider, provider_id, f"{provider.capitalize()}Dev", None)
 
     # ── Real OAuth callbacks ───────────────────────────────────────────────────
 
@@ -137,6 +135,8 @@ class AuthService:
             info = ir.json()
 
         provider_id = info["sub"]
-        nickname = info.get("name") or (info.get("email") or "").split("@")[0] or f"구글{provider_id[:6]}"
+        nickname = (
+            info.get("name") or (info.get("email") or "").split("@")[0] or f"구글{provider_id[:6]}"
+        )
         avatar_url = info.get("picture")
         return await self._issue_session("google", provider_id, nickname, avatar_url)

@@ -100,6 +100,4 @@ class GroupService:
         count = await self._group_repo.member_count(group_id)
         if count >= group.max_members:
             raise GroupFullError()
-        return await self._membership_repo.create(
-            group_id=group_id, user_id=user_id, role="member"
-        )
+        return await self._membership_repo.create(group_id=group_id, user_id=user_id, role="member")

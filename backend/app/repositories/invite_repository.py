@@ -17,9 +17,7 @@ class InviteRepository:
     async def get_by_code_for_update(self, code: str) -> Invite | None:
         """Row-lock the invite so concurrent redemptions of a limited-use code
         serialize (held until the surrounding transaction commits)."""
-        result = await self._db.execute(
-            select(Invite).where(Invite.code == code).with_for_update()
-        )
+        result = await self._db.execute(select(Invite).where(Invite.code == code).with_for_update())
         return result.scalar_one_or_none()
 
     async def create(
