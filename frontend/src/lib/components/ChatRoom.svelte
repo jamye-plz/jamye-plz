@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages } from '$lib/api/chat.api';
@@ -46,10 +47,18 @@
 		// when re-entering a room so the history reflects the latest server state
 		// (otherwise a just-sent message is missing until a hard refresh).
 		staleTime: 0,
-		refetchOnMount: 'always'
+		refetchOnMount: 'always',
+		// Liveness comes from the WS; an auto-refetch mid-session would reset the
+		// local `messages` array (dropping older pages loaded by scroll-up and the
+		// user's scroll position), so don't refetch on focus/reconnect.
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false
 	}));
 
 	let messages = $state<ChatMessage[]>([]);
+	// Keyset cursor for paging OLDER history (null = no more / not loaded yet).
+	let nextCursor = $state<string | null>(null);
+	let loadingOlder = $state(false);
 	let inputText = $state('');
 	let ws = $state<WebSocket | null>(null);
 	let connected = $state(false);
@@ -65,9 +74,14 @@
 		}
 	});
 
+	// Seed the room from the latest page (newest-first → reversed to oldest-first
+	// for display) and remember the cursor to older history. Mid-session refetch
+	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
 		if (messagesQuery.data) {
 			messages = [...messagesQuery.data.items].reverse();
+			nextCursor = messagesQuery.data.next_cursor;
+			tick().then(scrollToBottom);
 		}
 	});
 
@@ -138,6 +152,40 @@
 	function scrollToBottom() {
 		if (messagesEl) {
 			messagesEl.scrollTop = messagesEl.scrollHeight;
+		}
+	}
+
+	// Page in the previous batch of history and prepend it, keeping the viewport
+	// anchored to the message the user was reading (no jump).
+	async function loadOlder() {
+		if (loadingOlder || !nextCursor || !chatroomId || !messagesEl) return;
+		const cursor = nextCursor;
+		const prevHeight = messagesEl.scrollHeight;
+		const prevTop = messagesEl.scrollTop;
+		loadingOlder = true;
+		try {
+			const olderPage = await listMessages(groupId, chatroomId, cursor);
+			const older = [...olderPage.items].reverse(); // oldest-first
+			const seen = new Set(messages.map((m) => m.id));
+			const fresh = older.filter((m) => !seen.has(m.id));
+			messages = [...fresh, ...messages];
+			nextCursor = olderPage.next_cursor;
+		} catch {
+			// transient failure — the user can scroll up again to retry
+		} finally {
+			loadingOlder = false;
+		}
+		// Measure after the indicator is gone so its height doesn't skew the
+		// anchor; restore the prior reading position now that content prepended.
+		await tick();
+		if (messagesEl) {
+			messagesEl.scrollTop = messagesEl.scrollHeight - prevHeight + prevTop;
+		}
+	}
+
+	function handleScroll() {
+		if (messagesEl && messagesEl.scrollTop < 80 && nextCursor && !loadingOlder) {
+			loadOlder();
 		}
 	}
 
@@ -257,12 +305,16 @@
 
 	<section
 		bind:this={messagesEl}
+		onscroll={handleScroll}
 		class="flex-1 overflow-y-auto px-4 py-4"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
 	>
 		<div class="mx-auto w-full max-w-2xl space-y-3">
+		{#if loadingOlder}
+			<p class="text-text-muted text-xs text-center py-1">이전 메시지 불러오는 중...</p>
+		{/if}
 		{#if messagesQuery.isPending && messages.length === 0}
 			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
 		{:else if messages.length === 0}
