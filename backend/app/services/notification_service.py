@@ -63,9 +63,7 @@ class NotificationService:
             "created_at": notif.created_at,
         }
 
-    async def list_view(
-        self, user_id: str, limit: int = 50
-    ) -> tuple[list[dict[str, Any]], int]:
+    async def list_view(self, user_id: str, limit: int = 50) -> tuple[list[dict[str, Any]], int]:
         notifs = await self._notif_repo.list_by_user(user_id, limit=limit)
         unread_count = await self._notif_repo.count_unread(user_id)
         return [self._to_view(n) for n in notifs], unread_count

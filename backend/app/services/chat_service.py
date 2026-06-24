@@ -86,6 +86,19 @@ class ChatService:
         await self._db.refresh(message)
         return message
 
+    async def post_user_message(self, chatroom_id: str, sender_id: str, body: str) -> Message:
+        """Persist a server-initiated message attributed to a user (e.g. the
+        new-topic announcement posted by the topic author)."""
+        message = await self._message_repo.create(
+            chatroom_id=chatroom_id,
+            body=body,
+            sender_id=sender_id,
+            type="user",
+        )
+        await self._db.commit()
+        await self._db.refresh(message)
+        return message
+
     async def list_messages(
         self,
         chatroom_id: str,

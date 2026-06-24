@@ -13,6 +13,14 @@ from app.services.topic_service import TopicService
 router = APIRouter(prefix="/groups/{group_id}/topics", tags=["topics"])
 
 
+def _md_escape(text: str) -> str:
+    """Escape markdown link-breaking metacharacters so a user-controlled topic
+    title can't break out of the announcement's link text and hijack the href."""
+    for ch in ("\\", "[", "]", "(", ")"):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 @router.post("", response_model=TopicOut, status_code=201)
 async def create_topic(
     group_id: str,
@@ -27,20 +35,27 @@ async def create_topic(
         group_id=group_id, author_id=current_user.id, title=body.title
     )
 
-    # New-topic reminder (T11): post a system message into the group main chat,
-    # broadcast it to live subscribers, and create in-app notifications.
+    # New-topic announcement (T11): the author posts a message into the group main
+    # chat with an inline markdown link to the new topic's chatroom (rendered by
+    # the client); also create in-app notifications.
     chat_svc = ChatService(db)
     main = await chat_svc.get_main_chatroom(group_id)
-    reminder = f"{current_user.nickname}님이 새로운 주제를 올렸어요: {topic.title}"
-    sys_msg = await chat_svc.post_system_message(main.id, reminder)
+    chat_path = f"/groups/{group_id}/topics/{topic.id}/chat"
+    announce = f"새로운 주제를 올렸어요: [{_md_escape(topic.title)}]({chat_path})"
+    msg = await chat_svc.post_user_message(main.id, sender_id=current_user.id, body=announce)
     await ws_hub.broadcast(
         main.id,
         {
-            "type": "system",
-            "id": sys_msg.id,
+            "type": "message",
+            "id": msg.id,
             "chatroom_id": main.id,
-            "body": sys_msg.body,
-            "created_at": sys_msg.created_at.isoformat(),
+            "sender_id": current_user.id,
+            "sender_nickname": current_user.nickname,
+            "sender_avatar_url": current_user.avatar_url,
+            "client_msg_id": None,
+            "body": msg.body,
+            "msg_type": msg.type,
+            "created_at": msg.created_at.isoformat(),
         },
     )
 

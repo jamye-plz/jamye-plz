@@ -53,7 +53,7 @@ Execute by naming the workflow in your prompt. Keywords are auto-detected via ho
 | pdf | `pdf.md` | PDF → Markdown via opendataloader-pdf |
 | video | `video.md` | Brief → script → assets → render-spec → Remotion (oma-video) |
 
-(`tools` and `stack-set` are slash-invoked utilities, intentionally excluded from keyword detection.)
+(`tools` and `stack-set` are slash-invoked utilities, and `schedule` is a slash-invoked workflow (`oma schedule:*` time-based jobs) — all intentionally excluded from keyword detection.)
 
 To execute: read and follow `.agents/workflows/{name}.md` step by step.
 

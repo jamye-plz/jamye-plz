@@ -11,8 +11,8 @@ if [ -f "$__oma_dedup_lock" ]; then
 fi
 echo "$$" > "$__oma_dedup_lock"
 __oma_bin=""
-if [ -x "/var/folders/k6/nl39d4_573n46kmbf9ydsr3r0000gp/T/bunx-502-oh-my-agent@latest/node_modules/.bin/oh-my-agent" ]; then
-  __oma_bin="/var/folders/k6/nl39d4_573n46kmbf9ydsr3r0000gp/T/bunx-502-oh-my-agent@latest/node_modules/.bin/oh-my-agent"
+if [ -x "/Users/poby/.bun/bin/oma" ]; then
+  __oma_bin="/Users/poby/.bun/bin/oma"
 elif command -v oma >/dev/null 2>&1; then
   __oma_bin="$(command -v oma)"
 fi

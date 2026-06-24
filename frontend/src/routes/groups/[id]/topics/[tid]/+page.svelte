@@ -3,9 +3,10 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { getTopic } from '$lib/api/topic.api';
+	import { renderMarkdown } from '$lib/markdown';
 
-	const groupId = $derived(page.params.id);
-	const topicId = $derived(page.params.tid);
+	const groupId = $derived(page.params.id!);
+	const topicId = $derived(page.params.tid!);
 
 	const topicQuery = createQuery(() => ({
 		queryKey: ['topic', topicId],
@@ -61,7 +62,9 @@
 				</header>
 
 				{#if topic.body}
-					<div class="prose-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{topic.body}</div>
+					<div class="prose prose-invert max-w-none [&_pre]:overflow-x-auto">
+						{@html renderMarkdown(topic.body)}
+					</div>
 				{:else}
 					<p class="text-text-muted text-sm italic">아직 내용이 없습니다.</p>
 				{/if}

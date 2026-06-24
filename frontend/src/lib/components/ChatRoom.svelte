@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages } from '$lib/api/chat.api';
+	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
 
@@ -40,10 +42,27 @@
 			chatroomId
 				? listMessages(groupId, chatroomId)
 				: Promise.resolve({ items: [], next_cursor: null }),
-		enabled: !!chatroomId
+		enabled: !!chatroomId,
+		// Live messages arrive over WS into local state, not this cache, so a
+		// cached page goes stale the moment anyone sends a message. Always refetch
+		// when re-entering a room so the history reflects the latest server state
+		// (otherwise a just-sent message is missing until a hard refresh).
+		staleTime: 0,
+		refetchOnMount: 'always',
+		// Liveness comes from the WS; an auto-refetch mid-session would reset the
+		// local `messages` array (dropping older pages loaded by scroll-up and the
+		// user's scroll position), so don't refetch on focus/reconnect.
+		refetchOnWindowFocus: false,
+		refetchOnReconnect: false
 	}));
 
 	let messages = $state<ChatMessage[]>([]);
+	// Keyset cursor for paging OLDER history (null = no more / not loaded yet).
+	let nextCursor = $state<string | null>(null);
+	let loadingOlder = $state(false);
+	// Hide the list until the first page is pinned to the bottom, so entering a
+	// room never flashes at the oldest message before jumping to the newest.
+	let initialReady = $state(false);
 	let inputText = $state('');
 	let ws = $state<WebSocket | null>(null);
 	let connected = $state(false);
@@ -59,9 +78,22 @@
 		}
 	});
 
+	// Seed the room from the latest page (newest-first → reversed to oldest-first
+	// for display) and remember the cursor to older history. Mid-session refetch
+	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
 		if (messagesQuery.data) {
 			messages = [...messagesQuery.data.items].reverse();
+			nextCursor = messagesQuery.data.next_cursor;
+			// Pin to the bottom before revealing: scroll after the DOM updates
+			// (tick) and again after layout settles (rAF), then show the list.
+			tick().then(() => {
+				scrollToBottom();
+				requestAnimationFrame(() => {
+					scrollToBottom();
+					initialReady = true;
+				});
+			});
 		}
 	});
 
@@ -80,6 +112,7 @@
 		socket.onmessage = (event) => {
 			try {
 				const data: WsServerMessage = JSON.parse(event.data as string);
+					const stick = isNearBottom();
 				if (data.type === 'message') {
 					const msg: ChatMessage = {
 						id: data.id,
@@ -96,7 +129,7 @@
 						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
 						: -1;
 					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
-					scrollToBottom();
+					if (stick) tick().then(scrollToBottom);
 				} else if (data.type === 'system') {
 					// e.g. "A posted a new topic!" reminder in the group main chat.
 					messages = [
@@ -110,7 +143,7 @@
 							created_at: data.created_at ?? new Date().toISOString()
 						}
 					];
-					scrollToBottom();
+					if (stick) tick().then(scrollToBottom);
 				}
 			} catch {
 				// ignore parse errors
@@ -129,9 +162,51 @@
 		};
 	});
 
+	// True when the viewport is at/near the newest message — used to decide
+	// whether a live message should auto-scroll (stick) or preserve the reader's
+	// position while they browse older history.
+	function isNearBottom(): boolean {
+		if (!messagesEl) return true;
+		return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+	}
+
 	function scrollToBottom() {
 		if (messagesEl) {
 			messagesEl.scrollTop = messagesEl.scrollHeight;
+		}
+	}
+
+	// Page in the previous batch of history and prepend it, keeping the viewport
+	// anchored to the message the user was reading (no jump).
+	async function loadOlder() {
+		if (loadingOlder || !nextCursor || !chatroomId || !messagesEl) return;
+		const cursor = nextCursor;
+		const prevHeight = messagesEl.scrollHeight;
+		const prevTop = messagesEl.scrollTop;
+		loadingOlder = true;
+		try {
+			const olderPage = await listMessages(groupId, chatroomId, cursor);
+			const older = [...olderPage.items].reverse(); // oldest-first
+			const seen = new Set(messages.map((m) => m.id));
+			const fresh = older.filter((m) => !seen.has(m.id));
+			messages = [...fresh, ...messages];
+			nextCursor = olderPage.next_cursor;
+		} catch {
+			// transient failure — the user can scroll up again to retry
+		} finally {
+			loadingOlder = false;
+		}
+		// Measure after the indicator is gone so its height doesn't skew the
+		// anchor; restore the prior reading position now that content prepended.
+		await tick();
+		if (messagesEl) {
+			messagesEl.scrollTop = messagesEl.scrollHeight - prevHeight + prevTop;
+		}
+	}
+
+	function handleScroll() {
+		if (messagesEl && messagesEl.scrollTop < 80 && nextCursor && !loadingOlder) {
+			loadOlder();
 		}
 	}
 
@@ -181,13 +256,36 @@
 		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 	}
 
-	// Avatar + nickname show only on the first message of a same-sender run.
+
+	// Local calendar-day key, so date dividers match the locally rendered times.
+	function ymd(iso: string): string {
+		const d = new Date(iso);
+		return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+	}
+
+	function dateLabel(iso: string): string {
+		return new Date(iso).toLocaleDateString('ko-KR', {
+			year: 'numeric',
+			month: 'long',
+			day: 'numeric'
+		});
+	}
+
+	// Show a date divider above the first message and wherever the day changes.
+	function showDateDivider(i: number): boolean {
+		if (i === 0) return true;
+		return ymd(messages[i].created_at) !== ymd(messages[i - 1].created_at);
+	}
+
+	// Avatar + nickname head each (sender, minute) group — a new header starts on
+	// a sender change OR a new minute, so the sender is shown per minute block,
+	// matching the minute-grouped timestamps below.
 	function showHeader(i: number): boolean {
 		const m = messages[i];
 		if (m.type === 'system') return false;
 		const prev = messages[i - 1];
 		if (!prev || prev.type === 'system') return true;
-		return prev.sender_id !== m.sender_id;
+		return prev.sender_id !== m.sender_id || hm(prev.created_at) !== hm(m.created_at);
 	}
 
 	// Time shows only on the last message of a same-minute run (dedupe HH:MM).
@@ -203,6 +301,15 @@
 		return name?.trim()?.[0]?.toUpperCase() ?? '?';
 	}
 </script>
+
+{#snippet messageBody(body: string, linkColor: string)}
+	<div
+		class="prose prose-sm prose-invert max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
+		style="--tw-prose-invert-links: {linkColor}"
+	>
+		{@html renderMarkdown(body)}
+	</div>
+{/snippet}
 
 <div class="flex flex-col h-screen bg-background">
 	<header
@@ -232,7 +339,7 @@
 			<div class="mx-auto w-full max-w-2xl flex items-start gap-2">
 				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
 					{#if pinnedBody}
-						<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
+						<div class="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto">{@html renderMarkdown(pinnedBody)}</div>
 					{:else}
 						<p class="text-sm text-text-muted italic">아직 본문이 없어요</p>
 					{/if}
@@ -251,21 +358,38 @@
 
 	<section
 		bind:this={messagesEl}
+		onscroll={handleScroll}
 		class="flex-1 overflow-y-auto px-4 py-4"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
 	>
-		<div class="mx-auto w-full max-w-2xl space-y-3">
+		<div
+			class="mx-auto w-full max-w-2xl space-y-3 {messages.length > 0 && !initialReady
+				? 'opacity-0'
+				: ''}"
+		>
+		{#if loadingOlder}
+			<p class="text-text-muted text-xs text-center py-1">이전 메시지 불러오는 중...</p>
+		{/if}
 		{#if messagesQuery.isPending && messages.length === 0}
 			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
 		{:else if messages.length === 0}
 			<p class="text-text-muted text-sm text-center py-8">첫 메시지를 남겨보세요</p>
 		{:else}
 			{#each messages as msg, i (msg.id)}
+					{#if showDateDivider(i)}
+						<div class="flex justify-center py-1">
+							<span class="text-[11px] text-text-muted bg-surface px-3 py-1 rounded-full">
+								{dateLabel(msg.created_at)}
+							</span>
+						</div>
+					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
-							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full">{msg.body}</span>
+							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full"
+								>{msg.body}</span
+							>
 						</div>
 					{:else if isMine(msg)}
 						<div class="flex items-end justify-end gap-1.5">
@@ -275,7 +399,7 @@
 							<div
 								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
-								{msg.body}
+								{@render messageBody(msg.body, '#67e8f9')}
 							</div>
 						</div>
 					{:else}
@@ -306,7 +430,7 @@
 									<div
 										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
 									>
-										{msg.body}
+										{@render messageBody(msg.body, '#3b82f6')}
 									</div>
 									{#if showTime(i)}
 										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>

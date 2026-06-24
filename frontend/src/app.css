@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@fontsource/pretendard/index.css';
+@plugin '@tailwindcss/typography';
 
 @theme {
 	/* Typography */
@@ -131,10 +132,23 @@ h6 {
 	color: var(--color-text-primary);
 }
 
-/* Links */
-a {
-	color: inherit;
-	text-decoration: none;
+/* Links — in @layer base so per-element utility classes (text-accent,
+   underline, decoration-2, ...) override this default and win the cascade.
+   Unlayered, this reset would beat Tailwind's layered utilities. */
+@layer base {
+	a {
+		color: inherit;
+		text-decoration: none;
+	}
+}
+
+/* GFM task lists: hide the list bullet so only the checkbox shows (no double marker). */
+.prose li:has(> input[type='checkbox']) {
+	list-style: none;
+}
+.prose li > input[type='checkbox'] {
+	margin: 0 0.4em 0 0;
+	vertical-align: middle;
 }
 
 /* Input base reset */

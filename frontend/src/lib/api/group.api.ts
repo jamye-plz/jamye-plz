@@ -1,9 +1,13 @@
 import { apiGet, apiPost } from './client';
-import type { Group } from '$lib/types/group.types';
+import type { Group, GroupMember } from '$lib/types/group.types';
 import type { Invite } from '$lib/types/group.types';
 
 export function listGroups(): Promise<Group[]> {
 	return apiGet<Group[]>('/groups');
+}
+
+export function getMembers(groupId: string): Promise<GroupMember[]> {
+	return apiGet<GroupMember[]>(`/groups/${groupId}/members`);
 }
 
 export function getGroup(id: string): Promise<Group> {
