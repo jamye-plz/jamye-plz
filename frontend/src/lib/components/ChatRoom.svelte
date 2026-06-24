@@ -3,6 +3,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages } from '$lib/api/chat.api';
+	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
 
@@ -246,27 +247,6 @@
 		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 	}
 
-	// Split a message body into text + link segments: markdown links [text](href)
-	// and bare http(s) URLs. Internal hrefs (starting with "/") navigate via the
-	// SPA; external ones open in a new tab.
-	type BodySeg = { text: string; href?: string; internal?: boolean };
-	function linkify(body: string): BodySeg[] {
-		const segs: BodySeg[] = [];
-		const re = /\[([^\]]+)\]\((\/[^\s)]+|https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s]+)/g;
-		let last = 0;
-		let m: RegExpExecArray | null;
-		while ((m = re.exec(body)) !== null) {
-			if (m.index > last) segs.push({ text: body.slice(last, m.index) });
-			if (m[1] !== undefined) {
-				segs.push({ text: m[1], href: m[2], internal: m[2].startsWith('/') });
-			} else {
-				segs.push({ text: m[3], href: m[3], internal: false });
-			}
-			last = re.lastIndex;
-		}
-		if (last < body.length) segs.push({ text: body.slice(last) });
-		return segs;
-	}
 
 	// Local calendar-day key, so date dividers match the locally rendered times.
 	function ymd(iso: string): string {
@@ -313,21 +293,13 @@
 	}
 </script>
 
-{#snippet messageBody(body: string, linkClass: string)}
-	{#each linkify(body) as seg}
-		{#if seg.href && seg.internal}
-			<a
-				href={seg.href}
-				onclick={(e) => {
-					e.preventDefault();
-					goto(seg.href!);
-				}}
-				class={linkClass}>{seg.text}</a
-			>
-		{:else if seg.href}
-			<a href={seg.href} target="_blank" rel="noopener noreferrer" class={linkClass}>{seg.text}</a>
-		{:else}{seg.text}{/if}
-	{/each}
+{#snippet messageBody(body: string, linkColor: string)}
+	<div
+		class="prose prose-sm prose-invert max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
+		style="--tw-prose-invert-links: {linkColor}"
+	>
+		{@html renderMarkdown(body)}
+	</div>
 {/snippet}
 
 <div class="flex flex-col h-screen bg-background">
@@ -358,7 +330,7 @@
 			<div class="mx-auto w-full max-w-2xl flex items-start gap-2">
 				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
 					{#if pinnedBody}
-						<p class="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{pinnedBody}</p>
+						<div class="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto">{@html renderMarkdown(pinnedBody)}</div>
 					{:else}
 						<p class="text-sm text-text-muted italic">아직 본문이 없어요</p>
 					{/if}
@@ -407,7 +379,7 @@
 					{#if msg.type === 'system'}
 						<div class="text-center">
 							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full"
-								>{@render messageBody(msg.body, 'text-accent underline decoration-2 underline-offset-2 hover:opacity-80')}</span
+								>{msg.body}</span
 							>
 						</div>
 					{:else if isMine(msg)}
@@ -418,7 +390,7 @@
 							<div
 								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
-								{@render messageBody(msg.body, 'text-[#67e8f9] underline decoration-2 underline-offset-2 hover:opacity-80')}
+								{@render messageBody(msg.body, '#67e8f9')}
 							</div>
 						</div>
 					{:else}
@@ -449,7 +421,7 @@
 									<div
 										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
 									>
-										{@render messageBody(msg.body, 'text-accent underline decoration-2 underline-offset-2 hover:opacity-80')}
+										{@render messageBody(msg.body, '#3b82f6')}
 									</div>
 									{#if showTime(i)}
 										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
