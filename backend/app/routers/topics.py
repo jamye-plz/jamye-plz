@@ -13,6 +13,14 @@ from app.services.topic_service import TopicService
 router = APIRouter(prefix="/groups/{group_id}/topics", tags=["topics"])
 
 
+def _md_escape(text: str) -> str:
+    """Escape markdown link-breaking metacharacters so a user-controlled topic
+    title can't break out of the announcement's link text and hijack the href."""
+    for ch in ("\\", "[", "]", "(", ")"):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 @router.post("", response_model=TopicOut, status_code=201)
 async def create_topic(
     group_id: str,
@@ -33,7 +41,7 @@ async def create_topic(
     chat_svc = ChatService(db)
     main = await chat_svc.get_main_chatroom(group_id)
     chat_path = f"/groups/{group_id}/topics/{topic.id}/chat"
-    announce = f"새로운 주제를 올렸어요: [{topic.title}]({chat_path})"
+    announce = f"새로운 주제를 올렸어요: [{_md_escape(topic.title)}]({chat_path})"
     msg = await chat_svc.post_user_message(main.id, sender_id=current_user.id, body=announce)
     await ws_hub.broadcast(
         main.id,
