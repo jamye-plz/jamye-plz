@@ -90,17 +90,26 @@ class NotificationRepository:
         await self._db.refresh(notif)
         return notif
 
-    async def mark_read_by_dedup_keys(self, user_id: str, dedup_keys: list[str]) -> None:
-        """Set read_at=now for all matching unread notifications."""
+    async def mark_read_by_dedup_keys(
+        self, user_id: str, dedup_keys: list[str], before: datetime | None = None
+    ) -> None:
+        """Set read_at=now for matching unread notifications.
+
+        When ``before`` is given, only notifications created at or before that
+        instant are cleared. This keeps a read receipt from silencing an alert
+        for a message that arrived after the receipt was recorded (the topic
+        would still compute as unread, so the notification must survive).
+        """
         if not dedup_keys:
             return
-        result = await self._db.execute(
-            select(Notification).where(
-                Notification.user_id == user_id,
-                Notification.dedup_key.in_(dedup_keys),
-                Notification.read_at.is_(None),
-            )
-        )
+        conditions = [
+            Notification.user_id == user_id,
+            Notification.dedup_key.in_(dedup_keys),
+            Notification.read_at.is_(None),
+        ]
+        if before is not None:
+            conditions.append(Notification.created_at <= before)
+        result = await self._db.execute(select(Notification).where(*conditions))
         now = datetime.now(timezone.utc)
         for notif in result.scalars().all():
             notif.read_at = now

@@ -29,14 +29,28 @@
 
 	const queryClient = useQueryClient();
 
-	// Throttle guard for mark-read calls (performance.now() timestamp).
+	// Throttle mark-read network calls, but coalesce a trailing call so the LAST
+	// visible message in a burst still clears the unread state. Dropping the read
+	// outright would leave a phantom unread dot/notification for a message the
+	// user is actively viewing (the server now creates the notification before
+	// broadcasting), until a later message or a re-entry.
 	let lastReadAt = 0;
+	let pendingRead: ReturnType<typeof setTimeout> | null = null;
 
 	function tryMarkRead() {
 		if (!groupId || !chatroomId) return;
-		const now = performance.now();
-		if (now - lastReadAt < 1500) return;
-		lastReadAt = now;
+		const since = performance.now() - lastReadAt;
+		if (since < 1500) {
+			// Within the window: ensure exactly one trailing read fires after it.
+			if (pendingRead === null) {
+				pendingRead = setTimeout(() => {
+					pendingRead = null;
+					tryMarkRead();
+				}, 1500 - since);
+			}
+			return;
+		}
+		lastReadAt = performance.now();
 		markChatroomRead(groupId, chatroomId).then(() => {
 			queryClient.invalidateQueries({ queryKey: ['notifications'] });
 			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
@@ -44,6 +58,11 @@
 			// swallow — must not disrupt chat
 		});
 	}
+
+	// Cancel any pending trailing read when the room is torn down.
+	$effect(() => () => {
+		if (pendingRead !== null) clearTimeout(pendingRead);
+	});
 
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
 	const myId = $derived(meQuery.data?.id ?? null);

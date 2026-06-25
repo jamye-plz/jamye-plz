@@ -162,8 +162,11 @@ class ChatService:
 
         if chatroom.topic_id:
             notif_svc = NotificationService(self._db)
+            # Bound the clear to `now`: a chat_unread created by a message that
+            # arrived after this read receipt must survive (the topic still
+            # computes as unread, so the alert has to stay).
             await notif_svc.clear_topic_notifications(
-                user_id=user_id, topic_id=chatroom.topic_id
+                user_id=user_id, topic_id=chatroom.topic_id, before=now
             )
 
     async def on_topic_message_posted(self, chatroom_id: str, sender_id: str) -> None:

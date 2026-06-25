@@ -4,6 +4,7 @@ Real Web Push is sent only when VAPID keys are provisioned.
 # TODO(oma-deferred): integrate vapid when key is provisioned
 """
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,11 +71,19 @@ class NotificationService:
             )
         await self._db.commit()
 
-    async def clear_topic_notifications(self, user_id: str, topic_id: str) -> None:
-        """Mark new_topic and chat_unread notifications as read for a topic."""
+    async def clear_topic_notifications(
+        self, user_id: str, topic_id: str, before: datetime | None = None
+    ) -> None:
+        """Mark new_topic and chat_unread notifications as read for a topic.
+
+        ``before`` bounds the clear to notifications created at or before the
+        read timestamp, so an alert for a message that arrived after the read
+        receipt is not silenced.
+        """
         await self._notif_repo.mark_read_by_dedup_keys(
             user_id=user_id,
             dedup_keys=[f"new_topic:{topic_id}", f"chat_unread:{topic_id}"],
+            before=before,
         )
         await self._db.commit()
 
