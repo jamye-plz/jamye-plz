@@ -44,6 +44,21 @@ def upgrade() -> None:
         sa.Column("dedup_key", sa.String(length=128), nullable=True),
     )
 
+    # 2.5 Backfill dedup_key for pre-existing new_topic notifications so the
+    # dedup-key-based clear path (clear_topic_notifications) covers rows created
+    # before this migration. chat_unread did not exist before this change, so
+    # only new_topic rows need backfilling. Runs before the unique index so any
+    # unexpected duplicate would surface at migration time, not at runtime.
+    op.execute(
+        """
+        UPDATE notifications
+        SET dedup_key = 'new_topic:' || (payload->>'topic_id')
+        WHERE type = 'new_topic'
+          AND dedup_key IS NULL
+          AND payload->>'topic_id' IS NOT NULL
+        """
+    )
+
     # 3. Partial unique index on (user_id, dedup_key) WHERE dedup_key IS NOT NULL
     op.create_index(
         "ix_notifications_user_dedup",

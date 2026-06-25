@@ -1,8 +1,10 @@
 """ChatroomReadRepository — per-user-per-chatroom read receipts."""
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chatroom_read import ChatroomRead
@@ -24,21 +26,32 @@ class ChatroomReadRepository:
     async def upsert(
         self, user_id: str, chatroom_id: str, last_read_at: datetime
     ) -> ChatroomRead:
-        """Find-or-create then update last_read_at."""
-        existing = await self.get(user_id, chatroom_id)
-        if existing:
-            existing.last_read_at = last_read_at
-            self._db.add(existing)
-            await self._db.flush()
-            await self._db.refresh(existing)
-            return existing
-        record = ChatroomRead(
-            user_id=user_id,
-            chatroom_id=chatroom_id,
-            last_read_at=last_read_at,
+        """Atomically record/refresh the read receipt.
+
+        Uses Postgres ``INSERT ... ON CONFLICT DO UPDATE`` on the
+        ``(user_id, chatroom_id)`` unique constraint so two concurrent first
+        reads (same user, two tabs/devices) can't race into an IntegrityError
+        that would 500 and leave the topic unread.
+        """
+        stmt = (
+            pg_insert(ChatroomRead)
+            .values(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                chatroom_id=chatroom_id,
+                last_read_at=last_read_at,
+            )
+            .on_conflict_do_update(
+                constraint="uq_chatroom_reads_user_chatroom",
+                set_={"last_read_at": last_read_at},
+            )
         )
-        self._db.add(record)
+        await self._db.execute(stmt)
         await self._db.flush()
+        record = await self.get(user_id, chatroom_id)
+        assert record is not None  # row was just upserted within this transaction
+        # Core ON CONFLICT bypasses the ORM unit of work; refresh to avoid stale
+        # attributes on an already-identity-mapped row.
         await self._db.refresh(record)
         return record
 
