@@ -1,9 +1,11 @@
 """NotificationRepository and PushSubscriptionRepository."""
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
@@ -47,25 +49,46 @@ class NotificationRepository:
     async def upsert_by_dedup_key(
         self, user_id: str, type: str, payload: dict[str, Any], dedup_key: str
     ) -> Notification:
-        """Recycle an existing notification or create a new one.
+        """Atomically recycle the (user_id, dedup_key) notification slot.
 
-        If a notification with (user_id, dedup_key) exists:
-          - refresh payload, reset read_at to None, bump created_at to now.
-        Otherwise create a new notification with the given dedup_key.
+        Uses Postgres ``INSERT ... ON CONFLICT DO UPDATE`` against the partial
+        unique index so concurrent upserts for the same slot (e.g. two senders
+        posting in one topic at once, before any recipient row exists) can't race
+        into an IntegrityError. On conflict the existing row is refreshed: its
+        payload/type are updated, read_at is reset, and created_at is bumped to
+        now so it resurfaces as unread.
         """
-        existing = await self.get_by_dedup_key(user_id, dedup_key)
-        if existing:
-            existing.payload = payload
-            existing.type = type
-            existing.read_at = None
-            existing.created_at = datetime.now(timezone.utc)
-            self._db.add(existing)
-            await self._db.flush()
-            await self._db.refresh(existing)
-            return existing
-        return await self.create(
-            user_id=user_id, type=type, payload=payload, dedup_key=dedup_key
+        now = datetime.now(timezone.utc)
+        stmt = (
+            pg_insert(Notification)
+            .values(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                type=type,
+                payload=payload,
+                dedup_key=dedup_key,
+                read_at=None,
+                created_at=now,
+            )
+            .on_conflict_do_update(
+                index_elements=[Notification.user_id, Notification.dedup_key],
+                index_where=Notification.dedup_key.isnot(None),
+                set_={
+                    "type": type,
+                    "payload": payload,
+                    "read_at": None,
+                    "created_at": now,
+                },
+            )
         )
+        await self._db.execute(stmt)
+        await self._db.flush()
+        notif = await self.get_by_dedup_key(user_id, dedup_key)
+        assert notif is not None  # row was just upserted within this transaction
+        # The Core ON CONFLICT statement bypasses the ORM unit of work, so an
+        # already-identity-mapped row would otherwise return stale attributes.
+        await self._db.refresh(notif)
+        return notif
 
     async def mark_read_by_dedup_keys(self, user_id: str, dedup_keys: list[str]) -> None:
         """Set read_at=now for all matching unread notifications."""
