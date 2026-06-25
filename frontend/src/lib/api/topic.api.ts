@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPatch, apiPut, apiFetch } from './client';
-import type { Topic, TopicPage, TopicTag, PresignResponse } from '$lib/types/topic.types';
+import type { Topic, TopicPage, TopicTag, TopicDates, PresignResponse } from '$lib/types/topic.types';
 
 export function listTopics(groupId: string, cursor?: string, date?: string): Promise<TopicPage> {
 	const params = new URLSearchParams();
@@ -7,6 +7,10 @@ export function listTopics(groupId: string, cursor?: string, date?: string): Pro
 	if (date) params.set('date', date);
 	const qs = params.toString();
 	return apiGet<TopicPage>(`/groups/${groupId}/topics${qs ? `?${qs}` : ''}`);
+}
+
+export function getTopicDates(groupId: string): Promise<TopicDates> {
+	return apiGet<TopicDates>(`/groups/${groupId}/topics/dates`);
 }
 
 export function getTopic(groupId: string, id: string): Promise<Topic> {

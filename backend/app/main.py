@@ -210,6 +210,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         }
                         # Echo to sender
                         await websocket.send_json(msg_payload)
+                        # Recycle the per-topic "unread chat" notification BEFORE the
+                        # fan-out (no-op for the group main chatroom): a recipient who
+                        # is viewing the room marks it read the instant the broadcast
+                        # arrives, so the notification must already exist for that read
+                        # to clear it — otherwise it lingers as a phantom unread.
+                        await chat_svc.on_topic_message_posted(
+                            chatroom_id, user_id, message.created_at
+                        )
                         # Broadcast to other members
                         await ws_hub.broadcast(chatroom_id, msg_payload, exclude=websocket)
                     except MessageIdempotencyError:

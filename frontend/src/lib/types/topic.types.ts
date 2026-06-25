@@ -28,11 +28,17 @@ export interface Topic {
 	chatroom_id: string;
 	created_at: string;
 	updated_at: string;
+	unread: boolean;
 }
 
 export interface TopicPage {
 	items: Topic[];
 	next_cursor: string | null;
+}
+
+export interface TopicDates {
+	dates: string[];
+	today: string;
 }
 
 export interface PresignResponse {

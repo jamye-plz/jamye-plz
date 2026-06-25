@@ -1,10 +1,14 @@
 """Topics router — topic CRUD within a group."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Query
 
 from app.core import ws_hub
 from app.core.deps import CurrentUser, DbSession
-from app.schemas.topic import TopicCreate, TopicOut, TopicPage, TopicPatch
+from app.repositories.chatroom_read_repository import ChatroomReadRepository
+from app.repositories.group_repository import ChatroomRepository
+from app.schemas.topic import TopicCreate, TopicDatesOut, TopicOut, TopicPage, TopicPatch
 from app.services.chat_service import ChatService
 from app.services.group_service import GroupService
 from app.services.notification_service import NotificationService
@@ -73,9 +77,37 @@ async def create_topic(
                     "title": topic.title,
                     "author": current_user.nickname,
                 },
+                dedup_key=f"new_topic:{topic.id}",
             )
 
+    # Mark the author's own topic chatroom as read at creation so the author's
+    # own new topic is not shown as unread.
+    chatroom_repo = ChatroomRepository(db)
+    topic_chatroom = await chatroom_repo.get_by_topic(topic.id)
+    if topic_chatroom:
+        chatroom_read_repo = ChatroomReadRepository(db)
+        await chatroom_read_repo.upsert(
+            user_id=current_user.id,
+            chatroom_id=topic_chatroom.id,
+            last_read_at=datetime.now(timezone.utc),
+        )
+        await db.commit()
+
     return await topic_svc.to_topic_out(topic)
+
+
+# NOTE: /dates must be declared BEFORE /{topic_id} to prevent "dates" being
+# captured as a topic_id path parameter.
+@router.get("/dates", response_model=TopicDatesOut)
+async def list_topic_dates(
+    group_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    group_svc = GroupService(db)
+    await group_svc.require_membership(group_id, current_user.id)
+    topic_svc = TopicService(db)
+    return await topic_svc.list_topic_dates(group_id)
 
 
 @router.get("", response_model=TopicPage)
@@ -85,12 +117,17 @@ async def list_topics(
     db: DbSession,
     cursor: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
+    date: str | None = Query(None),
 ):
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
     topic_svc = TopicService(db)
-    items, next_cursor = await topic_svc.list_topics(group_id, cursor=cursor, limit=limit)
-    out_items = [await topic_svc.to_topic_out(t) for t in items]
+    items, next_cursor = await topic_svc.list_topics(
+        group_id, cursor=cursor, limit=limit, date=date
+    )
+    # Compute unread map for the whole page in 3 queries (no N+1).
+    unread_map = await topic_svc.compute_unread_map(items, current_user.id)
+    out_items = [await topic_svc.to_topic_out(t, unread=unread_map.get(t.id, False)) for t in items]
     return TopicPage(items=out_items, next_cursor=next_cursor)
 
 

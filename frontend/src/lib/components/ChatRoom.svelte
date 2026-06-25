@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { tick } from 'svelte';
-	import { createQuery } from '@tanstack/svelte-query';
+	import { tick, untrack } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
-	import { listMessages } from '$lib/api/chat.api';
+	import { listMessages, markChatroomRead } from '$lib/api/chat.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
@@ -16,7 +16,8 @@
 		backHref,
 		pinnedBody,
 		canEditPinned = false,
-		onEditPinned
+		onEditPinned,
+		createdAt
 	}: {
 		groupId: string;
 		chatroomId: string;
@@ -25,7 +26,65 @@
 		pinnedBody?: string | null;
 		canEditPinned?: boolean;
 		onEditPinned?: () => void;
+		/** Room (topic/chatroom) creation time — the read bound for an empty room. */
+		createdAt?: string;
 	} = $props();
+
+	const queryClient = useQueryClient();
+
+	// Throttle mark-read network calls, but coalesce a trailing call so the LAST
+	// visible message in a burst still clears the unread state. Dropping the read
+	// outright would leave a phantom unread dot/notification for a message the
+	// user is actively viewing (the server now creates the notification before
+	// broadcasting), until a later message or a re-entry.
+	// -Infinity so the FIRST read always fires immediately (even on a fresh deep-link
+	// load where performance.now() is still < 1500ms); only later calls throttle.
+	let lastReadAt = Number.NEGATIVE_INFINITY;
+	let pendingRead: ReturnType<typeof setTimeout> | null = null;
+
+	function tryMarkRead(explicitUpTo?: string) {
+		if (!groupId || !chatroomId) return;
+		const since = performance.now() - lastReadAt;
+		if (since < 1500) {
+			// Within the window: ensure exactly one trailing read fires after it.
+			if (pendingRead === null) {
+				pendingRead = setTimeout(() => {
+					pendingRead = null;
+					tryMarkRead();
+				}, 1500 - since);
+			}
+			return;
+		}
+		lastReadAt = performance.now();
+		// Bind the receipt to the newest message we actually have, so a message
+		// that slipped through the history/WS entry gap isn't marked read unseen.
+		// For an empty room, bound to the room's creation time (not server-now) so
+		// a first message landing in the entry gap stays unread. Callers inside a
+		// reactive $effect pass `explicitUpTo` so reading `messages` here doesn't
+		// make `messages` a dependency of that effect.
+		const upTo = explicitUpTo ?? (messages.length ? messages[messages.length - 1].created_at : createdAt);
+		markChatroomRead(groupId, chatroomId, upTo).then(() => {
+			queryClient.invalidateQueries({ queryKey: ['notifications'] });
+			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
+		}).catch(() => {
+			// swallow — must not disrupt chat
+		});
+	}
+
+	// Cancel any pending trailing read when the room is torn down.
+	$effect(() => () => {
+		if (pendingRead !== null) clearTimeout(pendingRead);
+	});
+
+	// A message that arrived while the tab was hidden didn't send a read receipt;
+	// mark read when the tab becomes visible again so it doesn't stay unread.
+	$effect(() => {
+		function onVisibility() {
+			if (document.visibilityState === 'visible') tryMarkRead();
+		}
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
 
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
 	const myId = $derived(meQuery.data?.id ?? null);
@@ -94,6 +153,12 @@
 					initialReady = true;
 				});
 			});
+			// Mark the room read on entry, bounded to the fetched page's newest
+			// message read from messagesQuery.data (NOT the reactive `messages`), so
+			// this effect doesn't depend on `messages` and re-seed it — dropping live
+			// messages / older pages — when it later changes.
+			const newest = messagesQuery.data.items[0]?.created_at;
+			tryMarkRead(newest ?? untrack(() => createdAt));
 		}
 	});
 
@@ -107,6 +172,28 @@
 			connected = true;
 			const joinMsg: WsClientMessage = { type: 'join', chatroom_id: chatroomId };
 			socket.send(JSON.stringify(joinMsg));
+			// Close the REST/WS gap: a message can arrive between the history fetch
+			// and this join (so it's in neither the fetched page nor the broadcast).
+			// Re-fetch the latest page and merge anything we don't have, keeping the
+			// stream contiguous before a read can advance past it.
+			listMessages(groupId, chatroomId)
+				.then((page) => {
+					const have = new Set(messages.map((m) => m.id));
+					const missed = page.items.filter((m) => !have.has(m.id));
+					if (!missed.length) return;
+					const stick = isNearBottom();
+					messages = [...messages, ...missed].sort((a, b) =>
+						a.created_at < b.created_at
+							? -1
+							: a.created_at > b.created_at
+								? 1
+								: a.id.localeCompare(b.id)
+					);
+					if (stick) tick().then(scrollToBottom);
+				})
+				.catch(() => {
+					// transient — the next live message / re-entry will reconcile
+				});
 		};
 
 		socket.onmessage = (event) => {
@@ -130,6 +217,12 @@
 						: -1;
 					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
 					if (stick) tick().then(scrollToBottom);
+					// Only mark read when the message is actually in view: a message appended
+						// while the user has scrolled up isn't brought into view, so reading it
+						// would clear its unread state unseen. Scrolling back down marks it read.
+					if (document.visibilityState === 'visible' && stick) {
+						tryMarkRead();
+					}
 				} else if (data.type === 'system') {
 					// e.g. "A posted a new topic!" reminder in the group main chat.
 					messages = [
@@ -207,6 +300,11 @@
 	function handleScroll() {
 		if (messagesEl && messagesEl.scrollTop < 80 && nextCursor && !loadingOlder) {
 			loadOlder();
+		}
+		// Scrolling back to the bottom means the newest messages are now in view —
+		// mark read (covers messages that arrived while the user was scrolled up).
+		if (document.visibilityState === 'visible' && isNearBottom()) {
+			tryMarkRead();
 		}
 	}
 
