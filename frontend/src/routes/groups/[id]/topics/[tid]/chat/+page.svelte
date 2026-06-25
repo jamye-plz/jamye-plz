@@ -9,13 +9,6 @@
 	const topicId = $derived(page.params.tid);
 	const queryClient = useQueryClient();
 
-	// Preserve the date the user was viewing in the list (passed via ?date=) so the
-	// in-page back button returns to that same date, matching browser back.
-	const backDate = $derived(page.url.searchParams.get('date'));
-	const backHref = $derived(
-		`/groups/${groupId}${backDate ? `?date=${encodeURIComponent(backDate)}` : ''}`
-	);
-
 	const topicQuery = createQuery(() => ({
 		queryKey: ['topic', topicId],
 		queryFn: () => getTopic(groupId, topicId)
@@ -25,6 +18,20 @@
 	// Per-topic chatroom: a separate room scoped to this topic, isolated from the
 	// group main chat (content is not shared between the two).
 	const chatroomId = $derived(topicQuery.data?.chatroom_id ?? '');
+
+	// In-page back returns to the topic list on the right date. Prefer the date the
+	// user came from (?date=); when arriving from a notification (no param), fall
+	// back to the topic's own posting date (Asia/Seoul, matching the date strip).
+	function seoulDate(iso: string): string {
+		return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date(iso));
+	}
+	const backDate = $derived(
+		page.url.searchParams.get('date') ??
+			(topicQuery.data ? seoulDate(topicQuery.data.created_at) : null)
+	);
+	const backHref = $derived(
+		`/groups/${groupId}${backDate ? `?date=${encodeURIComponent(backDate)}` : ''}`
+	);
 
 	// Only the topic author may add/edit the body (enrich).
 	const isAuthor = $derived(
