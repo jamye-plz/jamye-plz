@@ -9,6 +9,13 @@
 	const topicId = $derived(page.params.tid);
 	const queryClient = useQueryClient();
 
+	// Preserve the date the user was viewing in the list (passed via ?date=) so the
+	// in-page back button returns to that same date, matching browser back.
+	const backDate = $derived(page.url.searchParams.get('date'));
+	const backHref = $derived(
+		`/groups/${groupId}${backDate ? `?date=${encodeURIComponent(backDate)}` : ''}`
+	);
+
 	const topicQuery = createQuery(() => ({
 		queryKey: ['topic', topicId],
 		queryFn: () => getTopic(groupId, topicId)
@@ -55,7 +62,7 @@
 	pinnedBody={topicQuery.data?.body}
 	canEditPinned={isAuthor}
 	onEditPinned={openEditor}
-	backHref={`/groups/${groupId}`}
+	{backHref}
 />
 
 {#if editing}

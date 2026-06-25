@@ -247,7 +247,7 @@
 						{#each allTopics as topic (topic.id)}
 							<li>
 								<a
-									href="/groups/{groupId}/topics/{topic.id}/chat"
+									href="/groups/{groupId}/topics/{topic.id}/chat?date={selectedDate}"
 									class="block px-4 py-4 rounded-xl bg-surface hover:bg-surface-elevated border border-border transition-colors focus-visible:outline-2 focus-visible:outline-accent"
 									aria-label={topic.title}
 								>
