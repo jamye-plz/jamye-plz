@@ -47,14 +47,19 @@
 		return date;
 	}
 
-	// Selected date — empty until datesQuery loads, then set to today once.
-	let selectedDate = $state('');
+	// Selected date is driven by the URL (?date=YYYY-MM-DD) so it survives
+	// back-navigation from a topic chatroom. Only the first entry (no param)
+	// defaults to today — every later remount restores the chosen date.
+	const urlDate = $derived(page.url.searchParams.get('date'));
+	const selectedDate = $derived(urlDate ?? serverToday);
 
-	$effect(() => {
-		if (selectedDate === '' && datesQuery.data?.today) {
-			selectedDate = datesQuery.data.today;
-		}
-	});
+	function selectDate(date: string) {
+		const url = new URL(page.url);
+		url.searchParams.set('date', date);
+		// replaceState: a date tap shouldn't stack history entries, but the updated
+		// URL is exactly what we return to when coming back from a topic chatroom.
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 
 	// Horizontally-scrollable date strip: whenever the selection changes (incl. the
 	// initial default of today), recenter the selected tab within the strip.
@@ -204,7 +209,7 @@
 							data-date={date}
 							aria-selected={date === selectedDate}
 							aria-controls="topics-panel"
-							onclick={() => (selectedDate = date)}
+							onclick={() => selectDate(date)}
 							class="shrink-0 min-h-[40px] px-4 py-2 rounded-full text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent whitespace-nowrap
 								{date === selectedDate
 								? 'bg-accent text-white'
