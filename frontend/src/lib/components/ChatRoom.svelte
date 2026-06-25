@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages, markChatroomRead } from '$lib/api/chat.api';
@@ -42,7 +42,7 @@
 	let lastReadAt = Number.NEGATIVE_INFINITY;
 	let pendingRead: ReturnType<typeof setTimeout> | null = null;
 
-	function tryMarkRead() {
+	function tryMarkRead(explicitUpTo?: string) {
 		if (!groupId || !chatroomId) return;
 		const since = performance.now() - lastReadAt;
 		if (since < 1500) {
@@ -59,8 +59,10 @@
 		// Bind the receipt to the newest message we actually have, so a message
 		// that slipped through the history/WS entry gap isn't marked read unseen.
 		// For an empty room, bound to the room's creation time (not server-now) so
-		// a first message landing in the entry gap stays unread.
-		const upTo = messages.length ? messages[messages.length - 1].created_at : createdAt;
+		// a first message landing in the entry gap stays unread. Callers inside a
+		// reactive $effect pass `explicitUpTo` so reading `messages` here doesn't
+		// make `messages` a dependency of that effect.
+		const upTo = explicitUpTo ?? (messages.length ? messages[messages.length - 1].created_at : createdAt);
 		markChatroomRead(groupId, chatroomId, upTo).then(() => {
 			queryClient.invalidateQueries({ queryKey: ['notifications'] });
 			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
@@ -151,8 +153,12 @@
 					initialReady = true;
 				});
 			});
-			// Mark the room read on entry once history loads.
-			tryMarkRead();
+			// Mark the room read on entry, bounded to the fetched page's newest
+			// message read from messagesQuery.data (NOT the reactive `messages`), so
+			// this effect doesn't depend on `messages` and re-seed it — dropping live
+			// messages / older pages — when it later changes.
+			const newest = messagesQuery.data.items[0]?.created_at;
+			tryMarkRead(newest ?? untrack(() => createdAt));
 		}
 	});
 
@@ -166,6 +172,28 @@
 			connected = true;
 			const joinMsg: WsClientMessage = { type: 'join', chatroom_id: chatroomId };
 			socket.send(JSON.stringify(joinMsg));
+			// Close the REST/WS gap: a message can arrive between the history fetch
+			// and this join (so it's in neither the fetched page nor the broadcast).
+			// Re-fetch the latest page and merge anything we don't have, keeping the
+			// stream contiguous before a read can advance past it.
+			listMessages(groupId, chatroomId)
+				.then((page) => {
+					const have = new Set(messages.map((m) => m.id));
+					const missed = page.items.filter((m) => !have.has(m.id));
+					if (!missed.length) return;
+					const stick = isNearBottom();
+					messages = [...messages, ...missed].sort((a, b) =>
+						a.created_at < b.created_at
+							? -1
+							: a.created_at > b.created_at
+								? 1
+								: a.id.localeCompare(b.id)
+					);
+					if (stick) tick().then(scrollToBottom);
+				})
+				.catch(() => {
+					// transient — the next live message / re-entry will reconcile
+				});
 		};
 
 		socket.onmessage = (event) => {
