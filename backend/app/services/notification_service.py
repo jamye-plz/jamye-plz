@@ -47,12 +47,15 @@ class NotificationService:
         group_name: str,
         exclude_user_id: str,
         member_user_ids: list[str],
+        message_at: datetime,
     ) -> None:
         """Upsert a chat_unread notification for each member except the sender.
 
         Uses dedup_key=f"chat_unread:{topic_id}" so repeated messages recycle
-        the same notification slot instead of accumulating duplicates.
-        Commits once after all upserts.
+        the same notification slot instead of accumulating duplicates. The
+        notification's created_at is stamped with the triggering message's time
+        (``message_at``) so a read receipt up to that message clears it. Commits
+        once after all upserts.
         """
         payload: dict[str, Any] = {
             "group_id": group_id,
@@ -68,6 +71,7 @@ class NotificationService:
                 type="chat_unread",
                 payload=payload,
                 dedup_key=f"chat_unread:{topic_id}",
+                created_at=message_at,
             )
         await self._db.commit()
 

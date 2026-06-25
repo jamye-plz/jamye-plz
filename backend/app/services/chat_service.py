@@ -177,12 +177,14 @@ class ChatService:
                 user_id=user_id, topic_id=chatroom.topic_id, before=read_ts
             )
 
-    async def on_topic_message_posted(self, chatroom_id: str, sender_id: str) -> None:
+    async def on_topic_message_posted(
+        self, chatroom_id: str, sender_id: str, message_at: datetime
+    ) -> None:
         """Called after a message is sent in a topic chatroom.
 
         Loads chatroom + topic + group + members, then bumps chat_unread
-        notifications for all members except the sender.
-        No-op if chatroom is not a topic chatroom.
+        notifications for all members except the sender, stamping each with the
+        message's timestamp. No-op if chatroom is not a topic chatroom.
         """
         from app.repositories.group_repository import GroupRepository, MembershipRepository
         from app.repositories.topic_repository import TopicRepository
@@ -214,4 +216,5 @@ class ChatService:
             group_name=group.name,
             exclude_user_id=sender_id,
             member_user_ids=member_user_ids,
+            message_at=message_at,
         )

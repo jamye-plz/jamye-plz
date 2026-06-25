@@ -38,6 +38,21 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", "chatroom_id", name="uq_chatroom_reads_user_chatroom"),
     )
 
+    # 1.5 Backfill author read receipts for existing topic chatrooms, so authors
+    # don't see their own pre-existing topics (especially message-less seeds) as
+    # unread after deploy. Mirrors the create-topic path, which records the
+    # author's receipt at creation; here we use the topic's created_at.
+    op.execute(
+        """
+        INSERT INTO chatroom_reads (id, user_id, chatroom_id, last_read_at)
+        SELECT gen_random_uuid()::text, t.author_id, c.id, t.created_at
+        FROM chatrooms c
+        JOIN topics t ON t.id = c.topic_id
+        WHERE c.type = 'topic'
+        ON CONFLICT ON CONSTRAINT uq_chatroom_reads_user_chatroom DO NOTHING
+        """
+    )
+
     # 2. Add dedup_key column to notifications
     op.add_column(
         "notifications",

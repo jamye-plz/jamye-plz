@@ -47,7 +47,12 @@ class NotificationRepository:
         return result.scalar_one_or_none()
 
     async def upsert_by_dedup_key(
-        self, user_id: str, type: str, payload: dict[str, Any], dedup_key: str
+        self,
+        user_id: str,
+        type: str,
+        payload: dict[str, Any],
+        dedup_key: str,
+        created_at: datetime | None = None,
     ) -> Notification:
         """Atomically recycle the (user_id, dedup_key) notification slot.
 
@@ -55,10 +60,14 @@ class NotificationRepository:
         unique index so concurrent upserts for the same slot (e.g. two senders
         posting in one topic at once, before any recipient row exists) can't race
         into an IntegrityError. On conflict the existing row is refreshed: its
-        payload/type are updated, read_at is reset, and created_at is bumped to
-        now so it resurfaces as unread.
+        payload/type are updated, read_at is reset, and created_at is set to
+        ``created_at`` so it resurfaces as unread.
+
+        ``created_at`` should be the triggering message's timestamp (not now), so
+        a read receipt recorded up to that message's time correctly covers — and
+        clears — this notification. Defaults to now when omitted.
         """
-        now = datetime.now(timezone.utc)
+        ts = created_at or datetime.now(timezone.utc)
         stmt = (
             pg_insert(Notification)
             .values(
@@ -68,7 +77,7 @@ class NotificationRepository:
                 payload=payload,
                 dedup_key=dedup_key,
                 read_at=None,
-                created_at=now,
+                created_at=ts,
             )
             .on_conflict_do_update(
                 index_elements=[Notification.user_id, Notification.dedup_key],
@@ -77,7 +86,7 @@ class NotificationRepository:
                     "type": type,
                     "payload": payload,
                     "read_at": None,
-                    "created_at": now,
+                    "created_at": ts,
                 },
             )
         )
