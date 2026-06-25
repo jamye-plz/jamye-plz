@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,11 +109,16 @@ class NotificationRepository:
         ]
         if before is not None:
             conditions.append(Notification.created_at <= before)
-        result = await self._db.execute(select(Notification).where(*conditions))
-        now = datetime.now(timezone.utc)
-        for notif in result.scalars().all():
-            notif.read_at = now
-            self._db.add(notif)
+        # Single predicated UPDATE: the `created_at <= before` bound is enforced
+        # at write time under row locks, so a row concurrently recycled past
+        # `before` (its created_at bumped) no longer matches and is left unread.
+        stmt = (
+            update(Notification)
+            .where(*conditions)
+            .values(read_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False)
+        )
+        await self._db.execute(stmt)
         await self._db.flush()
 
     async def list_by_user(self, user_id: str, limit: int = 50) -> list[Notification]:

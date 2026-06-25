@@ -64,6 +64,16 @@
 		if (pendingRead !== null) clearTimeout(pendingRead);
 	});
 
+	// A message that arrived while the tab was hidden didn't send a read receipt;
+	// mark read when the tab becomes visible again so it doesn't stay unread.
+	$effect(() => {
+		function onVisibility() {
+			if (document.visibilityState === 'visible') tryMarkRead();
+		}
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => document.removeEventListener('visibilitychange', onVisibility);
+	});
+
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
 	const myId = $derived(meQuery.data?.id ?? null);
 
