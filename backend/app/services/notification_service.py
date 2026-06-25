@@ -80,14 +80,19 @@ class NotificationService:
     ) -> None:
         """Mark new_topic and chat_unread notifications as read for a topic.
 
-        ``before`` bounds the clear to notifications created at or before the
-        read timestamp, so an alert for a message that arrived after the read
-        receipt is not silenced.
+        ``new_topic`` ("a topic was posted") is cleared unconditionally — opening
+        the topic acknowledges it. Its created_at is the post time (after the
+        topic's own timestamp), so a message-time ``before`` cutoff would wrongly
+        miss it when reading a message-less seed topic up to topic.created_at.
+
+        ``chat_unread`` (per-message) is bounded by ``before`` (the read point),
+        so an alert for a message that arrived after the read receipt survives.
         """
         await self._notif_repo.mark_read_by_dedup_keys(
-            user_id=user_id,
-            dedup_keys=[f"new_topic:{topic_id}", f"chat_unread:{topic_id}"],
-            before=before,
+            user_id=user_id, dedup_keys=[f"new_topic:{topic_id}"]
+        )
+        await self._notif_repo.mark_read_by_dedup_keys(
+            user_id=user_id, dedup_keys=[f"chat_unread:{topic_id}"], before=before
         )
         await self._db.commit()
 
