@@ -1,20 +1,25 @@
 """TopicService — topic CRUD and tag/media management."""
 
+from datetime import timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.timeutil import today_str, topic_is_unread
 from app.models.topic import Topic
 from app.models.topic_media import TopicMedia
 from app.models.topic_tag import TopicTag
+from app.repositories.chatroom_read_repository import ChatroomReadRepository
 from app.repositories.group_repository import ChatroomRepository, MembershipRepository
+from app.repositories.message_repository import MessageRepository
 from app.repositories.topic_repository import (
     TopicMediaRepository,
     TopicRepository,
     TopicTagRepository,
 )
 from app.repositories.user_repository import UserRepository
-from app.schemas.topic import TagItem, TopicMediaOut, TopicOut, TopicTagOut
+from app.schemas.topic import TagItem, TopicDatesOut, TopicMediaOut, TopicOut, TopicTagOut
 
 
 class TopicService:
@@ -26,8 +31,10 @@ class TopicService:
         self._membership_repo = MembershipRepository(db)
         self._user_repo = UserRepository(db)
         self._chatroom_repo = ChatroomRepository(db)
+        self._chatroom_read_repo = ChatroomReadRepository(db)
+        self._message_repo = MessageRepository(db)
 
-    async def to_topic_out(self, topic: Topic) -> TopicOut:
+    async def to_topic_out(self, topic: Topic, unread: bool = False) -> TopicOut:
         """Assemble the full topic detail (author, tags, media) for the API."""
         settings = get_settings()
         author = await self._user_repo.get_by_id(topic.author_id)
@@ -57,6 +64,7 @@ class TopicService:
             tags=[TopicTagOut.model_validate(t) for t in tags],
             media=media_out,
             chatroom_id=chatroom.id if chatroom else None,
+            unread=unread,
             created_at=topic.created_at,
             updated_at=topic.updated_at,
         )
@@ -83,9 +91,69 @@ class TopicService:
         return topic
 
     async def list_topics(
-        self, group_id: str, cursor: str | None = None, limit: int = 20
+        self,
+        group_id: str,
+        cursor: str | None = None,
+        limit: int = 20,
+        date: str | None = None,
     ) -> tuple[list[Topic], str | None]:
-        return await self._topic_repo.list_by_group(group_id, cursor=cursor, limit=limit)
+        return await self._topic_repo.list_by_group(
+            group_id, cursor=cursor, limit=limit, date=date
+        )
+
+    async def compute_unread_map(
+        self, topics: list[Topic], user_id: str
+    ) -> dict[str, bool]:
+        """Batch-compute unread status for a page of topics — no N+1.
+
+        Steps:
+        1. One query: topic_id → chatroom_id mapping.
+        2. One query: chatroom_id → last_read_at for this user.
+        3. One query: chatroom_id → max(message.created_at).
+        4. Pure comparison per topic.
+        """
+        if not topics:
+            return {}
+
+        topic_ids = [t.id for t in topics]
+
+        # 1. topic → chatroom map (one query)
+        topic_chatroom = await self._topic_repo.topic_chatroom_map(topic_ids)
+
+        chatroom_ids = list(topic_chatroom.values())
+
+        # 2. last_read_at per chatroom for this user (one query)
+        last_read_map = await self._chatroom_read_repo.get_last_read_map(user_id, chatroom_ids)
+
+        # 3. latest message created_at per chatroom (one query)
+        latest_msg_map = await self._message_repo.latest_created_at_by_chatrooms(chatroom_ids)
+
+        # 4. pure predicate per topic
+        result: dict[str, bool] = {}
+        for topic in topics:
+            chatroom_id = topic_chatroom.get(topic.id)
+            last_read_at = last_read_map.get(chatroom_id) if chatroom_id else None
+            latest_msg_at = latest_msg_map.get(chatroom_id) if chatroom_id else None
+
+            topic_created = topic.created_at
+            if topic_created.tzinfo is None:
+                topic_created = topic_created.replace(tzinfo=timezone.utc)
+
+            result[topic.id] = topic_is_unread(last_read_at, topic_created, latest_msg_at)
+
+        return result
+
+    async def list_topic_dates(self, group_id: str) -> TopicDatesOut:
+        """Return distinct dates with topics plus today, sorted desc."""
+        settings = get_settings()
+        tz_name = settings.app_timezone
+        dates = await self._topic_repo.distinct_dates(group_id, tz_name=tz_name)
+        today = today_str(tz_name)
+        # Ensure today is included and the list is deduped/sorted desc.
+        dates_set = set(dates)
+        dates_set.add(today)
+        sorted_dates = sorted(dates_set, reverse=True)
+        return TopicDatesOut(dates=sorted_dates, today=today)
 
     async def assert_author_or_owner(self, topic: Topic, user_id: str) -> None:
         """Only the topic author or the group owner may modify a topic/its media."""

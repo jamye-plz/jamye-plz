@@ -2,9 +2,11 @@
 
 from datetime import datetime
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timeutil import seoul_day_window
+from app.models.chatroom import Chatroom
 from app.models.topic import Topic
 from app.models.topic_media import TopicMedia
 from app.models.topic_tag import TopicTag
@@ -42,14 +44,24 @@ class TopicRepository:
         group_id: str,
         cursor: str | None = None,
         limit: int = 20,
+        date: str | None = None,
     ) -> tuple[list[Topic], str | None]:
-        # Keyset pagination on (created_at, id): ordering and cursor filter must
-        # use the same key, otherwise random UUID ids skip/duplicate rows.
+        """Keyset-paginated topic list, optionally filtered to a calendar date.
+
+        When `date` ("YYYY-MM-DD") is given, results are constrained to the
+        Asia/Seoul calendar day boundary (converted to UTC).
+        """
         query = (
             select(Topic)
             .where(Topic.group_id == group_id)
             .order_by(Topic.created_at.desc(), Topic.id.desc())
         )
+        if date:
+            start_utc, end_utc = seoul_day_window(date)
+            query = query.where(
+                Topic.created_at >= start_utc,
+                Topic.created_at < end_utc,
+            )
         if cursor:
             cur_created, cur_id = cursor.split("|", 1)
             query = query.where(
@@ -65,6 +77,36 @@ class TopicRepository:
             last = rows[-1]
             next_cursor = f"{last.created_at.isoformat()}|{last.id}"
         return rows, next_cursor
+
+    async def distinct_dates(self, group_id: str, tz_name: str = "Asia/Seoul") -> list[str]:
+        """Return distinct calendar dates (in tz_name) that have topics, descending.
+
+        Uses Postgres: func.date(func.timezone(tz_name, created_at)) to localise
+        the stored timestamptz before extracting the date.
+        """
+        local_date = func.date(func.timezone(tz_name, Topic.created_at)).label("d")
+        result = await self._db.execute(
+            select(local_date)
+            .where(Topic.group_id == group_id)
+            .distinct()
+            .order_by(local_date.desc())
+        )
+        return [str(row.d) for row in result.all()]
+
+    async def topic_chatroom_map(self, topic_ids: list[str]) -> dict[str, str]:
+        """Return {topic_id: chatroom_id} for the given topic ids.
+
+        One query — avoids N+1 in unread computation.
+        """
+        if not topic_ids:
+            return {}
+        result = await self._db.execute(
+            select(Chatroom.topic_id, Chatroom.id).where(
+                Chatroom.topic_id.in_(topic_ids),
+                Chatroom.type == "topic",
+            )
+        )
+        return {row.topic_id: row.id for row in result.all()}
 
 
 class TopicMediaRepository:

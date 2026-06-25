@@ -74,6 +74,7 @@ class Settings(BaseSettings):
 
     # ── App ───────────────────────────────────────────────────────────────────
     app_env: str = "development"
+    app_timezone: str = "Asia/Seoul"
 
     # ── Derived helpers ──────────────────────────────────────────────────────
 

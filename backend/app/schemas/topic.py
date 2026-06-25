@@ -46,6 +46,7 @@ class TopicOut(BaseModel):
     tags: list[TopicTagOut] = []
     media: list[TopicMediaOut] = []
     chatroom_id: str | None = None
+    unread: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -53,6 +54,11 @@ class TopicOut(BaseModel):
 class TopicPage(BaseModel):
     items: list[TopicOut]
     next_cursor: str | None = None
+
+
+class TopicDatesOut(BaseModel):
+    dates: list[str]
+    today: str
 
 
 # ── Media ─────────────────────────────────────────────────────────────────────
