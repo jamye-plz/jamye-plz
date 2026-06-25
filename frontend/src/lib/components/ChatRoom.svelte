@@ -16,7 +16,8 @@
 		backHref,
 		pinnedBody,
 		canEditPinned = false,
-		onEditPinned
+		onEditPinned,
+		createdAt
 	}: {
 		groupId: string;
 		chatroomId: string;
@@ -25,6 +26,8 @@
 		pinnedBody?: string | null;
 		canEditPinned?: boolean;
 		onEditPinned?: () => void;
+		/** Room (topic/chatroom) creation time — the read bound for an empty room. */
+		createdAt?: string;
 	} = $props();
 
 	const queryClient = useQueryClient();
@@ -55,7 +58,9 @@
 		lastReadAt = performance.now();
 		// Bind the receipt to the newest message we actually have, so a message
 		// that slipped through the history/WS entry gap isn't marked read unseen.
-		const upTo = messages.length ? messages[messages.length - 1].created_at : undefined;
+		// For an empty room, bound to the room's creation time (not server-now) so
+		// a first message landing in the entry gap stays unread.
+		const upTo = messages.length ? messages[messages.length - 1].created_at : createdAt;
 		markChatroomRead(groupId, chatroomId, upTo).then(() => {
 			queryClient.invalidateQueries({ queryKey: ['notifications'] });
 			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
@@ -184,8 +189,10 @@
 						: -1;
 					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
 					if (stick) tick().then(scrollToBottom);
-					// Mark read on live message if tab is visible (throttled).
-					if (document.visibilityState === 'visible') {
+					// Only mark read when the message is actually in view: a message appended
+						// while the user has scrolled up isn't brought into view, so reading it
+						// would clear its unread state unseen. Scrolling back down marks it read.
+					if (document.visibilityState === 'visible' && stick) {
 						tryMarkRead();
 					}
 				} else if (data.type === 'system') {
@@ -265,6 +272,11 @@
 	function handleScroll() {
 		if (messagesEl && messagesEl.scrollTop < 80 && nextCursor && !loadingOlder) {
 			loadOlder();
+		}
+		// Scrolling back to the bottom means the newest messages are now in view —
+		// mark read (covers messages that arrived while the user was scrolled up).
+		if (document.visibilityState === 'visible' && isNearBottom()) {
+			tryMarkRead();
 		}
 	}
 

@@ -69,6 +69,7 @@
 	pinnedBody={topicQuery.data?.body}
 	canEditPinned={isAuthor}
 	onEditPinned={openEditor}
+	createdAt={topicQuery.data?.created_at}
 	{backHref}
 />
 
