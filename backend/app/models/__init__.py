@@ -2,6 +2,7 @@
 
 from app.models.base import Base
 from app.models.chatroom import Chatroom
+from app.models.chatroom_read import ChatroomRead
 from app.models.group import Group
 from app.models.invite import Invite
 from app.models.membership import Membership
@@ -23,6 +24,7 @@ __all__ = [
     "TopicMedia",
     "TopicTag",
     "Chatroom",
+    "ChatroomRead",
     "Message",
     "PushSubscription",
     "Notification",

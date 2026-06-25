@@ -1,10 +1,13 @@
 """ChatService — chatroom and message business logic."""
 
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ForbiddenError, MessageIdempotencyError, NotFoundError
 from app.models.chatroom import Chatroom
 from app.models.message import Message
+from app.repositories.chatroom_read_repository import ChatroomReadRepository
 from app.repositories.group_repository import ChatroomRepository, MembershipRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.user_repository import UserRepository
@@ -18,6 +21,7 @@ class ChatService:
         self._message_repo = MessageRepository(db)
         self._membership_repo = MembershipRepository(db)
         self._user_repo = UserRepository(db)
+        self._chatroom_read_repo = ChatroomReadRepository(db)
 
     async def get_chatroom_or_404(self, chatroom_id: str) -> Chatroom:
         chatroom = await self._chatroom_repo.get_by_id(chatroom_id)
@@ -139,3 +143,64 @@ class ChatService:
             for m in messages
         ]
         return out, next_cursor
+
+    async def mark_read(self, chatroom_id: str, user_id: str) -> None:
+        """Mark chatroom as read for the user and clear topic notifications if applicable.
+
+        Upserts a ChatroomRead and, if the chatroom is a topic chatroom,
+        calls NotificationService.clear_topic_notifications.
+        Commits once.
+        """
+        from app.services.notification_service import NotificationService
+
+        chatroom = await self.get_chatroom_or_404(chatroom_id)
+        now = datetime.now(timezone.utc)
+        await self._chatroom_read_repo.upsert(
+            user_id=user_id, chatroom_id=chatroom_id, last_read_at=now
+        )
+        await self._db.commit()
+
+        if chatroom.topic_id:
+            notif_svc = NotificationService(self._db)
+            await notif_svc.clear_topic_notifications(
+                user_id=user_id, topic_id=chatroom.topic_id
+            )
+
+    async def on_topic_message_posted(self, chatroom_id: str, sender_id: str) -> None:
+        """Called after a message is sent in a topic chatroom.
+
+        Loads chatroom + topic + group + members, then bumps chat_unread
+        notifications for all members except the sender.
+        No-op if chatroom is not a topic chatroom.
+        """
+        from app.repositories.group_repository import GroupRepository, MembershipRepository
+        from app.repositories.topic_repository import TopicRepository
+        from app.services.notification_service import NotificationService
+
+        chatroom = await self.get_chatroom_or_404(chatroom_id)
+        if chatroom.type != "topic" or not chatroom.topic_id:
+            return
+
+        topic_repo = TopicRepository(self._db)
+        topic = await topic_repo.get_by_id(chatroom.topic_id)
+        if topic is None:
+            return
+
+        group_repo = GroupRepository(self._db)
+        group = await group_repo.get_by_id(chatroom.group_id)
+        if group is None:
+            return
+
+        membership_repo = MembershipRepository(self._db)
+        memberships = await membership_repo.list_by_group(chatroom.group_id)
+        member_user_ids = [m.user_id for m in memberships]
+
+        notif_svc = NotificationService(self._db)
+        await notif_svc.bump_topic_unread(
+            group_id=chatroom.group_id,
+            topic_id=topic.id,
+            topic_title=topic.title,
+            group_name=group.name,
+            exclude_user_id=sender_id,
+            member_user_ids=member_user_ids,
+        )

@@ -212,6 +212,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json(msg_payload)
                         # Broadcast to other members
                         await ws_hub.broadcast(chatroom_id, msg_payload, exclude=websocket)
+                        # Recycle the per-topic "unread chat" notification for the
+                        # other members (no-op for the group main chatroom).
+                        await chat_svc.on_topic_message_posted(chatroom_id, user_id)
                     except MessageIdempotencyError:
                         await websocket.send_json(
                             {"type": "duplicate", "client_msg_id": client_msg_id}

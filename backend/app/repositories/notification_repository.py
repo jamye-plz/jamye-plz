@@ -20,12 +20,69 @@ class NotificationRepository:
         )
         return result.scalar_one_or_none()
 
-    async def create(self, user_id: str, type: str, payload: dict[str, Any]) -> Notification:
-        notification = Notification(user_id=user_id, type=type, payload=payload)
+    async def create(
+        self,
+        user_id: str,
+        type: str,
+        payload: dict[str, Any],
+        dedup_key: str | None = None,
+    ) -> Notification:
+        notification = Notification(
+            user_id=user_id, type=type, payload=payload, dedup_key=dedup_key
+        )
         self._db.add(notification)
         await self._db.flush()
         await self._db.refresh(notification)
         return notification
+
+    async def get_by_dedup_key(self, user_id: str, dedup_key: str) -> Notification | None:
+        result = await self._db.execute(
+            select(Notification).where(
+                Notification.user_id == user_id,
+                Notification.dedup_key == dedup_key,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert_by_dedup_key(
+        self, user_id: str, type: str, payload: dict[str, Any], dedup_key: str
+    ) -> Notification:
+        """Recycle an existing notification or create a new one.
+
+        If a notification with (user_id, dedup_key) exists:
+          - refresh payload, reset read_at to None, bump created_at to now.
+        Otherwise create a new notification with the given dedup_key.
+        """
+        existing = await self.get_by_dedup_key(user_id, dedup_key)
+        if existing:
+            existing.payload = payload
+            existing.type = type
+            existing.read_at = None
+            existing.created_at = datetime.now(timezone.utc)
+            self._db.add(existing)
+            await self._db.flush()
+            await self._db.refresh(existing)
+            return existing
+        return await self.create(
+            user_id=user_id, type=type, payload=payload, dedup_key=dedup_key
+        )
+
+    async def mark_read_by_dedup_keys(self, user_id: str, dedup_keys: list[str]) -> None:
+        """Set read_at=now for all matching unread notifications."""
+        if not dedup_keys:
+            return
+        result = await self._db.execute(
+            select(Notification).where(
+                Notification.user_id == user_id,
+                Notification.dedup_key.in_(dedup_keys),
+                Notification.read_at.is_(None),
+            )
+        )
+        now = datetime.now(timezone.utc)
+        for notif in result.scalars().all():
+            notif.read_at = now
+            self._db.add(notif)
+        await self._db.flush()
 
     async def list_by_user(self, user_id: str, limit: int = 50) -> list[Notification]:
         result = await self._db.execute(
