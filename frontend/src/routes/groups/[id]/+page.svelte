@@ -96,6 +96,9 @@
 			// Invalidate both the date list and all topics for this group.
 			queryClient.invalidateQueries({ queryKey: ['topic-dates', groupId] });
 			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
+			// A new topic is posted under today; jump to today so it's visible even
+			// when the user was viewing an older date (otherwise it looks lost).
+			if (serverToday && selectedDate !== serverToday) selectDate(serverToday);
 		}
 	}));
 

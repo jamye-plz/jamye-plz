@@ -10,6 +10,14 @@ export function listMessages(
 	return apiGet<ChatPage>(`/groups/${groupId}/chatrooms/${chatroomId}/messages${qs}`);
 }
 
-export function markChatroomRead(groupId: string, chatroomId: string): Promise<void> {
-	return apiPost<void>(`/groups/${groupId}/chatrooms/${chatroomId}/read`);
+export function markChatroomRead(
+	groupId: string,
+	chatroomId: string,
+	upTo?: string
+): Promise<void> {
+	// up_to = ISO timestamp of the newest message the client has rendered, so the
+	// server records the receipt only up to what was actually seen.
+	return apiPost<void>(`/groups/${groupId}/chatrooms/${chatroomId}/read`, {
+		up_to: upTo ?? null
+	});
 }

@@ -53,7 +53,10 @@
 			return;
 		}
 		lastReadAt = performance.now();
-		markChatroomRead(groupId, chatroomId).then(() => {
+		// Bind the receipt to the newest message we actually have, so a message
+		// that slipped through the history/WS entry gap isn't marked read unseen.
+		const upTo = messages.length ? messages[messages.length - 1].created_at : undefined;
+		markChatroomRead(groupId, chatroomId, upTo).then(() => {
 			queryClient.invalidateQueries({ queryKey: ['notifications'] });
 			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
 		}).catch(() => {

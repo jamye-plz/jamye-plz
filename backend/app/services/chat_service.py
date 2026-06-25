@@ -144,29 +144,37 @@ class ChatService:
         ]
         return out, next_cursor
 
-    async def mark_read(self, chatroom_id: str, user_id: str) -> None:
+    async def mark_read(
+        self, chatroom_id: str, user_id: str, up_to: datetime | None = None
+    ) -> None:
         """Mark chatroom as read for the user and clear topic notifications if applicable.
 
-        Upserts a ChatroomRead and, if the chatroom is a topic chatroom,
-        calls NotificationService.clear_topic_notifications.
-        Commits once.
+        The receipt is recorded up to `up_to` (the newest message the client has
+        actually rendered), capped at now — so a message that arrived in the
+        REST/WS entry gap and was never seen by the client is not covered. When
+        `up_to` is omitted, falls back to now. Commits once.
         """
         from app.services.notification_service import NotificationService
 
         chatroom = await self.get_chatroom_or_404(chatroom_id)
         now = datetime.now(timezone.utc)
+        if up_to is not None:
+            if up_to.tzinfo is None:
+                up_to = up_to.replace(tzinfo=timezone.utc)
+            read_ts = min(up_to, now)
+        else:
+            read_ts = now
         await self._chatroom_read_repo.upsert(
-            user_id=user_id, chatroom_id=chatroom_id, last_read_at=now
+            user_id=user_id, chatroom_id=chatroom_id, last_read_at=read_ts
         )
         await self._db.commit()
 
         if chatroom.topic_id:
             notif_svc = NotificationService(self._db)
-            # Bound the clear to `now`: a chat_unread created by a message that
-            # arrived after this read receipt must survive (the topic still
-            # computes as unread, so the alert has to stay).
+            # Bound the clear to the same read point: a chat_unread for a message
+            # after read_ts must survive (the topic still computes as unread).
             await notif_svc.clear_topic_notifications(
-                user_id=user_id, topic_id=chatroom.topic_id, before=now
+                user_id=user_id, topic_id=chatroom.topic_id, before=read_ts
             )
 
     async def on_topic_message_posted(self, chatroom_id: str, sender_id: str) -> None:
