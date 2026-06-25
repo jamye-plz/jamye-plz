@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { tick } from 'svelte';
 	import {
 		createQuery,
 		createMutation,
@@ -10,6 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { getGroup } from '$lib/api/group.api';
 	import { listTopics, seedTopic, getTopicDates } from '$lib/api/topic.api';
+	import DateDial from '$lib/components/DateDial.svelte';
 
 	const groupId = $derived(page.params.id ?? '');
 	const queryClient = useQueryClient();
@@ -29,24 +29,6 @@
 	// Authoritative "today" string from the server (Asia/Seoul YYYY-MM-DD).
 	const serverToday = $derived(datesQuery.data?.today ?? '');
 
-	// Compute yesterday purely from the server's today string — no browser Date.now().
-	function subtractOneDay(yyyymmdd: string): string {
-		const [y, m, d] = yyyymmdd.split('-').map(Number);
-		const dt = new Date(Date.UTC(y!, m! - 1, d!));
-		dt.setUTCDate(dt.getUTCDate() - 1);
-		const yy = dt.getUTCFullYear();
-		const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-		const dd = String(dt.getUTCDate()).padStart(2, '0');
-		return `${yy}-${mm}-${dd}`;
-	}
-
-	function tabLabel(date: string, today: string): string {
-		if (!today) return date;
-		if (date === today) return '오늘';
-		if (date === subtractOneDay(today)) return '어제';
-		return date;
-	}
-
 	// Selected date is driven by the URL (?date=YYYY-MM-DD) so it survives
 	// back-navigation from a topic chatroom. Only the first entry (no param)
 	// defaults to today — every later remount restores the chosen date.
@@ -60,22 +42,6 @@
 		// URL is exactly what we return to when coming back from a topic chatroom.
 		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
 	}
-
-	// Horizontally-scrollable date strip: whenever the selection changes (incl. the
-	// initial default of today), recenter the selected tab within the strip.
-	let tablistEl = $state<HTMLElement | null>(null);
-	function centerSelectedTab() {
-		const el = tablistEl?.querySelector<HTMLElement>(`[data-date="${selectedDate}"]`);
-		if (!el) return;
-		const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-		el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
-	}
-	$effect(() => {
-		selectedDate; // re-run when the selected date changes
-		datesQuery.data; // and once the tabs have rendered
-		if (!selectedDate) return;
-		tick().then(centerSelectedTab);
-	});
 
 	const topicsQuery = createInfiniteQuery(() => ({
 		queryKey: ['topics', groupId, selectedDate],
@@ -196,37 +162,18 @@
 				<p class="text-danger text-xs px-1">주제를 만들지 못했어요. 다시 시도해 주세요.</p>
 			{/if}
 
-			<!-- Date strip: directly below the composer, same width, horizontally scrollable.
-			     Selecting a date recenters it (see centerSelectedTab). -->
+			<!-- Date dial: directly below the composer, same width. Drag/scroll to a
+			     date under the center indicator; releasing snaps and selects it. -->
 			{#if datesQuery.data && datesQuery.data.dates.length > 0}
-				<div
-					bind:this={tablistEl}
-					role="tablist"
-					aria-label="날짜 선택"
-					class="flex gap-2 overflow-x-auto -mx-1 px-1 py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-				>
-					{#each datesQuery.data.dates as date (date)}
-						<button
-							type="button"
-							role="tab"
-							data-date={date}
-							aria-selected={date === selectedDate}
-							aria-controls="topics-panel"
-							onclick={() => selectDate(date)}
-							class="shrink-0 min-h-[40px] px-4 py-2 rounded-full text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent whitespace-nowrap
-								{date === selectedDate
-								? 'bg-accent text-white'
-								: 'bg-surface text-text-secondary hover:bg-surface-elevated hover:text-text-primary'}"
-						>
-							{tabLabel(date, serverToday)}
-						</button>
-					{/each}
-				</div>
+				<DateDial
+					dates={datesQuery.data.dates}
+					selected={selectedDate}
+					today={serverToday}
+					onselect={selectDate}
+				/>
 			{:else if datesQuery.isPending}
-				<div class="flex gap-2 overflow-x-auto py-1" aria-hidden="true">
-					{#each [1, 2, 3] as i (i)}
-						<div class="shrink-0 h-[40px] w-16 bg-surface-elevated rounded-full animate-pulse"></div>
-					{/each}
+				<div class="flex justify-center py-2" aria-hidden="true">
+					<div class="h-9 w-40 bg-surface-elevated rounded-xl animate-pulse"></div>
 				</div>
 			{/if}
 
