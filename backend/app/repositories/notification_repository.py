@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,27 +68,32 @@ class NotificationRepository:
         clears — this notification. Defaults to now when omitted.
         """
         ts = created_at or datetime.now(timezone.utc)
-        stmt = (
-            pg_insert(Notification)
-            .values(
-                id=str(uuid.uuid4()),
-                user_id=user_id,
-                type=type,
-                payload=payload,
-                dedup_key=dedup_key,
-                read_at=None,
-                created_at=ts,
-            )
-            .on_conflict_do_update(
-                index_elements=[Notification.user_id, Notification.dedup_key],
-                index_where=Notification.dedup_key.isnot(None),
-                set_={
-                    "type": type,
-                    "payload": payload,
-                    "read_at": None,
-                    "created_at": ts,
-                },
-            )
+        insert_stmt = pg_insert(Notification).values(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            type=type,
+            payload=payload,
+            dedup_key=dedup_key,
+            read_at=None,
+            created_at=ts,
+        )
+        excluded_created = insert_stmt.excluded.created_at
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[Notification.user_id, Notification.dedup_key],
+            index_where=Notification.dedup_key.isnot(None),
+            set_={
+                "type": type,
+                "payload": payload,
+                # Keep the slot monotonic by message time: an out-of-order older
+                # message must not move created_at back (which would let a read of
+                # only the older message clear the alert for an unseen newer one).
+                "created_at": func.greatest(Notification.created_at, excluded_created),
+                # Only resurface as unread when this really is a newer message.
+                "read_at": case(
+                    (excluded_created > Notification.created_at, None),
+                    else_=Notification.read_at,
+                ),
+            },
         )
         await self._db.execute(stmt)
         await self._db.flush()
