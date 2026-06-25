@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,18 +33,22 @@ class ChatroomReadRepository:
         reads (same user, two tabs/devices) can't race into an IntegrityError
         that would 500 and leave the topic unread.
         """
-        stmt = (
-            pg_insert(ChatroomRead)
-            .values(
-                id=str(uuid.uuid4()),
-                user_id=user_id,
-                chatroom_id=chatroom_id,
-                last_read_at=last_read_at,
-            )
-            .on_conflict_do_update(
-                constraint="uq_chatroom_reads_user_chatroom",
-                set_={"last_read_at": last_read_at},
-            )
+        insert_stmt = pg_insert(ChatroomRead).values(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            chatroom_id=chatroom_id,
+            last_read_at=last_read_at,
+        )
+        stmt = insert_stmt.on_conflict_do_update(
+            constraint="uq_chatroom_reads_user_chatroom",
+            # Keep the receipt monotonic: out-of-order reads (an earlier entry read
+            # committing after a later live-message read) must not move
+            # last_read_at backwards, which would resurface already-seen messages.
+            set_={
+                "last_read_at": func.greatest(
+                    ChatroomRead.last_read_at, insert_stmt.excluded.last_read_at
+                )
+            },
         )
         await self._db.execute(stmt)
         await self._db.flush()

@@ -34,7 +34,9 @@
 	// outright would leave a phantom unread dot/notification for a message the
 	// user is actively viewing (the server now creates the notification before
 	// broadcasting), until a later message or a re-entry.
-	let lastReadAt = 0;
+	// -Infinity so the FIRST read always fires immediately (even on a fresh deep-link
+	// load where performance.now() is still < 1500ms); only later calls throttle.
+	let lastReadAt = Number.NEGATIVE_INFINITY;
 	let pendingRead: ReturnType<typeof setTimeout> | null = null;
 
 	function tryMarkRead() {
