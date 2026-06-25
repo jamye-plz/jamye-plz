@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
-	import { listMessages } from '$lib/api/chat.api';
+	import { listMessages, markChatroomRead } from '$lib/api/chat.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
@@ -26,6 +26,24 @@
 		canEditPinned?: boolean;
 		onEditPinned?: () => void;
 	} = $props();
+
+	const queryClient = useQueryClient();
+
+	// Throttle guard for mark-read calls (performance.now() timestamp).
+	let lastReadAt = 0;
+
+	function tryMarkRead() {
+		if (!groupId || !chatroomId) return;
+		const now = performance.now();
+		if (now - lastReadAt < 1500) return;
+		lastReadAt = now;
+		markChatroomRead(groupId, chatroomId).then(() => {
+			queryClient.invalidateQueries({ queryKey: ['notifications'] });
+			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
+		}).catch(() => {
+			// swallow — must not disrupt chat
+		});
+	}
 
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
 	const myId = $derived(meQuery.data?.id ?? null);
@@ -94,6 +112,8 @@
 					initialReady = true;
 				});
 			});
+			// Mark the room read on entry once history loads.
+			tryMarkRead();
 		}
 	});
 
@@ -130,6 +150,10 @@
 						: -1;
 					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
 					if (stick) tick().then(scrollToBottom);
+					// Mark read on live message if tab is visible (throttled).
+					if (document.visibilityState === 'visible') {
+						tryMarkRead();
+					}
 				} else if (data.type === 'system') {
 					// e.g. "A posted a new topic!" reminder in the group main chat.
 					messages = [

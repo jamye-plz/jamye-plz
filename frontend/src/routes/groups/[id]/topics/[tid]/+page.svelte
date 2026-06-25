@@ -55,9 +55,6 @@
 						<span>{topic.author_nickname}</span>
 						<span>·</span>
 						<span>{new Date(topic.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-						{#if topic.status === 'enriched'}
-							<span class="ml-auto text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent">정리됨</span>
-						{/if}
 					</div>
 				</header>
 
