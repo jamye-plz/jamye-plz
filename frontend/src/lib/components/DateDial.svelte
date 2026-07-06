@@ -18,7 +18,7 @@
 		onselect: (date: string) => void;
 	} = $props();
 
-	const ITEM_W = 84; // px; fixed slot width (min-w-0 keeps it exact). Spacers are
+	const ITEM_W = 112; // px; fixed slot width (min-w-0 keeps it exact). Spacers are
 	// calc(50% - ITEM_W/2) so any item (incl. the first/last) can reach the center.
 	const VISIBLE_EACH_SIDE = 3; // dates shown on each side of the center
 
@@ -101,7 +101,7 @@
 	function centerOnIndex(idx: number, smooth: boolean) {
 		if (!scroller) return;
 		idx = clampIndex(idx);
-		// Already centered (uniform 84px slots make this exact) → nothing to do.
+		// Already centered (uniform ITEM_W slots make this exact) → nothing to do.
 		if (Math.abs(scroller.scrollLeft - idx * ITEM_W) <= 1) {
 			stopAnim();
 			centerIndex = idx;
