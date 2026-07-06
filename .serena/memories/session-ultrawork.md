@@ -1,105 +1,27 @@
-# Session: ultrawork — 잼얘좀 (jamye-plz)
+# Ultrawork Session — ✅ COMPLETE (user-approved, shipped)
 
-## Meta
-- Start: 2026-06-16 | Workflow: ultrawork (5-Phase, 11 reviews) | Runtime: Claude Code (Opus) | Lang: ko
-- Repo: GREENFIELD. User: 상세논의→정교기획→최적스택→계획기반개발. Multi-pass.
-- NOTE: SCM workflow keyword 오탐 무시. oma-voice(STT) 1차 제외로 불필요.
+## Final Outcome (2026-07-06)
+- Branch `fix/date-dial-spacing`, commit `9bdd842` fix(web): widen date dial slot to stop label overlap
+- **PR #9** (base main): https://github.com/jamye-plz/jamye-plz/pull/9
+- DateDial ITEM_W 84→112. 실측: 활성 pill 113px(구 슬롯 29px 초과=버그), 신 피치 최소 여백 14px. `.serena/memories/*`는 관례대로 커밋 제외.
 
-## PRODUCT = 잼얘좀 "재밌는 얘기 좀" / EN "anything interesting?"
-지인 기반 lightweight 소셜 플랫폼. 셋로그 벤치마킹. 반응형 PWA 웹.
-```
-폐쇄 그룹(초대제·소수) [1차, 공개그룹 2차]
-├ 일별 타임라인: 잼얘(주제) "시드" 날짜별 누적
-│   └ 각 주제: 주제만 먼저(부담0) → 텍스트/사진(1차) enrich
-│       └ 주제별 채팅방: 실시간 대화
-└ 그룹 메인 채팅방: 일반채팅 + 리마인드 허브
-🔔알림 참여유도 · 🫥폐쇄·날것 감성
-```
 
-## v1 SCOPE (1차) — LOCKED
-- 그룹: 소수 폐쇄(초대제). | 콘텐츠: 텍스트+사진 "시드→enrich". | 타임라인: 일별 누적.
-- 채팅: 주제별 방 + 그룹 메인방, 진짜 실시간(WS). | 알림: 리마인드 + Web Push.
-- AI(WASM 온디바이스): ①자동 태깅 ②살 붙이기. STT·카드생성·추천·하이라이트 2차+.
-- 인증: 카카오+구글 OAuth. | 목표: 실서비스, 지인 규모.
+- **Session start**: 2026-07-06 (Asia/Seoul)
+- **OMA sid**: oma-00mqtivmerpz8tzu7o
+- **Workflow**: ultrawork (5-phase, 17 steps)
+- **Runtime vendor**: Claude Code (native Agent dispatch; model_preset: claude)
+- **Response language**: ko
 
-## STACK — self-host 분리형 [거의 확정, 살붙이기 방식만 대기]
-- FE: SvelteKit(Svelte5)+Tailwind v4+shadcn-svelte, adapter-static SPA
-- BE: Python FastAPI (REST + native WS, router→service→repository)
-- DB: PostgreSQL | Storage: MinIO(S3) | Realtime: FastAPI WS + partysocket(socket.io 금지)
-- 인증: 자체 카카오·구글 OAuth + JWT(httpOnly 쿠키), 클라가드+FastAPI401 2중
-- 알림: Web Push(VAPID 자체, pywebpush, vite-pwa injectManifest). iOS=홈화면추가 PWA만 → 설치유도+인앱 fallback
+## User Request
 
-### AI — WASM 온디바이스 [조사완료]
-- 런타임: Transformers.js(@huggingface/transformers, WASM+WebGPU) + wllama(순수 WASM GGUF). **WebLLM 제외(WebGPU 전용=WASM원칙 위배)**. 원칙: 순수 WASM baseline + WebGPU 자동감지 가속(2026 데스크톱~85%).
-- 기능1 태깅 ✅GO: multilingual-e5-small(int8 ~118MB, MIT) 임베딩 zero-shot 분류. 순수 WASM 충분.
-- 기능2 살붙이기 ⚠️: 비생성(e5 재사용+질문뱅크 추천, 추가다운0, 즉각) vs 생성형(wllama+HyperCLOVAX-SEED 0.5B~1.5B Q4, 350MB~1.7GB, WebGPU권장, 한국어 상업가능 ≤10M MAU). EXAONE=비상업 불가. → **비생성 추천 확정**. 생성형은 2차(WebGPU/네이티브).
-- COOP/COEP(멀티스레드 WASM SharedArrayBuffer) → Caddy 헤더. Web Worker 추론 + Cache/OPFS 모델 캐시.
+그룹 내 주제(topic) 목록 페이지의 가로 스크롤 날짜 선택 스트립에서 날짜 항목들이 서로 겹쳐 보임 (스크린샷 첨부: 2026-06-25 ~ 어제 항목이 겹침).
+요구사항: 날짜 항목 간 간격(spacing)을 넓혀 겹침을 해소.
 
-### Deploy — NixOS 하이브리드 [조사완료, 이견 없으면 확정]
-- 인프라(PostgreSQL/MinIO/Caddy/Redis) = NixOS native services (services.postgresql+postgresqlBackup / services.minio rootCredentialsFile / services.caddy 자동ACME+WS패스스루 / services.redis).
-- 앱(FastAPI/SvelteKit) = podman OCI (virtualisation.oci-containers backend=podman). nix 패키징 마찰 회피. (대안 native: uv2nix/poetry2nix + buildNpmPackage, 마찰 큼)
-- 시크릿 agenix→sops-nix(/run tmpfs, EnvironmentFile/rootCredentialsFile로 경로주입, store에 평문금지). 외부=cloudflared 터널. 배포=nixos-rebuild switch --flake --target-host.
-- flake 구조: nix/{hosts,modules(postgres/minio/caddy/redis/app/secrets),overlays} + frontend/ + backend/ + packages(jamye-frontend buildNpmPackage, jamye-api).
+## Phase Progress
 
-### FE 라이브러리: adapter-static / @vite-pwa/sveltekit / shadcn-svelte 1.2.x+Bits UI / @tanstack/svelte-query v6 / zod→superforms / partysocket / svelte-easy-crop v5 + browser-image-compression + MinIO presigned / @lucide/svelte / date-fns / paraglide-js.
-
-## Benchmark: 셋로그 [2026-06-16]
-친구 비공개 2~4초 영상→자동 하루로그. BeReal 한국형. 알림참여유도·폐쇄그룹·날것감성. → 잼얘좀=얘기본체+채팅대화 핵심(영상 아님).
-
-## Phase progress
-- [x] Phase 0: Init.
-- [~] Phase 1: PLAN — 스택 FINAL 확정(살붙이기=비생성). PM 정식기획 작성 완료(`.agents/results/plan-oma-00mqg32jdoyw4yp9yy.json` + `task-board` memory). 3종 리뷰(completeness/meta/over-eng) PASS. **PLAN_GATE 사용자 승인 완료**("기획 훌륭해"). docs/ 문서화 완료(README + 8문서: product 2 / architecture 5 / planning 1, 3 에이전트 병렬 작성). PLAN 워크플로우 키워드 오탐 무시. SCM 완료: 브랜치 `docs/v1-plan`, 커밋 `5549c3c`(docs 9파일/1388줄), PR #1(https://github.com/jamye-plz/jamye-plz/pull/1, base main) 생성. docs add 규칙 준수(.serena·plan.json 제외). **구현 미착수(사용자 명시 요청)**. PR 리뷰 반영(REVIEW): Codex 봇 지적 3건 수정 — P1 /api prefix 불일치(api-contract 전 경로 /api 통일 + WS /api/ws), P1 WS 인증(쿼리토큰→httpOnly 쿠키, ADR-4 정합), P2 client_msg_id(messages 컬럼+UNIQUE(sender_id,client_msg_id) 멱등성). + features/tasks /api/me 일관화. 커밋 3e829ad push, 답글 3 + 스레드 resolve 3 완료. PR #1 squash 머지(main `4050bc8`) + 브랜치 정리(로컬/원격 docs/v1-plan 삭제, prune) + 로컬 main 동기화 완료. 이제 docs/가 main에 정식 반영(git상 SSOT). 향후 구현은 새 feat 브랜치에서. 다음: (PR 처리 후) 사용자 go 확인 → `oma_emit plan-approved` + `impl-plan-locked` → Phase 2 IMPL(backend-engineer/frontend-engineer 병렬). 주의: `.agents/results/` gitignored → plan.json은 로컬 전용, docs/가 git상 SSOT.
-  - PM PLAN: req명세→데이터모델→REST+WS API계약→task분해→completeness/meta/over-eng 3리뷰 → plan-{sid}.json + task-board.md → PLAN_GATE(user) → emit plan-approved & impl-plan-locked.
-- [ ] Phase 2 IMPL / 3 VERIFY / 4 REFINE / 5 SHIP.
-
-## Still open (PM PLAN)
-- 데이터모델(user/group/membership/invite/topic/topic_media/tag/chatroom/message/push_subscription), REST API 계약, WS 프로토콜(메시지타입/방참여/presence), 권한정책(서비스레이어), AI web worker 통합, Docker/podman 이미지, flake 작성, FastAPI 구조, monorepo(frontend/+backend/+nix/) 단일 repo 권장.
-
----
-
-## SESSION 2 — IMPL ultrawork [2026-06-17]
-### 환경 [2026-06-17 정정]: serena MCP ✅ 정상(메모리 + 코드분석 LSP 모두 동작 — `.serena/project.yml`에서 nix/terraform/dart 제거 후 해결). oma CLI ✅ 정상(`/Users/poby/.bun/bin/oma` v9.8.0, hm-session-vars PATH 적용, bare `oma`/`state:emit` 호출 가능). → 이전 "DOWN/미설치/네이티브 폴백" 기록은 오판으로 정정. 앞으로 serena 심볼 도구(find_symbol/find_referencing_symbols/replace_symbol_body) + oma L1 이벤트 정식 경로 사용. DB=podman jamye-db(postgres:18) up. 마이그레이션 없이 create_all 스텁 사용중(M0 ⑦에서 Alembic 도입 예정).
-
-### PR #2 머지 완료 — v1 백본 구현됨 (main merge `c5e3f68`, squash 아님 merge-commit). 후속 리뷰 29 스레드 전부 resolve.
-구현·머지된 것: FastAPI router/service/repo, 모델 11개, 그룹/멤버십/초대(원자적)/권한(IDOR fix), 토픽 시드+enrich(enriched status), 주제별+메인 채팅방 분리+영속+keyset 히스토리, WS(native, join/send/ack), 새주제 리마인드(system msg+broadcast+인앱알림), OAuth 골격+dev스텁, JWT쿠키, push 구독 엔드포인트, member_count, media MIME/keyset/text()index. infra/docker-compose(pg18), bun, poethepoet(uv run poe dev/tables).
-
-### 1차 SCOPE 잔여 (구현 평가 기준):
-- 🔴 T8 사진: presign/confirm 백엔드 스텁만. 업로드/크롭/압축 UI 없음, MinIO 미연동.
-- 🟡 T7 FE: 일별 그룹핑·무한스크롤 없음(백엔드 cursor/date 준비됨).
-- 🟡 T11: 새주제 리마인드만. 첫-채팅 리마인드 없음.
-- 🔴 T14: push 발송(pywebpush+VAPID) 없음(VAPID는 self-gen 가능), iOS 설치유도 없음.
-- 🔴 T12 WASM 자동태깅 / 🔴 T13 살붙이기 추천: 의존성만, 구현 0.
-- 🟡 T4 실 OAuth: 콜백 501(키 필요=사용자 프로비저닝). dev스텁만 동작.
-- 🟡 인프라/품질: Alembic 없음(T2/T3), PWA 비활성(vite8 비호환), shadcn-svelte 미도입, pytest tests 없음(T16), FE 타입에러 4건(page.params noUncheckedIndexedAccess).
-
-### 사용자 제약: 배포(T15/T16) 전에 1차 기능 개발 완료 + **사용자 직접 사용성 테스트** 필수 gate.
-
-### PLAN_GATE 사용자 결정 [2026-06-17]: **M0 먼저** — "완료로 표시한 기능 QA·완성이 최우선. 1차 스코프 완성이 1순위." + 실 OAuth를 M0에 포함. 배포 전 사용자 직접 사용성 테스트 gate.
-
-### 완성 갭 감사 결과(코드 확인): joinByCode/enrichTopic/listNotifications/markRead = **API 헬퍼만 있고 화면 미연결**. 초대 참여 화면❌, 주제 enrich 입력 UI❌(상세 읽기전용), 인앱 알림 화면❌, 채팅 발신자 이름/아바타 미표시(타입필드만), 일별 타임라인/무한스크롤❌, PWA 비활성. → "완료" 백본이지만 UX 루프 미완.
-
-### 개정 로드맵 (M0 우선):
-- **M0 = 1차 완성 & QA (+실 OAuth)** [최우선]: ①실 OAuth 콜백(code→token→profile) ②채팅 발신자정보(MessageOut+WS+history join, FE 렌더) ③초대 참여 화면(joinByCode) ④주제 enrich UI(enrichTopic, author게이트) ⑤인앱 알림 화면(list+read) ⑥일별 타임라인+무한스크롤(T7) ⑦Alembic 도입(T2/T3) ⑧PWA 재활성+로그인→온보딩 플로우(T5) ⑨QA(FE 타입에러·접근성·반응형·핵심 pytest).
-- M1 사진 업로드(T8, 로컬MinIO+presign실경로+크롭/압축) → M2 알림완성(첫채팅 리마인드+Web Push self-VAPID+iOS유도) → M3 온디바이스AI(태깅·비생성추천) → M4 마감 → ✋사용성테스트 → 배포(T15/T16).
-- OAuth 키: 코드 먼저, 키는 나중 .env 주입(그동안 dev 스텁 유지).
-
-### M0 종료 [브랜치 feat/m0, 미푸시·미머지, 피드백 주도] — 2026-06-17 사용자 결정으로 여기서 마무리(잔여는 이월):
-
-✅ 완료:
-- ① 실 OAuth 콜백: kakao/google authorization-code→token 교환→프로필 fetch→user upsert(httpx), CSRF state(oauth_state 쿠키 검증)+세션 쿠키+프론트 303 리다이렉트, 실패시 /login?error=oauth. **사용자가 콘솔 키 프로비저닝 완료, 실 로그인 동작 검증(구글 아바타 lh3.googleusercontent.com 정상 저장·서빙)**. kakao_enabled=client_id만(secret 선택). _issue_session은 최초생성시만 nick/avatar(재로그인 보존).
-- ② 채팅 발신자 표시: MessageOut/WS payload/history에 sender_nickname+sender_avatar_url. FE: sender-run 그룹핑(연속 동일발신자는 첫 메시지에만 아바타+닉), 분 단위 타임스탬프 중복제거(같은 HH:MM 묶음 마지막에만), 말풍선 조기 줄바꿈 fix(상대 content-col flex-1 + break-words), 입력창 자동높이(scrollHeight≤160) + max-w-2xl 반응형.
-- ③ 초대 링크 입장: 멱등 redeem(이미멤버=joined:false, rollback 전 group_id 캡처), /invite/[code] 랜딩, 생성화면 링크 복사 + Web Share(navigator.share, 미지원시 숨김).
-- ④ 주제 enrich: 작성자 전용(assert_author, 비작성자 403), 채팅 상단 고정본문 편집 모달(canEditPinned/onEditPinned).
-- ⑤ 인앱 알림 화면: /notifications, 백엔드 뷰모델(type+payload→title/body/action_url/read+unread_count), 그룹명 포함 title, 클릭시 읽음(204)+이동.
-- ⑥ 일별 타임라인 + 무한스크롤: createInfiniteQuery(cursor) + 날짜 그룹핑(오늘/어제/날짜), IntersectionObserver sentinel.
-- ⑦ Alembic 도입: async env.py(Base.metadata+settings url), 초기 마이그레이션 0a5d7bbeb961, scratch DB autogenerate→실DB stamp(데이터 보존), poe tables→migrate/makemigration, create_all/app.cli 제거, `alembic check` 드리프트 없음.
-- ⑧ PWA 재활성: vite-plugin-pwa@^1.3.0(vite8 지원) package.json 명시(@vite-pwa/sveltekit는 1.1.0이 최신 유지), SvelteKitPWA injectManifest 재등록 + svelte.config serviceWorker.register:false, manifest(잼얘좀, desc "재밌는 얘기 좀 해봐", standalone, #09090b), app.html manifest 절대링크, +layout PROD SW 등록(virtual:pwa-register), **1×1 placeholder→실 192/512 아이콘(qlmanage SVG렌더+sips)**, favicon.svg/png, preview/server.allowedHosts(.loca.lt/.trycloudflare/.ngrok). **모바일 localtunnel로 설치 확인**(단 preview 터널=백엔드 미연결→설치 후 검은화면은 정상, 실배포 https에서 해소).
-- 부가: 프로필 설정(/settings 닉네임수정·로그아웃·provider/가입일), member_count(GroupOut).
-
-⏭️ M0 잔여 → 이월:
-- ⑧ 온보딩(미구현, 다음으로 명시): (a)설치 유도 UI(beforeinstallprompt/iOS 홈화면추가 안내) 없음 → M2/T14, (b)/onboarding 페이지는 있으나 로그인 후 신규유저 분기 미연결(현재 OAuth유저는 제공자 닉네임으로 /groups 직행).
-- ⑨ QA: FE 타입에러 4건(page.params noUncheckedIndexedAccess) 미정리, 접근성/반응형 정밀점검·핵심 pytest 미작성.
-
-검증 메모: 실 OAuth 키 설정 후 dev 스텁 비활성 → 라이브 검증은 실유저 토큰(create_access_token)으로 httpx/websockets. DB ad-hoc 스크립트는 MissingGreenlet/pool_pre_ping 크로스루프 플레이크 → 라이브 서버(poe dev reload) HTTP/WS 경로로 검증.
-
-다음 단계: feat/m0 푸시+PR 여부 사용자 확인 → **M1 사진 업로드**(T8: 로컬 MinIO+presign 실경로+크롭/압축) → M2 알림완성(첫채팅 리마인드+Web Push self-VAPID+iOS설치유도+온보딩) → M3 온디바이스AI → M4 마감 → ✋사용성테스트 → 배포(T15/T16).
+- [x] Phase 0: Initialization — complete
+- [x] Phase 1: PLAN — PLAN_GATE auto-pass (Simple); plan-approved + impl-plan-locked emitted/verified
+- [x] Phase 2: IMPL — frontend agent: DateDial.svelte ITEM_W 84→112 (+ stale comment fix). IMPL_GATE ✅ (bun build exit 0; svelte-check 8 pre-existing errors, 0 new, stash-isolated comparison; only DateDial.svelte in code diff; no commit)
+- [x] Phase 3: VERIFY — qa-reviewer PASS: 0 findings; geometry self-consistency 확인(모든 좌표가 ITEM_W 단일 상수 파생, 잔여 하드코딩 84 없음); build/check 독립 재실행 clean. 잔여 리스크: 실제 브라우저 픽셀 검증 미수행(SHIP에서 확인)
+- [x] Phase 4: REFINE — SKIP (2-line diff < 50 lines skip 조건); refine-outcome decision emitted/verified
+- [x] Phase 5: SHIP — SHIP QA PASS (0 findings): build ✅, svelte-check 0 new, lint/테스트 스크립트 부재(기존 갭, N/A), a11y 속성 무변경, cascade 클린(ITEM_W 참조는 DateDial 내부 7곳뿐, 소비자 1곳 width prop 없음), 배포 체크(secrets/migration/dep 변경 없음). 실브라우저 라벨 폭 실측으로 UX 검증(84px: 29px 겹침 재현 / 112px: 최소 14px 여백). 잔여: **사용자 최종 승인 + 커밋 대기** (Step 18 docs.auto_verify=false → skip)
