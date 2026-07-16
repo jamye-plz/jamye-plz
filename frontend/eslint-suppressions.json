@@ -1,0 +1,77 @@
+{
+	"src/lib/components/ChatRoom.svelte": {
+		"@typescript-eslint/no-unused-expressions": {
+			"count": 1
+		},
+		"svelte/no-at-html-tags": {
+			"count": 2
+		},
+		"svelte/no-navigation-without-resolve": {
+			"count": 1
+		}
+	},
+	"src/lib/components/DateDial.svelte": {
+		"@typescript-eslint/no-unused-expressions": {
+			"count": 2
+		},
+		"svelte/prefer-svelte-reactivity": {
+			"count": 1
+		}
+	},
+	"src/routes/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 2
+		}
+	},
+	"src/routes/groups/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 4
+		}
+	},
+	"src/routes/groups/[id]/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 5
+		}
+	},
+	"src/routes/groups/[id]/invite/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 1
+		}
+	},
+	"src/routes/groups/[id]/topics/[tid]/+page.svelte": {
+		"svelte/no-at-html-tags": {
+			"count": 1
+		},
+		"svelte/no-navigation-without-resolve": {
+			"count": 3
+		},
+		"svelte/require-each-key": {
+			"count": 2
+		}
+	},
+	"src/routes/invite/[code]/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 2
+		}
+	},
+	"src/routes/login/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 2
+		}
+	},
+	"src/routes/notifications/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 2
+		}
+	},
+	"src/routes/onboarding/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 1
+		}
+	},
+	"src/routes/settings/+page.svelte": {
+		"svelte/no-navigation-without-resolve": {
+			"count": 2
+		}
+	}
+}

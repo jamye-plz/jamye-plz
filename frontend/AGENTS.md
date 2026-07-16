@@ -25,6 +25,8 @@ This package uses **Bun** as the package manager and script runner.
 | Production build | `bun run build` |
 | Preview built SPA | `bun run preview` |
 | Type/Svelte check | `bun run check` |
+| Lint + format check | `bun run lint` |
+| Format files | `bun run format` |
 
 > The bundler is still **Vite** — Bun only manages packages and spawns the
 > scripts, so build output is identical to an npm-based run. If a script ever
