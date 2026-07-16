@@ -261,7 +261,7 @@
 		onpointerup={onPointerUp}
 		onpointercancel={onPointerUp}
 		onkeydown={onKeydown}
-		class="flex items-stretch overflow-x-auto overscroll-x-contain py-1 outline-none transition-opacity duration-150 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-accent rounded-xl {ready
+		class="flex items-stretch overflow-x-auto overscroll-x-contain py-1 outline-none transition-opacity duration-150 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary rounded-xl {ready
 			? 'opacity-100'
 			: 'opacity-0'}"
 		style="scroll-snap-type: {snapOff ? 'none' : 'x mandatory'}; cursor: {dragging
@@ -293,8 +293,8 @@
 				     short labels (오늘/어제) become round, full dates a wider stadium. -->
 				<span
 					class="rounded-full whitespace-nowrap leading-none transition-colors {active
-						? 'bg-accent text-white px-3 py-2 text-[15px] font-semibold'
-						: 'px-2 py-1 text-[13px] font-medium text-text-secondary'}"
+						? 'bg-primary text-primary-content px-3 py-2 text-[15px] font-semibold'
+						: 'px-2 py-1 text-[13px] font-medium text-base-content/70'}"
 				>
 					{label(date)}
 				</span>

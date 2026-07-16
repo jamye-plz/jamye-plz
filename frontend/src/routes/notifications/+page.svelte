@@ -33,20 +33,20 @@
 	}
 </script>
 
-<div class="min-h-screen bg-background">
+<div class="min-h-screen bg-base-100">
 	<header
-		class="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3"
+		class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3"
 	>
 		<button
 			onclick={() => goto('/groups')}
-			class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+			class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
 			aria-label="뒤로 가기"
 		>
 			←
 		</button>
-		<h1 class="text-base font-semibold text-text-primary">알림</h1>
+		<h1 class="text-base font-semibold text-base-content">알림</h1>
 		{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
-			<span class="text-xs px-2 py-0.5 rounded-full bg-accent text-white">
+			<span class="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-content">
 				{notifsQuery.data.unread_count}
 			</span>
 		{/if}
@@ -54,33 +54,33 @@
 
 	<main class="px-4 py-4 max-w-lg mx-auto">
 		{#if notifsQuery.isPending}
-			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
+			<p class="text-base-content/70 text-sm text-center py-8">불러오는 중...</p>
 		{:else if notifsQuery.isError}
-			<p class="text-danger text-sm text-center py-8">알림을 불러올 수 없습니다.</p>
+			<p class="text-error text-sm text-center py-8">알림을 불러올 수 없습니다.</p>
 		{:else if notifsQuery.data && notifsQuery.data.items.length === 0}
-			<p class="text-text-muted text-sm text-center py-16">아직 알림이 없어요</p>
+			<p class="text-base-content/50 text-sm text-center py-16">아직 알림이 없어요</p>
 		{:else if notifsQuery.data}
 			<ul class="space-y-1" role="list" aria-label="알림 목록">
 				{#each notifsQuery.data.items as n (n.id)}
 					<li>
 						<button
 							onclick={() => open(n)}
-							class="w-full text-left px-3 py-3 rounded-xl border transition-colors focus-visible:outline-2 focus-visible:outline-accent
+							class="w-full text-left px-3 py-3 rounded-xl border transition-colors focus-visible:outline-2 focus-visible:outline-primary
 								{n.read
-								? 'bg-surface border-border hover:bg-surface-elevated'
-								: 'bg-accent/5 border-accent/30 hover:bg-accent/10'}"
+								? 'bg-base-200 border-base-300 hover:bg-base-300'
+								: 'bg-primary/5 border-primary/30 hover:bg-primary/10'}"
 						>
 							<div class="flex items-start gap-2.5">
 								<span
-									class="mt-1.5 w-2 h-2 rounded-full shrink-0 {n.read ? 'bg-transparent' : 'bg-accent'}"
+									class="mt-1.5 w-2 h-2 rounded-full shrink-0 {n.read ? 'bg-transparent' : 'bg-primary'}"
 									aria-hidden="true"
 								></span>
 								<div class="min-w-0 flex-1 space-y-0.5">
-									<p class="text-sm font-medium text-text-primary leading-snug">{n.title}</p>
+									<p class="text-sm font-medium text-base-content leading-snug">{n.title}</p>
 									{#if n.body}
-										<p class="text-sm text-text-secondary truncate">{n.body}</p>
+										<p class="text-sm text-base-content/70 truncate">{n.body}</p>
 									{/if}
-									<p class="text-xs text-text-muted">{timeAgo(n.created_at)}</p>
+									<p class="text-xs text-base-content/50">{timeAgo(n.created_at)}</p>
 								</div>
 							</div>
 						</button>

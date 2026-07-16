@@ -105,11 +105,11 @@
 
 {#if pullY > 0 || refreshing}
 	<div
-		class="fixed left-1/2 z-50 -translate-x-1/2 flex items-center justify-center w-9 h-9 rounded-full bg-surface-elevated border border-border shadow-md pointer-events-none"
+		class="fixed left-1/2 z-50 -translate-x-1/2 flex items-center justify-center w-9 h-9 rounded-full bg-base-300 border border-base-300 shadow-md pointer-events-none"
 		style="top: {Math.max(8, pullY - 28)}px; opacity: {refreshing ? 1 : Math.min(1, pullY / PTR_TRIGGER)}"
 	>
 		<RefreshCw
-			class="w-4 h-4 {ptrReady || refreshing ? 'text-accent' : 'text-text-muted'} {refreshing
+			class="w-4 h-4 {ptrReady || refreshing ? 'text-primary' : 'text-base-content/50'} {refreshing
 				? 'animate-spin'
 				: ''}"
 			style={refreshing ? '' : `transform: rotate(${(pullY / PTR_TRIGGER) * 180}deg)`}

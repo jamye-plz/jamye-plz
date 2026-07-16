@@ -402,30 +402,30 @@
 
 {#snippet messageBody(body: string, linkColor: string)}
 	<div
-		class="prose prose-sm prose-invert max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
-		style="--tw-prose-invert-links: {linkColor}"
+		class="prose prose-sm max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
+		style="--tw-prose-links: {linkColor}"
 	>
 		{@html renderMarkdown(body)}
 	</div>
 {/snippet}
 
-<div class="flex flex-col h-screen bg-background">
+<div class="flex flex-col h-screen bg-base-100">
 	<header
-		class="shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3"
+		class="shrink-0 sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3"
 	>
 		<div class="mx-auto w-full max-w-2xl flex items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
-				class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+				class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
 				aria-label="뒤로 가기"
 			>
 				←
 			</button>
 			<div class="flex-1 min-w-0">
-				<h1 class="text-base font-semibold text-text-primary truncate">{title}</h1>
+				<h1 class="text-base font-semibold text-base-content truncate">{title}</h1>
 			</div>
 			<div
-				class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-text-muted'}"
+				class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-base-content/50'}"
 				aria-label={connected ? '연결됨' : '연결 중'}
 				title={connected ? '연결됨' : '연결 중...'}
 			></div>
@@ -433,19 +433,19 @@
 	</header>
 
 	{#if pinnedBody || canEditPinned}
-		<div class="shrink-0 border-b border-border bg-surface px-4 py-3">
+		<div class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">
 			<div class="mx-auto w-full max-w-2xl flex items-start gap-2">
 				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
 					{#if pinnedBody}
-						<div class="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto">{@html renderMarkdown(pinnedBody)}</div>
+						<div class="prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto">{@html renderMarkdown(pinnedBody)}</div>
 					{:else}
-						<p class="text-sm text-text-muted italic">아직 본문이 없어요</p>
+						<p class="text-sm text-base-content/50 italic">아직 본문이 없어요</p>
 					{/if}
 				</div>
 				{#if canEditPinned}
 					<button
 						onclick={onEditPinned}
-						class="shrink-0 text-xs font-medium text-accent hover:text-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent rounded px-1"
+						class="shrink-0 text-xs font-medium text-primary hover:text-primary transition-colors focus-visible:outline-2 focus-visible:outline-primary rounded px-1"
 					>
 						{pinnedBody ? '수정' : '본문 추가'}
 					</button>
@@ -468,36 +468,36 @@
 				: ''}"
 		>
 		{#if loadingOlder}
-			<p class="text-text-muted text-xs text-center py-1">이전 메시지 불러오는 중...</p>
+			<p class="text-base-content/50 text-xs text-center py-1">이전 메시지 불러오는 중...</p>
 		{/if}
 		{#if messagesQuery.isPending && messages.length === 0}
-			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
+			<p class="text-base-content/70 text-sm text-center py-8">불러오는 중...</p>
 		{:else if messages.length === 0}
-			<p class="text-text-muted text-sm text-center py-8">첫 메시지를 남겨보세요</p>
+			<p class="text-base-content/50 text-sm text-center py-8">첫 메시지를 남겨보세요</p>
 		{:else}
 			{#each messages as msg, i (msg.id)}
 					{#if showDateDivider(i)}
 						<div class="flex justify-center py-1">
-							<span class="text-[11px] text-text-muted bg-surface px-3 py-1 rounded-full">
+							<span class="text-[11px] text-base-content/50 bg-base-200 px-3 py-1 rounded-full">
 								{dateLabel(msg.created_at)}
 							</span>
 						</div>
 					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
-							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full"
+							<span class="text-xs text-base-content/50 bg-base-200 px-3 py-1 rounded-full"
 								>{msg.body}</span
 							>
 						</div>
 					{:else if isMine(msg)}
 						<div class="flex items-end justify-end gap-1.5">
 							{#if showTime(i)}
-								<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
+								<span class="text-[10px] text-base-content/50 shrink-0 pb-1">{hm(msg.created_at)}</span>
 							{/if}
 							<div
-								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
+								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-primary text-primary-content rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
 							>
-								{@render messageBody(msg.body, '#67e8f9')}
+								{@render messageBody(msg.body, 'var(--color-primary-content)')}
 							</div>
 						</div>
 					{:else}
@@ -508,11 +508,11 @@
 										<img
 											src={msg.sender_avatar_url}
 											alt={msg.sender_nickname ?? ''}
-											class="w-8 h-8 rounded-full object-cover bg-surface-elevated"
+											class="w-8 h-8 rounded-full object-cover bg-base-300"
 										/>
 									{:else}
 										<div
-											class="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold"
+											class="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold"
 											aria-hidden="true"
 										>
 											{initial(msg.sender_nickname)}
@@ -522,16 +522,16 @@
 							</div>
 							<div class="flex-1 min-w-0 space-y-0.5">
 								{#if showHeader(i) && msg.sender_nickname}
-									<span class="block text-xs text-text-muted px-1">{msg.sender_nickname}</span>
+									<span class="block text-xs text-base-content/50 px-1">{msg.sender_nickname}</span>
 								{/if}
 								<div class="flex items-end gap-1.5">
 									<div
-										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
+										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-base-300 text-base-content rounded-bl-sm"
 									>
-										{@render messageBody(msg.body, '#3b82f6')}
+										{@render messageBody(msg.body, 'var(--color-primary)')}
 									</div>
 									{#if showTime(i)}
-										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
+										<span class="text-[10px] text-base-content/50 shrink-0 pb-1">{hm(msg.created_at)}</span>
 									{/if}
 								</div>
 							</div>
@@ -542,7 +542,7 @@
 		</div>
 	</section>
 
-	<footer class="shrink-0 border-t border-border px-4 py-3 bg-background">
+	<footer class="shrink-0 border-t border-base-300 px-4 py-3 bg-base-100">
 		<div class="flex items-end gap-2 max-w-2xl mx-auto">
 			<textarea
 				bind:this={inputEl}
@@ -550,13 +550,13 @@
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent max-h-40 overflow-y-auto"
+				class="flex-1 resize-none px-3 py-2 rounded-xl bg-base-300 border border-base-300 text-base-content placeholder:text-base-content/50 text-sm focus-visible:outline-2 focus-visible:outline-primary max-h-40 overflow-y-auto"
 				aria-label="메시지 입력"
 			></textarea>
 			<button
 				onclick={sendMessage}
 				disabled={!inputText.trim() || !connected}
-				class="shrink-0 p-2.5 rounded-xl bg-accent text-white disabled:opacity-40 transition-opacity hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent"
+				class="shrink-0 p-2.5 rounded-xl bg-primary text-primary-content disabled:opacity-40 transition-opacity hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-primary"
 				aria-label="메시지 보내기"
 			>
 				↑

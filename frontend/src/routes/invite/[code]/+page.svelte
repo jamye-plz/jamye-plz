@@ -33,19 +33,19 @@
 	});
 </script>
 
-<main class="min-h-screen flex items-center justify-center bg-background px-4">
+<main class="min-h-screen flex items-center justify-center bg-base-100 px-4">
 	<div class="w-full max-w-sm text-center space-y-4">
 		{#if status === 'joining'}
 			<div
-				class="w-8 h-8 mx-auto rounded-full border-2 border-border border-t-accent animate-spin"
+				class="w-8 h-8 mx-auto rounded-full border-2 border-base-300 border-t-primary animate-spin"
 				aria-hidden="true"
 			></div>
-			<p class="text-text-secondary text-sm">그룹에 입장하는 중...</p>
+			<p class="text-base-content/70 text-sm">그룹에 입장하는 중...</p>
 		{:else}
-			<p class="text-text-primary font-medium">{message}</p>
+			<p class="text-base-content font-medium">{message}</p>
 			<a
 				href="/groups"
-				class="inline-block py-2.5 px-4 rounded-xl bg-accent text-white font-medium text-sm hover:bg-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent"
+				class="inline-block py-2.5 px-4 rounded-xl bg-primary text-primary-content font-medium text-sm hover:bg-primary/90 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
 			>
 				내 그룹으로
 			</a>
