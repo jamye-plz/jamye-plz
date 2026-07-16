@@ -8,6 +8,7 @@
 	import { ApiError } from '$lib/api/client';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Check from '@lucide/svelte/icons/check';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 
 	// Always defined for the [id] route; assert so dependent calls stay typed.
 	const groupId = $derived(page.params.id!);
@@ -68,17 +69,17 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header
-		class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3"
-	>
-		<button
-			onclick={() => goto(`/groups/${groupId}`)}
-			class="btn btn-ghost btn-square btn-sm -ml-2"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<h1 class="text-base font-semibold text-base-content">초대</h1>
+	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
+		<div class="w-full flex items-center gap-3">
+			<button
+				onclick={() => goto(`/groups/${groupId}`)}
+				class="btn btn-ghost btn-square btn-sm -ml-2"
+				aria-label="뒤로 가기"
+			>
+				<ArrowLeft class="w-5 h-5" />
+			</button>
+			<h1 class="text-base font-semibold text-base-content">초대</h1>
+		</div>
 	</header>
 
 	<main class="px-4 py-6 space-y-4 max-w-lg mx-auto">
@@ -99,30 +100,32 @@
 		{/if}
 
 		{#if invite.data}
-			<div class="space-y-3 rounded-xl bg-base-200 border border-base-300 p-4">
-				<span class="text-xs text-base-content/50">초대 링크</span>
-				<div class="flex items-center gap-2">
-					<code class="flex-1 font-mono text-sm text-base-content break-all">{inviteLink(invite.data.code)}</code>
-					<button
-						onclick={() => copyLink(invite.data!.code)}
-						aria-label={copied ? '복사됨' : '링크 복사'}
-						class="btn btn-ghost btn-square btn-sm shrink-0"
-					>
-						{#if copied}
-							<Check class="w-4 h-4 text-primary" />
-						{:else}
-							<Copy class="w-4 h-4" />
-						{/if}
-					</button>
+			<div class="card card-border bg-base-200">
+				<div class="card-body gap-3">
+					<span class="text-xs text-base-content/50">초대 링크</span>
+					<div class="flex items-center gap-2">
+						<code class="flex-1 font-mono text-sm text-base-content break-all">{inviteLink(invite.data.code)}</code>
+						<button
+							onclick={() => copyLink(invite.data!.code)}
+							aria-label={copied ? '복사됨' : '링크 복사'}
+							class="btn btn-ghost btn-square btn-sm shrink-0"
+						>
+							{#if copied}
+								<Check class="w-4 h-4 text-primary" />
+							{:else}
+								<Copy class="w-4 h-4" />
+							{/if}
+						</button>
+					</div>
+					{#if canShare}
+						<button
+							onclick={() => shareLink(invite.data!.code)}
+							class="btn btn-primary btn-block"
+						>
+							공유하기
+						</button>
+					{/if}
 				</div>
-				{#if canShare}
-					<button
-						onclick={() => shareLink(invite.data!.code)}
-						class="btn btn-primary btn-block"
-					>
-						공유하기
-					</button>
-				{/if}
 			</div>
 		{/if}
 
@@ -137,9 +140,9 @@
 			{:else if membersQuery.isError}
 				<p class="text-sm text-error px-1" role="alert">멤버를 불러오지 못했어요.</p>
 			{:else if membersQuery.data}
-				<ul class="rounded-xl bg-base-200 border border-base-300 divide-y divide-base-300">
+				<ul class="list bg-base-200 rounded-xl border border-base-300">
 					{#each membersQuery.data as m (m.user_id)}
-						<li class="flex items-center gap-3 p-3">
+						<li class="list-row flex items-center gap-3">
 							{#if m.avatar_url}
 								<div class="avatar shrink-0">
 									<div class="w-9 rounded-full">

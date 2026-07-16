@@ -4,6 +4,8 @@
 	import { goto } from '$app/navigation';
 	import { getTopic } from '$lib/api/topic.api';
 	import { renderMarkdown } from '$lib/markdown';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import MessageCircle from '@lucide/svelte/icons/message-circle';
 
 	const groupId = $derived(page.params.id!);
 	const topicId = $derived(page.params.tid!);
@@ -15,13 +17,13 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3">
+	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
 		<button
 			onclick={() => goto(`/groups/${groupId}`)}
 			class="btn btn-ghost btn-square btn-sm -ml-2"
 			aria-label="뒤로 가기"
 		>
-			←
+			<ArrowLeft class="w-5 h-5" />
 		</button>
 		<div class="flex-1 min-w-0">
 			{#if topicQuery.data}
@@ -36,7 +38,7 @@
 				class="btn btn-ghost btn-square btn-sm shrink-0"
 				aria-label="주제 채팅"
 			>
-				💬
+				<MessageCircle class="w-5 h-5" />
 			</a>
 		{/if}
 	</header>

@@ -10,6 +10,9 @@
 	import { getGroup } from '$lib/api/group.api';
 	import { listTopics, seedTopic, getTopicDates } from '$lib/api/topic.api';
 	import DateDial from '$lib/components/DateDial.svelte';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import MessageCircle from '@lucide/svelte/icons/message-circle';
+	import UserPlus from '@lucide/svelte/icons/user-plus';
 
 	const groupId = $derived(page.params.id ?? '');
 	const queryClient = useQueryClient();
@@ -102,49 +105,49 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header
-		class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3"
-	>
-		<button
-			onclick={() => goto('/groups')}
-			class="btn btn-ghost btn-square btn-sm -ml-2"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<div class="flex-1 min-w-0">
-			{#if groupQuery.data}
-				<h1 class="text-base font-semibold text-base-content truncate">{groupQuery.data.name}</h1>
-				<p class="text-xs text-base-content/50">{groupQuery.data.member_count}명</p>
-			{:else}
-				<div class="skeleton h-4 w-32"></div>
-			{/if}
-		</div>
-		<div class="flex items-center gap-1">
-			<a href="/groups/{groupId}/chat" class="btn btn-ghost btn-square btn-sm" aria-label="그룹 채팅">
-				💬
-			</a>
-			<a href="/groups/{groupId}/invite" class="btn btn-ghost btn-square btn-sm" aria-label="초대">
-				👋
-			</a>
+	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
+		<div class="w-full flex items-center gap-3">
+			<button
+				onclick={() => goto('/groups')}
+				class="btn btn-ghost btn-square btn-sm -ml-2"
+				aria-label="뒤로 가기"
+			>
+				<ArrowLeft class="w-5 h-5" />
+			</button>
+			<div class="flex-1 min-w-0">
+				{#if groupQuery.data}
+					<h1 class="text-base font-semibold text-base-content truncate">{groupQuery.data.name}</h1>
+					<p class="text-xs text-base-content/50">{groupQuery.data.member_count}명</p>
+				{:else}
+					<div class="skeleton h-4 w-32"></div>
+				{/if}
+			</div>
+			<div class="flex items-center gap-1">
+				<a href="/groups/{groupId}/chat" class="btn btn-ghost btn-square btn-sm" aria-label="그룹 채팅">
+					<MessageCircle class="w-5 h-5" />
+				</a>
+				<a href="/groups/{groupId}/invite" class="btn btn-ghost btn-square btn-sm" aria-label="초대">
+					<UserPlus class="w-5 h-5" />
+				</a>
+			</div>
 		</div>
 	</header>
 
 	<main>
 		<div class="px-4 py-4 space-y-4 max-w-lg mx-auto">
-			<form onsubmit={submitTopic} class="flex items-center gap-2">
+			<form onsubmit={submitTopic} class="join w-full">
 				<input
 					bind:value={newTitle}
 					type="text"
 					placeholder="새 주제 던지기..."
 					maxlength="256"
 					aria-label="새 주제 제목"
-					class="input flex-1"
+					class="input join-item flex-1"
 				/>
 				<button
 					type="submit"
 					disabled={!newTitle.trim() || createTopic.isPending}
-					class="btn btn-primary shrink-0"
+					class="btn btn-primary join-item shrink-0"
 				>
 					{createTopic.isPending ? '...' : '던지기'}
 				</button>
@@ -190,10 +193,10 @@
 							<li>
 								<a
 									href="/groups/{groupId}/topics/{topic.id}/chat?date={selectedDate}"
-									class="block px-4 py-4 rounded-xl bg-base-200 hover:bg-base-300 border border-base-300 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+									class="card card-border card-sm bg-base-200 hover:bg-base-300 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
 									aria-label={topic.title}
 								>
-									<div class="space-y-2">
+									<div class="card-body">
 										<div class="flex items-start justify-between gap-2">
 											<span class="font-medium text-base-content leading-snug">{topic.title}</span>
 											{#if topic.unread}

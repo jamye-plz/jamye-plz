@@ -6,6 +6,8 @@
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -410,16 +412,14 @@
 {/snippet}
 
 <div class="flex flex-col h-screen bg-base-100">
-	<header
-		class="shrink-0 sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3"
-	>
+	<header class="navbar shrink-0 sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
 		<div class="mx-auto w-full max-w-2xl flex items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
 				class="btn btn-ghost btn-square btn-sm -ml-2"
 				aria-label="뒤로 가기"
 			>
-				←
+				<ArrowLeft class="w-5 h-5" />
 			</button>
 			<div class="flex-1 min-w-0">
 				<h1 class="text-base font-semibold text-base-content truncate">{title}</h1>
@@ -558,7 +558,7 @@
 				class="btn btn-primary btn-square shrink-0"
 				aria-label="메시지 보내기"
 			>
-				↑
+				<ArrowUp class="w-5 h-5" />
 			</button>
 		</div>
 	</footer>

@@ -2,6 +2,7 @@
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 
 	const queryClient = useQueryClient();
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
@@ -51,17 +52,17 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header
-		class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3"
-	>
-		<button
-			onclick={() => goto('/groups')}
-			class="btn btn-ghost btn-square btn-sm -ml-2"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<h1 class="text-base font-semibold text-base-content">내 정보</h1>
+	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
+		<div class="w-full flex items-center gap-3">
+			<button
+				onclick={() => goto('/groups')}
+				class="btn btn-ghost btn-square btn-sm -ml-2"
+				aria-label="뒤로 가기"
+			>
+				<ArrowLeft class="w-5 h-5" />
+			</button>
+			<h1 class="text-base font-semibold text-base-content">내 정보</h1>
+		</div>
 	</header>
 
 	<main class="px-4 py-6 space-y-6 max-w-lg mx-auto">
@@ -100,25 +101,27 @@
 			</section>
 
 			<form onsubmit={onSave} class="space-y-2">
-				<label for="nickname" class="text-sm font-medium text-base-content/70">닉네임</label>
-				<div class="flex items-center gap-2">
-					<input
-						id="nickname"
-						type="text"
-						bind:value={nickname}
-						oninput={() => (dirty = true)}
-						maxlength={64}
-						required
-						class="input flex-1"
-					/>
-					<button
-						type="submit"
-						disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
-						class="btn btn-primary shrink-0"
-					>
-						{save.isPending ? '저장 중...' : '저장'}
-					</button>
-				</div>
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">닉네임</legend>
+					<div class="join w-full">
+						<input
+							id="nickname"
+							type="text"
+							bind:value={nickname}
+							oninput={() => (dirty = true)}
+							maxlength={64}
+							required
+							class="input join-item validator flex-1"
+						/>
+						<button
+							type="submit"
+							disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
+							class="btn btn-primary join-item shrink-0"
+						>
+							{save.isPending ? '저장 중...' : '저장'}
+						</button>
+					</div>
+				</fieldset>
 				{#if saved}
 					<p class="text-xs text-success" role="status">저장되었어요.</p>
 				{:else if save.isError}

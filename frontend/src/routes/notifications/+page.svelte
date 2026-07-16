@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { listNotifications, markNotificationRead } from '$lib/api/notification.api';
 	import type { AppNotification } from '$lib/types/notification.types';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 
 	const queryClient = useQueryClient();
 	const notifsQuery = createQuery(() => ({
@@ -34,22 +35,22 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header
-		class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3"
-	>
-		<button
-			onclick={() => goto('/groups')}
-			class="btn btn-ghost btn-square btn-sm -ml-2"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<h1 class="text-base font-semibold text-base-content">알림</h1>
-		{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
-			<span class="badge badge-primary badge-sm">
-				{notifsQuery.data.unread_count}
-			</span>
-		{/if}
+	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
+		<div class="w-full flex items-center gap-3">
+			<button
+				onclick={() => goto('/groups')}
+				class="btn btn-ghost btn-square btn-sm -ml-2"
+				aria-label="뒤로 가기"
+			>
+				<ArrowLeft class="w-5 h-5" />
+			</button>
+			<h1 class="text-base font-semibold text-base-content">알림</h1>
+			{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
+				<span class="badge badge-primary badge-sm">
+					{notifsQuery.data.unread_count}
+				</span>
+			{/if}
+		</div>
 	</header>
 
 	<main class="px-4 py-4 max-w-lg mx-auto">
@@ -60,9 +61,9 @@
 		{:else if notifsQuery.data && notifsQuery.data.items.length === 0}
 			<p class="text-base-content/50 text-sm text-center py-16">아직 알림이 없어요</p>
 		{:else if notifsQuery.data}
-			<ul class="space-y-1" role="list" aria-label="알림 목록">
+			<ul class="list gap-1" role="list" aria-label="알림 목록">
 				{#each notifsQuery.data.items as n (n.id)}
-					<li>
+					<li class="list-row p-0">
 						<button
 							onclick={() => open(n)}
 							class="w-full text-left px-3 py-3 rounded-xl border transition-colors focus-visible:outline-2 focus-visible:outline-primary
