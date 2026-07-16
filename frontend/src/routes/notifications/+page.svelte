@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { listNotifications, markNotificationRead } from '$lib/api/notification.api';
 	import type { AppNotification } from '$lib/types/notification.types';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 
 	const queryClient = useQueryClient();
 	const notifsQuery = createQuery(() => ({
@@ -33,54 +34,54 @@
 	}
 </script>
 
-<div class="min-h-screen bg-background">
-	<header
-		class="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3"
-	>
-		<button
-			onclick={() => goto('/groups')}
-			class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<h1 class="text-base font-semibold text-text-primary">알림</h1>
-		{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
-			<span class="text-xs px-2 py-0.5 rounded-full bg-accent text-white">
-				{notifsQuery.data.unread_count}
-			</span>
-		{/if}
+<div class="min-h-screen bg-base-100">
+	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+		<div class="flex w-full items-center gap-3">
+			<button
+				onclick={() => goto('/groups')}
+				class="btn -ml-2 btn-square btn-ghost btn-sm"
+				aria-label="뒤로 가기"
+			>
+				<ArrowLeft class="h-5 w-5" />
+			</button>
+			<h1 class="text-base font-semibold text-base-content">알림</h1>
+			{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
+				<span class="badge badge-sm badge-primary">
+					{notifsQuery.data.unread_count}
+				</span>
+			{/if}
+		</div>
 	</header>
 
-	<main class="px-4 py-4 max-w-lg mx-auto">
+	<main class="mx-auto max-w-lg px-4 py-4">
 		{#if notifsQuery.isPending}
-			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
 		{:else if notifsQuery.isError}
-			<p class="text-danger text-sm text-center py-8">알림을 불러올 수 없습니다.</p>
+			<p class="py-8 text-center text-sm text-error">알림을 불러올 수 없습니다.</p>
 		{:else if notifsQuery.data && notifsQuery.data.items.length === 0}
-			<p class="text-text-muted text-sm text-center py-16">아직 알림이 없어요</p>
+			<p class="py-16 text-center text-sm text-base-content/50">아직 알림이 없어요</p>
 		{:else if notifsQuery.data}
-			<ul class="space-y-1" role="list" aria-label="알림 목록">
+			<ul class="list gap-1" role="list" aria-label="알림 목록">
 				{#each notifsQuery.data.items as n (n.id)}
-					<li>
+					<li class="list-row p-0">
 						<button
 							onclick={() => open(n)}
-							class="w-full text-left px-3 py-3 rounded-xl border transition-colors focus-visible:outline-2 focus-visible:outline-accent
+							class="w-full rounded-xl border px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-primary
 								{n.read
-								? 'bg-surface border-border hover:bg-surface-elevated'
-								: 'bg-accent/5 border-accent/30 hover:bg-accent/10'}"
+								? 'border-base-300 bg-base-200 hover:bg-base-300'
+								: 'border-primary/30 bg-primary/5 hover:bg-primary/10'}"
 						>
 							<div class="flex items-start gap-2.5">
 								<span
-									class="mt-1.5 w-2 h-2 rounded-full shrink-0 {n.read ? 'bg-transparent' : 'bg-accent'}"
+									class="mt-1.5 status shrink-0 {n.read ? 'bg-transparent' : 'status-primary'}"
 									aria-hidden="true"
 								></span>
 								<div class="min-w-0 flex-1 space-y-0.5">
-									<p class="text-sm font-medium text-text-primary leading-snug">{n.title}</p>
+									<p class="text-sm leading-snug font-medium text-base-content">{n.title}</p>
 									{#if n.body}
-										<p class="text-sm text-text-secondary truncate">{n.body}</p>
+										<p class="truncate text-sm text-base-content/70">{n.body}</p>
 									{/if}
-									<p class="text-xs text-text-muted">{timeAgo(n.created_at)}</p>
+									<p class="text-xs text-base-content/50">{timeAgo(n.created_at)}</p>
 								</div>
 							</div>
 						</button>

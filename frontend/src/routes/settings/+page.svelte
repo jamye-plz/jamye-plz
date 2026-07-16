@@ -2,6 +2,8 @@
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import UserAvatar from '$lib/components/UserAvatar.svelte';
 
 	const queryClient = useQueryClient();
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
@@ -45,51 +47,35 @@
 	}
 
 	const PROVIDER_LABEL: Record<string, string> = { kakao: '카카오', google: '구글' };
-	function initial(name: string | undefined): string {
-		return name?.trim()?.[0]?.toUpperCase() ?? '?';
-	}
 </script>
 
-<div class="min-h-screen bg-background">
-	<header
-		class="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3 flex items-center gap-3"
-	>
-		<button
-			onclick={() => goto('/groups')}
-			class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
-			aria-label="뒤로 가기"
-		>
-			←
-		</button>
-		<h1 class="text-base font-semibold text-text-primary">내 정보</h1>
+<div class="min-h-screen bg-base-100">
+	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+		<div class="flex w-full items-center gap-3">
+			<button
+				onclick={() => goto('/groups')}
+				class="btn -ml-2 btn-square btn-ghost btn-sm"
+				aria-label="뒤로 가기"
+			>
+				<ArrowLeft class="h-5 w-5" />
+			</button>
+			<h1 class="text-base font-semibold text-base-content">내 정보</h1>
+		</div>
 	</header>
 
-	<main class="px-4 py-6 space-y-6 max-w-lg mx-auto">
+	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
 		{#if meQuery.isPending}
-			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
 		{:else if meQuery.isError}
-			<p class="text-danger text-sm text-center py-8">정보를 불러올 수 없습니다.</p>
+			<p class="py-8 text-center text-sm text-error">정보를 불러올 수 없습니다.</p>
 		{:else if meQuery.data}
 			{@const me = meQuery.data}
 
 			<section class="flex items-center gap-4">
-				{#if me.avatar_url}
-					<img
-						src={me.avatar_url}
-						alt="프로필 사진"
-						class="w-16 h-16 rounded-full object-cover bg-surface-elevated"
-					/>
-				{:else}
-					<div
-						class="w-16 h-16 rounded-full bg-accent/20 text-accent flex items-center justify-center text-2xl font-semibold"
-						aria-hidden="true"
-					>
-						{initial(me.nickname)}
-					</div>
-				{/if}
+				<UserAvatar url={me.avatar_url} name={me.nickname} sizeClass="w-16" textClass="text-2xl" />
 				<div class="min-w-0">
-					<p class="font-semibold text-text-primary truncate">{me.nickname}</p>
-					<p class="text-xs text-text-muted">
+					<p class="truncate font-semibold text-base-content">{me.nickname}</p>
+					<p class="text-xs text-base-content/50">
 						{PROVIDER_LABEL[me.provider] ?? me.provider} 로그인 ·
 						{new Date(me.created_at).toLocaleDateString('ko-KR', {
 							year: 'numeric',
@@ -101,38 +87,46 @@
 			</section>
 
 			<form onsubmit={onSave} class="space-y-2">
-				<label for="nickname" class="text-sm font-medium text-text-secondary">닉네임</label>
-				<div class="flex items-center gap-2">
-					<input
-						id="nickname"
-						type="text"
-						bind:value={nickname}
-						oninput={() => (dirty = true)}
-						maxlength={64}
-						required
-						class="flex-1 px-3 py-2.5 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent"
-					/>
-					<button
-						type="submit"
-						disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
-						class="shrink-0 px-4 py-2.5 rounded-xl bg-accent text-white font-medium text-sm disabled:opacity-40 transition-opacity hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent"
-					>
-						{save.isPending ? '저장 중...' : '저장'}
-					</button>
-				</div>
-				{#if saved}
-					<p class="text-xs text-success" role="status">저장되었어요.</p>
-				{:else if save.isError}
-					<p class="text-xs text-danger" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">닉네임</legend>
+					<div class="join w-full">
+						<input
+							id="nickname"
+							type="text"
+							bind:value={nickname}
+							oninput={() => (dirty = true)}
+							maxlength={64}
+							required
+							aria-label="닉네임"
+							class="validator input join-item flex-1"
+						/>
+						<button
+							type="submit"
+							disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
+							class="btn join-item shrink-0 btn-primary"
+						>
+							{save.isPending ? '저장 중...' : '저장'}
+						</button>
+					</div>
+				</fieldset>
+				{#if save.isError}
+					<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
 				{/if}
-				<p class="text-xs text-text-muted">프로필 사진 변경은 곧 지원될 예정이에요.</p>
+				{#if saved}
+					<div class="toast toast-center toast-bottom z-50">
+						<div class="alert alert-success" role="status">
+							<span>저장되었어요.</span>
+						</div>
+					</div>
+				{/if}
+				<p class="text-xs text-base-content/50">프로필 사진 변경은 곧 지원될 예정이에요.</p>
 			</form>
 
-			<div class="border-t border-border pt-4">
+			<div class="border-t border-base-300 pt-4">
 				<button
 					onclick={doLogout}
 					disabled={loggingOut}
-					class="w-full py-3 rounded-xl border border-border text-text-secondary text-sm hover:text-danger hover:border-danger transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent"
+					class="btn btn-block btn-outline btn-error"
 				>
 					{loggingOut ? '로그아웃 중...' : '로그아웃'}
 				</button>

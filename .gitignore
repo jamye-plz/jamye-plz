@@ -1,7 +1,7 @@
 # oh-my-agent runtime (local artifacts — do not commit)
 .antigravitycli/
 .agents/results/
-.agents/state/
+**/.agents/state/
 .agents/backup/
 .migration-backup/
 
@@ -9,3 +9,6 @@
 result
 result-*
 .direnv/
+
+# oma docs generated artifacts
+docs/generated/

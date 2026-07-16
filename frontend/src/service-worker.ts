@@ -54,12 +54,10 @@ self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
 	const url = (event.notification.data as { url: string }).url;
 	event.waitUntil(
-		self.clients
-			.matchAll({ type: 'window' })
-			.then((clients) => {
-				const client = clients.find((c) => c.url === url && 'focus' in c);
-				if (client) return client.focus();
-				return self.clients.openWindow(url);
-			})
+		self.clients.matchAll({ type: 'window' }).then((clients) => {
+			const client = clients.find((c) => c.url === url && 'focus' in c);
+			if (client) return client.focus();
+			return self.clients.openWindow(url);
+		})
 	);
 });

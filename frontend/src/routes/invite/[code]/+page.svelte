@@ -27,28 +27,19 @@
 			}
 			sessionStorage.removeItem('pending_invite');
 			status = 'error';
-			message =
-				err instanceof ApiError ? err.detail : '초대 링크가 유효하지 않거나 만료되었어요.';
+			message = err instanceof ApiError ? err.detail : '초대 링크가 유효하지 않거나 만료되었어요.';
 		}
 	});
 </script>
 
-<main class="min-h-screen flex items-center justify-center bg-background px-4">
-	<div class="w-full max-w-sm text-center space-y-4">
+<main class="flex min-h-screen items-center justify-center bg-base-100 px-4">
+	<div class="w-full max-w-sm space-y-4 text-center">
 		{#if status === 'joining'}
-			<div
-				class="w-8 h-8 mx-auto rounded-full border-2 border-border border-t-accent animate-spin"
-				aria-hidden="true"
-			></div>
-			<p class="text-text-secondary text-sm">그룹에 입장하는 중...</p>
+			<span class="loading mx-auto loading-lg loading-spinner" aria-hidden="true"></span>
+			<p class="text-sm text-base-content/70">그룹에 입장하는 중...</p>
 		{:else}
-			<p class="text-text-primary font-medium">{message}</p>
-			<a
-				href="/groups"
-				class="inline-block py-2.5 px-4 rounded-xl bg-accent text-white font-medium text-sm hover:bg-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent"
-			>
-				내 그룹으로
-			</a>
+			<p class="font-medium text-base-content">{message}</p>
+			<a href="/groups" class="btn btn-primary"> 내 그룹으로 </a>
 		{/if}
 	</div>
 </main>

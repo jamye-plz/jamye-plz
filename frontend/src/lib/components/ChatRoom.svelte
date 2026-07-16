@@ -6,6 +6,8 @@
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -62,13 +64,16 @@
 		// a first message landing in the entry gap stays unread. Callers inside a
 		// reactive $effect pass `explicitUpTo` so reading `messages` here doesn't
 		// make `messages` a dependency of that effect.
-		const upTo = explicitUpTo ?? (messages.length ? messages[messages.length - 1].created_at : createdAt);
-		markChatroomRead(groupId, chatroomId, upTo).then(() => {
-			queryClient.invalidateQueries({ queryKey: ['notifications'] });
-			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
-		}).catch(() => {
-			// swallow — must not disrupt chat
-		});
+		const upTo =
+			explicitUpTo ?? (messages.length ? messages[messages.length - 1].created_at : createdAt);
+		markChatroomRead(groupId, chatroomId, upTo)
+			.then(() => {
+				queryClient.invalidateQueries({ queryKey: ['notifications'] });
+				queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
+			})
+			.catch(() => {
+				// swallow — must not disrupt chat
+			});
 	}
 
 	// Cancel any pending trailing read when the room is torn down.
@@ -170,7 +175,10 @@
 
 		socket.onopen = () => {
 			connected = true;
-			const joinMsg: WsClientMessage = { type: 'join', chatroom_id: chatroomId };
+			const joinMsg: WsClientMessage = {
+				type: 'join',
+				chatroom_id: chatroomId
+			};
 			socket.send(JSON.stringify(joinMsg));
 			// Close the REST/WS gap: a message can arrive between the history fetch
 			// and this join (so it's in neither the fetched page nor the broadcast).
@@ -199,7 +207,7 @@
 		socket.onmessage = (event) => {
 			try {
 				const data: WsServerMessage = JSON.parse(event.data as string);
-					const stick = isNearBottom();
+				const stick = isNearBottom();
 				if (data.type === 'message') {
 					const msg: ChatMessage = {
 						id: data.id,
@@ -218,8 +226,8 @@
 					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
 					if (stick) tick().then(scrollToBottom);
 					// Only mark read when the message is actually in view: a message appended
-						// while the user has scrolled up isn't brought into view, so reading it
-						// would clear its unread state unseen. Scrolling back down marks it read.
+					// while the user has scrolled up isn't brought into view, so reading it
+					// would clear its unread state unseen. Scrolling back down marks it read.
 					if (document.visibilityState === 'visible' && stick) {
 						tryMarkRead();
 					}
@@ -351,9 +359,11 @@
 	}
 
 	function hm(iso: string): string {
-		return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+		return new Date(iso).toLocaleTimeString('ko-KR', {
+			hour: '2-digit',
+			minute: '2-digit'
+		});
 	}
-
 
 	// Local calendar-day key, so date dividers match the locally rendered times.
 	function ymd(iso: string): string {
@@ -400,32 +410,35 @@
 	}
 </script>
 
-{#snippet messageBody(body: string, linkColor: string)}
+{#snippet messageBody(body: string, onPrimary: boolean)}
 	<div
-		class="prose prose-sm prose-invert max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
-		style="--tw-prose-invert-links: {linkColor}"
+		class="prose prose-sm max-w-none wrap-anywhere {onPrimary
+			? 'prose-primary-content'
+			: ''} [&_a]:font-normal [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 	>
 		{@html renderMarkdown(body)}
 	</div>
 {/snippet}
 
-<div class="flex flex-col h-screen bg-background">
+<div class="flex h-screen flex-col bg-base-100">
 	<header
-		class="shrink-0 sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border px-4 py-3"
+		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 backdrop-blur"
 	>
-		<div class="mx-auto w-full max-w-2xl flex items-center gap-3">
+		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
-				class="p-2 -ml-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
-				←
+				<ArrowLeft class="h-5 w-5" />
 			</button>
-			<div class="flex-1 min-w-0">
-				<h1 class="text-base font-semibold text-text-primary truncate">{title}</h1>
+			<div class="min-w-0 flex-1">
+				<h1 class="truncate text-base font-semibold text-base-content">
+					{title}
+				</h1>
 			</div>
 			<div
-				class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-text-muted'}"
+				class="status shrink-0 {connected ? 'status-success' : ''}"
 				aria-label={connected ? '연결됨' : '연결 중'}
 				title={connected ? '연결됨' : '연결 중...'}
 			></div>
@@ -433,20 +446,21 @@
 	</header>
 
 	{#if pinnedBody || canEditPinned}
-		<div class="shrink-0 border-b border-border bg-surface px-4 py-3">
-			<div class="mx-auto w-full max-w-2xl flex items-start gap-2">
-				<div class="flex-1 min-w-0 max-h-40 overflow-y-auto">
+		<div class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">
+			<div class="mx-auto flex w-full max-w-2xl items-start gap-2">
+				<div class="max-h-40 min-w-0 flex-1 overflow-y-auto">
 					{#if pinnedBody}
-						<div class="prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_pre]:overflow-x-auto">{@html renderMarkdown(pinnedBody)}</div>
+						<div
+							class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+						>
+							{@html renderMarkdown(pinnedBody)}
+						</div>
 					{:else}
-						<p class="text-sm text-text-muted italic">아직 본문이 없어요</p>
+						<p class="text-sm text-base-content/50 italic">아직 본문이 없어요</p>
 					{/if}
 				</div>
 				{#if canEditPinned}
-					<button
-						onclick={onEditPinned}
-						class="shrink-0 text-xs font-medium text-accent hover:text-accent-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent rounded px-1"
-					>
+					<button onclick={onEditPinned} class="btn shrink-0 btn-ghost text-primary btn-xs">
 						{pinnedBody ? '수정' : '본문 추가'}
 					</button>
 				{/if}
@@ -467,99 +481,93 @@
 				? 'opacity-0'
 				: ''}"
 		>
-		{#if loadingOlder}
-			<p class="text-text-muted text-xs text-center py-1">이전 메시지 불러오는 중...</p>
-		{/if}
-		{#if messagesQuery.isPending && messages.length === 0}
-			<p class="text-text-secondary text-sm text-center py-8">불러오는 중...</p>
-		{:else if messages.length === 0}
-			<p class="text-text-muted text-sm text-center py-8">첫 메시지를 남겨보세요</p>
-		{:else}
-			{#each messages as msg, i (msg.id)}
+			{#if loadingOlder}
+				<p class="py-1 text-center text-xs text-base-content/50">이전 메시지 불러오는 중...</p>
+			{/if}
+			{#if messagesQuery.isPending && messages.length === 0}
+				<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
+			{:else if messages.length === 0}
+				<p class="py-8 text-center text-sm text-base-content/50">첫 메시지를 남겨보세요</p>
+			{:else}
+				{#each messages as msg, i (msg.id)}
 					{#if showDateDivider(i)}
-						<div class="flex justify-center py-1">
-							<span class="text-[11px] text-text-muted bg-surface px-3 py-1 rounded-full">
-								{dateLabel(msg.created_at)}
-							</span>
+						<div class="divider my-1 text-[11px] text-base-content/50">
+							{dateLabel(msg.created_at)}
 						</div>
 					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
-							<span class="text-xs text-text-muted bg-surface px-3 py-1 rounded-full"
-								>{msg.body}</span
-							>
+							<span class="badge badge-ghost badge-sm">{msg.body}</span>
 						</div>
 					{:else if isMine(msg)}
-						<div class="flex items-end justify-end gap-1.5">
-							{#if showTime(i)}
-								<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
-							{/if}
+						<div class="chat-end chat {!showHeader(i) ? '-mt-3' : ''}">
 							<div
-								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-accent text-white rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
+								class="chat-bubble-primary-readable chat-bubble chat-bubble-primary text-sm {msg.pending
+									? 'opacity-60'
+									: ''}"
 							>
-								{@render messageBody(msg.body, '#67e8f9')}
+								{@render messageBody(msg.body, true)}
 							</div>
+							{#if showTime(i)}
+								<div class="chat-footer text-[10px] text-base-content/50">
+									{hm(msg.created_at)}
+								</div>
+							{/if}
 						</div>
 					{:else}
-						<div class="flex items-start gap-2">
-							<div class="w-8 shrink-0">
+						<div class="chat-start chat {!showHeader(i) ? '-mt-3' : ''}">
+							<div
+								class="avatar chat-image {msg.sender_avatar_url ? '' : 'avatar-placeholder'} w-8"
+							>
 								{#if showHeader(i)}
 									{#if msg.sender_avatar_url}
-										<img
-											src={msg.sender_avatar_url}
-											alt={msg.sender_nickname ?? ''}
-											class="w-8 h-8 rounded-full object-cover bg-surface-elevated"
-										/>
+										<div class="w-8 rounded-full">
+											<img src={msg.sender_avatar_url} alt={msg.sender_nickname ?? ''} />
+										</div>
 									{:else}
-										<div
-											class="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center text-xs font-semibold"
-											aria-hidden="true"
-										>
-											{initial(msg.sender_nickname)}
+										<div class="w-8 rounded-full bg-primary/20 text-primary" aria-hidden="true">
+											<span class="text-xs font-semibold">{initial(msg.sender_nickname)}</span>
 										</div>
 									{/if}
 								{/if}
 							</div>
-							<div class="flex-1 min-w-0 space-y-0.5">
-								{#if showHeader(i) && msg.sender_nickname}
-									<span class="block text-xs text-text-muted px-1">{msg.sender_nickname}</span>
-								{/if}
-								<div class="flex items-end gap-1.5">
-									<div
-										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-surface-elevated text-text-primary rounded-bl-sm"
-									>
-										{@render messageBody(msg.body, '#3b82f6')}
-									</div>
-									{#if showTime(i)}
-										<span class="text-[10px] text-text-muted shrink-0 pb-1">{hm(msg.created_at)}</span>
-									{/if}
+							{#if showHeader(i) && msg.sender_nickname}
+								<div class="chat-header text-xs text-base-content/50">
+									{msg.sender_nickname}
 								</div>
+							{/if}
+							<div class="chat-bubble text-sm">
+								{@render messageBody(msg.body, false)}
 							</div>
+							{#if showTime(i)}
+								<div class="chat-footer text-[10px] text-base-content/50">
+									{hm(msg.created_at)}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				{/each}
-		{/if}
+			{/if}
 		</div>
 	</section>
 
-	<footer class="shrink-0 border-t border-border px-4 py-3 bg-background">
-		<div class="flex items-end gap-2 max-w-2xl mx-auto">
+	<footer class="shrink-0 border-t border-base-300 bg-base-100 px-4 py-3">
+		<div class="mx-auto flex max-w-2xl items-end gap-2">
 			<textarea
 				bind:this={inputEl}
 				bind:value={inputText}
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="flex-1 resize-none px-3 py-2 rounded-xl bg-surface-elevated border border-border text-text-primary placeholder:text-text-muted text-sm focus-visible:outline-2 focus-visible:outline-accent max-h-40 overflow-y-auto"
-				aria-label="메시지 입력"
-			></textarea>
+				class="textarea max-h-40 flex-1 resize-none overflow-y-auto"
+				aria-label="메시지 입력"></textarea>
 			<button
 				onclick={sendMessage}
 				disabled={!inputText.trim() || !connected}
-				class="shrink-0 p-2.5 rounded-xl bg-accent text-white disabled:opacity-40 transition-opacity hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent"
+				class="btn btn-square shrink-0 btn-primary"
 				aria-label="메시지 보내기"
 			>
-				↑
+				<ArrowUp class="h-5 w-5" />
 			</button>
 		</div>
 	</footer>

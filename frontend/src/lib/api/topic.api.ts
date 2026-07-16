@@ -1,5 +1,11 @@
 import { apiGet, apiPost, apiPatch, apiPut, apiFetch } from './client';
-import type { Topic, TopicPage, TopicTag, TopicDates, PresignResponse } from '$lib/types/topic.types';
+import type {
+	Topic,
+	TopicPage,
+	TopicTag,
+	TopicDates,
+	PresignResponse
+} from '$lib/types/topic.types';
 
 export function listTopics(groupId: string, cursor?: string, date?: string): Promise<TopicPage> {
 	const params = new URLSearchParams();

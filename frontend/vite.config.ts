@@ -7,8 +7,7 @@ export default defineConfig({
 	// Required so the injectManifest service worker (imports workbox-*) registers
 	// correctly — see @vite-pwa/sveltekit docs.
 	define: {
-		'process.env.NODE_ENV':
-			process.env.NODE_ENV === 'production' ? '"production"' : '"development"'
+		'process.env.NODE_ENV': process.env.NODE_ENV === 'production' ? '"production"' : '"development"'
 	},
 	plugins: [
 		tailwindcss(),
@@ -24,8 +23,8 @@ export default defineConfig({
 				short_name: '잼얘좀',
 				description: '재밌는 얘기 좀 해봐',
 				lang: 'ko',
-				theme_color: '#09090b',
-				background_color: '#09090b',
+				theme_color: '#ffffff',
+				background_color: '#ffffff',
 				display: 'standalone',
 				start_url: '/',
 				icons: [

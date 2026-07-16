@@ -14,7 +14,9 @@ export function unsubscribePush(): Promise<void> {
  * Returns the PushSubscription or null if denied/unsupported.
  * TODO(oma-deferred): wire VAPID public key from env when backend is provisioned.
  */
-export async function requestAndSubscribe(vapidPublicKey: string): Promise<PushSubscription | null> {
+export async function requestAndSubscribe(
+	vapidPublicKey: string
+): Promise<PushSubscription | null> {
 	if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
 
 	const permission = await Notification.requestPermission();
