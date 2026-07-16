@@ -9,3 +9,6 @@
 result
 result-*
 .direnv/
+
+# oma docs generated artifacts
+docs/generated/
