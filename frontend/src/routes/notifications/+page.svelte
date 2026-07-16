@@ -39,14 +39,14 @@
 	>
 		<button
 			onclick={() => goto('/groups')}
-			class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+			class="btn btn-ghost btn-square btn-sm -ml-2"
 			aria-label="뒤로 가기"
 		>
 			←
 		</button>
 		<h1 class="text-base font-semibold text-base-content">알림</h1>
 		{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
-			<span class="text-xs px-2 py-0.5 rounded-full bg-primary text-primary-content">
+			<span class="badge badge-primary badge-sm">
 				{notifsQuery.data.unread_count}
 			</span>
 		{/if}
@@ -72,7 +72,7 @@
 						>
 							<div class="flex items-start gap-2.5">
 								<span
-									class="mt-1.5 w-2 h-2 rounded-full shrink-0 {n.read ? 'bg-transparent' : 'bg-primary'}"
+									class="mt-1.5 shrink-0 status {n.read ? 'bg-transparent' : 'status-primary'}"
 									aria-hidden="true"
 								></span>
 								<div class="min-w-0 flex-1 space-y-0.5">

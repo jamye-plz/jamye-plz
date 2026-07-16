@@ -416,7 +416,7 @@
 		<div class="mx-auto w-full max-w-2xl flex items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
-				class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+				class="btn btn-ghost btn-square btn-sm -ml-2"
 				aria-label="뒤로 가기"
 			>
 				←
@@ -425,7 +425,7 @@
 				<h1 class="text-base font-semibold text-base-content truncate">{title}</h1>
 			</div>
 			<div
-				class="w-2 h-2 rounded-full shrink-0 {connected ? 'bg-success' : 'bg-base-content/50'}"
+				class="status shrink-0 {connected ? 'status-success' : ''}"
 				aria-label={connected ? '연결됨' : '연결 중'}
 				title={connected ? '연결됨' : '연결 중...'}
 			></div>
@@ -445,7 +445,7 @@
 				{#if canEditPinned}
 					<button
 						onclick={onEditPinned}
-						class="shrink-0 text-xs font-medium text-primary hover:text-primary transition-colors focus-visible:outline-2 focus-visible:outline-primary rounded px-1"
+						class="btn btn-ghost btn-xs text-primary shrink-0"
 					>
 						{pinnedBody ? '수정' : '본문 추가'}
 					</button>
@@ -505,17 +505,16 @@
 							<div class="w-8 shrink-0">
 								{#if showHeader(i)}
 									{#if msg.sender_avatar_url}
-										<img
-											src={msg.sender_avatar_url}
-											alt={msg.sender_nickname ?? ''}
-											class="w-8 h-8 rounded-full object-cover bg-base-300"
-										/>
+										<div class="avatar">
+											<div class="w-8 rounded-full">
+												<img src={msg.sender_avatar_url} alt={msg.sender_nickname ?? ''} />
+											</div>
+										</div>
 									{:else}
-										<div
-											class="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-semibold"
-											aria-hidden="true"
-										>
-											{initial(msg.sender_nickname)}
+										<div class="avatar avatar-placeholder" aria-hidden="true">
+											<div class="w-8 rounded-full bg-primary/20 text-primary">
+												<span class="text-xs font-semibold">{initial(msg.sender_nickname)}</span>
+											</div>
 										</div>
 									{/if}
 								{/if}
@@ -550,13 +549,13 @@
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="flex-1 resize-none px-3 py-2 rounded-xl bg-base-300 border border-base-300 text-base-content placeholder:text-base-content/50 text-sm focus-visible:outline-2 focus-visible:outline-primary max-h-40 overflow-y-auto"
+				class="textarea flex-1 resize-none max-h-40 overflow-y-auto"
 				aria-label="메시지 입력"
 			></textarea>
 			<button
 				onclick={sendMessage}
 				disabled={!inputText.trim() || !connected}
-				class="shrink-0 p-2.5 rounded-xl bg-primary text-primary-content disabled:opacity-40 transition-opacity hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-primary"
+				class="btn btn-primary btn-square shrink-0"
 				aria-label="메시지 보내기"
 			>
 				↑

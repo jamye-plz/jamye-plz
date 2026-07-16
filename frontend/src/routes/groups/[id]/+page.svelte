@@ -107,7 +107,7 @@
 	>
 		<button
 			onclick={() => goto('/groups')}
-			class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+			class="btn btn-ghost btn-square btn-sm -ml-2"
 			aria-label="뒤로 가기"
 		>
 			←
@@ -117,22 +117,14 @@
 				<h1 class="text-base font-semibold text-base-content truncate">{groupQuery.data.name}</h1>
 				<p class="text-xs text-base-content/50">{groupQuery.data.member_count}명</p>
 			{:else}
-				<div class="h-4 w-32 bg-base-300 rounded animate-pulse"></div>
+				<div class="skeleton h-4 w-32"></div>
 			{/if}
 		</div>
 		<div class="flex items-center gap-1">
-			<a
-				href="/groups/{groupId}/chat"
-				class="p-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
-				aria-label="그룹 채팅"
-			>
+			<a href="/groups/{groupId}/chat" class="btn btn-ghost btn-square btn-sm" aria-label="그룹 채팅">
 				💬
 			</a>
-			<a
-				href="/groups/{groupId}/invite"
-				class="p-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
-				aria-label="초대"
-			>
+			<a href="/groups/{groupId}/invite" class="btn btn-ghost btn-square btn-sm" aria-label="초대">
 				👋
 			</a>
 		</div>
@@ -147,12 +139,12 @@
 					placeholder="새 주제 던지기..."
 					maxlength="256"
 					aria-label="새 주제 제목"
-					class="flex-1 px-3 py-2.5 rounded-xl bg-base-300 border border-base-300 text-base-content placeholder:text-base-content/50 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+					class="input flex-1"
 				/>
 				<button
 					type="submit"
 					disabled={!newTitle.trim() || createTopic.isPending}
-					class="shrink-0 px-4 py-2.5 rounded-xl bg-primary text-primary-content font-medium text-sm disabled:opacity-40 transition-opacity hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-primary"
+					class="btn btn-primary shrink-0"
 				>
 					{createTopic.isPending ? '...' : '던지기'}
 				</button>
@@ -173,7 +165,7 @@
 				/>
 			{:else if datesQuery.isPending}
 				<div class="flex justify-center py-2" aria-hidden="true">
-					<div class="h-9 w-40 bg-base-300 rounded-xl animate-pulse"></div>
+					<div class="skeleton h-9 w-40 rounded-xl"></div>
 				</div>
 			{/if}
 
@@ -205,10 +197,7 @@
 										<div class="flex items-start justify-between gap-2">
 											<span class="font-medium text-base-content leading-snug">{topic.title}</span>
 											{#if topic.unread}
-												<span
-													class="shrink-0 w-2.5 h-2.5 rounded-full bg-primary mt-1"
-													aria-label="안 읽음"
-												></span>
+												<span class="shrink-0 status status-primary mt-1" aria-label="안 읽음"></span>
 											{/if}
 										</div>
 										<div class="flex items-center gap-2 text-xs text-base-content/50">

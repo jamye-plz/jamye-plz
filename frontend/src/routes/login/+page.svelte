@@ -21,17 +21,13 @@
 		<div class="space-y-3">
 			<a
 				href={getOAuthLoginUrl('kakao')}
-				class="flex items-center justify-center w-full py-3 px-4 rounded-lg bg-[#FEE500] text-[#191919] font-medium text-sm transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-primary"
+				class="btn btn-block border-0 bg-[#FEE500] text-[#191919] hover:bg-[#FEE500]/90"
 				aria-label="카카오로 로그인"
 			>
 				카카오로 시작하기
 			</a>
 
-			<a
-				href={getOAuthLoginUrl('google')}
-				class="flex items-center justify-center w-full py-3 px-4 rounded-lg bg-base-300 text-base-content font-medium text-sm border border-base-300 transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-primary"
-				aria-label="구글로 로그인"
-			>
+			<a href={getOAuthLoginUrl('google')} class="btn btn-block" aria-label="구글로 로그인">
 				Google로 시작하기
 			</a>
 		</div>

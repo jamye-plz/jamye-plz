@@ -89,7 +89,7 @@
 					bind:value={editorBody}
 					placeholder="주제에 대한 내용을 적어주세요..."
 					rows={6}
-					class="w-full resize-none px-3 py-2 rounded-xl bg-base-200 border border-base-300 text-base-content placeholder:text-base-content/50 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+					class="textarea w-full resize-none"
 				></textarea>
 				{#if enrich.isError}
 					<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
@@ -98,14 +98,14 @@
 					<button
 						type="button"
 						onclick={() => (editing = false)}
-						class="flex-1 py-2 rounded-lg bg-base-200 border border-base-300 text-base-content/70 text-sm hover:bg-base-300 transition-colors"
+						class="btn flex-1"
 					>
 						취소
 					</button>
 					<button
 						type="submit"
 						disabled={!editorBody.trim() || enrich.isPending}
-						class="flex-1 py-2 rounded-lg bg-primary text-primary-content text-sm font-medium disabled:opacity-40 transition-opacity hover:bg-primary/90"
+						class="btn btn-primary flex-1"
 					>
 						{enrich.isPending ? '저장 중...' : '저장'}
 					</button>

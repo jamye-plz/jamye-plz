@@ -73,7 +73,7 @@
 	>
 		<button
 			onclick={() => goto(`/groups/${groupId}`)}
-			class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+			class="btn btn-ghost btn-square btn-sm -ml-2"
 			aria-label="뒤로 가기"
 		>
 			←
@@ -89,7 +89,7 @@
 		<button
 			onclick={() => invite.mutate()}
 			disabled={invite.isPending}
-			class="w-full py-3 rounded-xl bg-primary text-primary-content font-medium text-sm disabled:opacity-40 transition-opacity hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-primary"
+			class="btn btn-primary btn-block"
 		>
 			{invite.isPending ? '만드는 중...' : '초대 링크 만들기'}
 		</button>
@@ -106,7 +106,7 @@
 					<button
 						onclick={() => copyLink(invite.data!.code)}
 						aria-label={copied ? '복사됨' : '링크 복사'}
-						class="shrink-0 p-2 rounded-lg bg-base-300 border border-base-300 text-base-content/70 hover:text-base-content transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+						class="btn btn-ghost btn-square btn-sm shrink-0"
 					>
 						{#if copied}
 							<Check class="w-4 h-4 text-primary" />
@@ -118,7 +118,7 @@
 				{#if canShare}
 					<button
 						onclick={() => shareLink(invite.data!.code)}
-						class="w-full py-2.5 rounded-lg bg-primary text-primary-content text-sm font-medium transition-opacity hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-primary"
+						class="btn btn-primary btn-block"
 					>
 						공유하기
 					</button>
@@ -141,25 +141,21 @@
 					{#each membersQuery.data as m (m.user_id)}
 						<li class="flex items-center gap-3 p-3">
 							{#if m.avatar_url}
-								<img
-									src={m.avatar_url}
-									alt={m.nickname}
-									class="w-9 h-9 rounded-full object-cover bg-base-300 shrink-0"
-								/>
+								<div class="avatar shrink-0">
+									<div class="w-9 rounded-full">
+										<img src={m.avatar_url} alt={m.nickname} />
+									</div>
+								</div>
 							{:else}
-								<div
-									class="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-semibold shrink-0"
-									aria-hidden="true"
-								>
-									{initial(m.nickname)}
+								<div class="avatar avatar-placeholder shrink-0" aria-hidden="true">
+									<div class="w-9 rounded-full bg-primary/20 text-primary">
+										<span class="text-sm font-semibold">{initial(m.nickname)}</span>
+									</div>
 								</div>
 							{/if}
 							<span class="flex-1 text-sm text-base-content truncate">{m.nickname}</span>
 							{#if m.role === 'owner'}
-								<span
-									class="shrink-0 text-[11px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full"
-									>그룹장</span
-								>
+								<span class="badge badge-soft badge-primary badge-sm shrink-0">그룹장</span>
 							{:else}
 								<span class="shrink-0 text-[11px] text-base-content/50">그룹원</span>
 							{/if}

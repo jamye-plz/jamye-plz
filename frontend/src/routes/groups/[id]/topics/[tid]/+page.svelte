@@ -18,7 +18,7 @@
 	<header class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center gap-3">
 		<button
 			onclick={() => goto(`/groups/${groupId}`)}
-			class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+			class="btn btn-ghost btn-square btn-sm -ml-2"
 			aria-label="뒤로 가기"
 		>
 			←
@@ -27,13 +27,13 @@
 			{#if topicQuery.data}
 				<h1 class="text-base font-semibold text-base-content truncate">{topicQuery.data.title}</h1>
 			{:else}
-				<div class="h-4 w-48 bg-base-300 rounded animate-pulse"></div>
+				<div class="skeleton h-4 w-48"></div>
 			{/if}
 		</div>
 		{#if topicQuery.data}
 			<a
 				href="/groups/{groupId}/topics/{topicId}/chat"
-				class="shrink-0 p-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+				class="btn btn-ghost btn-square btn-sm shrink-0"
 				aria-label="주제 채팅"
 			>
 				💬
@@ -69,7 +69,7 @@
 				{#if topic.tags.length > 0}
 					<div class="flex flex-wrap gap-2" aria-label="태그">
 						{#each topic.tags as tag}
-							<span class="text-xs px-2 py-1 rounded-full bg-base-300 text-base-content/50 border border-base-300">
+							<span class="badge badge-ghost badge-sm">
 								#{tag.tag}
 							</span>
 						{/each}
@@ -97,7 +97,7 @@
 			<div class="border-t border-base-300 pt-4">
 				<a
 					href="/groups/{groupId}/topics/{topicId}/chat"
-					class="block w-full text-center py-3 rounded-xl bg-primary text-primary-content font-medium text-sm hover:bg-primary/90 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+					class="btn btn-primary btn-block"
 				>
 					채팅에 참여하기
 				</a>

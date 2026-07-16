@@ -56,7 +56,7 @@
 	>
 		<button
 			onclick={() => goto('/groups')}
-			class="p-2 -ml-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
+			class="btn btn-ghost btn-square btn-sm -ml-2"
 			aria-label="뒤로 가기"
 		>
 			←
@@ -74,17 +74,16 @@
 
 			<section class="flex items-center gap-4">
 				{#if me.avatar_url}
-					<img
-						src={me.avatar_url}
-						alt="프로필 사진"
-						class="w-16 h-16 rounded-full object-cover bg-base-300"
-					/>
+					<div class="avatar">
+						<div class="w-16 rounded-full">
+							<img src={me.avatar_url} alt="프로필 사진" />
+						</div>
+					</div>
 				{:else}
-					<div
-						class="w-16 h-16 rounded-full bg-primary/20 text-primary flex items-center justify-center text-2xl font-semibold"
-						aria-hidden="true"
-					>
-						{initial(me.nickname)}
+					<div class="avatar avatar-placeholder" aria-hidden="true">
+						<div class="w-16 rounded-full bg-primary/20 text-primary text-2xl font-semibold">
+							{initial(me.nickname)}
+						</div>
 					</div>
 				{/if}
 				<div class="min-w-0">
@@ -110,12 +109,12 @@
 						oninput={() => (dirty = true)}
 						maxlength={64}
 						required
-						class="flex-1 px-3 py-2.5 rounded-xl bg-base-300 border border-base-300 text-base-content placeholder:text-base-content/50 text-sm focus-visible:outline-2 focus-visible:outline-primary"
+						class="input flex-1"
 					/>
 					<button
 						type="submit"
 						disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
-						class="shrink-0 px-4 py-2.5 rounded-xl bg-primary text-primary-content font-medium text-sm disabled:opacity-40 transition-opacity hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-primary"
+						class="btn btn-primary shrink-0"
 					>
 						{save.isPending ? '저장 중...' : '저장'}
 					</button>
@@ -132,7 +131,7 @@
 				<button
 					onclick={doLogout}
 					disabled={loggingOut}
-					class="w-full py-3 rounded-xl border border-base-300 text-base-content/70 text-sm hover:text-error hover:border-error transition-colors disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-primary"
+					class="btn btn-outline btn-error btn-block"
 				>
 					{loggingOut ? '로그아웃 중...' : '로그아웃'}
 				</button>

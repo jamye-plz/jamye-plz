@@ -40,20 +40,8 @@
 	<header class="sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300 px-4 py-3 flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-base-content">내 그룹</h1>
 		<div class="flex items-center gap-2">
-			<a
-				href="/notifications"
-				class="p-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
-				aria-label="알림"
-			>
-				🔔
-			</a>
-			<a
-				href="/settings"
-				class="p-2 rounded-lg text-base-content/70 hover:text-base-content hover:bg-base-300 transition-colors"
-				aria-label="설정"
-			>
-				⚙️
-			</a>
+			<a href="/notifications" class="btn btn-ghost btn-square btn-sm" aria-label="알림"> 🔔 </a>
+			<a href="/settings" class="btn btn-ghost btn-square btn-sm" aria-label="설정"> ⚙️ </a>
 		</div>
 	</header>
 
@@ -65,10 +53,7 @@
 		{:else if groupsQuery.data && groupsQuery.data.length === 0}
 			<div class="text-center py-16 space-y-3">
 				<p class="text-base-content/50">아직 속한 그룹이 없어요</p>
-				<button
-					onclick={() => (showCreate = true)}
-					class="text-sm text-primary transition-colors"
-				>
+				<button onclick={() => (showCreate = true)} class="btn btn-link">
 					첫 그룹 만들기
 				</button>
 			</div>
@@ -83,7 +68,7 @@
 						>
 							<div class="flex items-center justify-between">
 								<span class="font-medium text-base-content">{group.name}</span>
-								<span class="text-xs text-base-content/50">{group.member_count}/{group.max_members}명</span>
+								<span class="badge badge-ghost badge-sm">{group.member_count}/{group.max_members}명</span>
 							</div>
 						</button>
 					</li>
@@ -91,11 +76,7 @@
 			</ul>
 		{/if}
 
-		<button
-			onclick={() => (showCreate = true)}
-			class="w-full py-3 px-4 rounded-xl border border-dashed border-base-300 text-base-content/70 hover:border-primary hover:text-primary text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary"
-			aria-label="새 그룹 만들기"
-		>
+		<button onclick={() => (showCreate = true)} class="btn btn-block btn-dash" aria-label="새 그룹 만들기">
 			+ 새 그룹 만들기
 		</button>
 
@@ -115,7 +96,7 @@
 							placeholder="그룹 이름"
 							maxlength={50}
 							required
-							class="w-full px-3 py-2 rounded-lg bg-base-200 border border-base-300 text-base-content placeholder:text-base-content/50 focus-visible:outline-2 focus-visible:outline-primary"
+							class="input w-full"
 						/>
 						{#if createError}
 							<p class="text-xs text-error">{createError}</p>
@@ -124,14 +105,14 @@
 							<button
 								type="button"
 								onclick={() => { showCreate = false; newGroupName = ''; createError = null; }}
-								class="flex-1 py-2 rounded-lg bg-base-200 border border-base-300 text-base-content/70 text-sm transition-colors hover:bg-base-300"
+								class="btn flex-1"
 							>
 								취소
 							</button>
 							<button
 								type="submit"
 								disabled={creating || !newGroupName.trim()}
-								class="flex-1 py-2 rounded-lg bg-primary text-primary-content text-sm font-medium disabled:opacity-50 transition-opacity hover:opacity-90"
+								class="btn btn-primary flex-1"
 							>
 								{creating ? '생성 중...' : '만들기'}
 							</button>

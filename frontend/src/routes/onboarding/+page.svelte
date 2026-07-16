@@ -40,7 +40,7 @@
 					placeholder="닉네임 입력"
 					maxlength={20}
 					required
-					class="w-full px-3 py-2 rounded-lg bg-base-300 border border-base-300 text-base-content placeholder:text-base-content/50 focus-visible:outline-2 focus-visible:outline-primary"
+					class="input w-full"
 				/>
 			</div>
 
@@ -51,7 +51,7 @@
 			<button
 				type="submit"
 				disabled={submitting || !nickname.trim()}
-				class="w-full py-3 px-4 rounded-lg bg-primary text-primary-content font-medium text-sm disabled:opacity-50 transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-primary"
+				class="btn btn-primary btn-block"
 			>
 				{submitting ? '저장 중...' : '시작하기'}
 			</button>
