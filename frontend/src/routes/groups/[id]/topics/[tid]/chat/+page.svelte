@@ -73,7 +73,11 @@
 	{backHref}
 />
 
-<dialog bind:this={editDialog} class="modal modal-bottom sm:modal-middle" aria-labelledby="edit-body-title">
+<dialog
+	bind:this={editDialog}
+	class="modal modal-bottom sm:modal-middle"
+	aria-labelledby="edit-body-title"
+>
 	<div class="modal-box space-y-4">
 		<h2 id="edit-body-title" class="text-base font-semibold text-base-content">
 			본문 {topicQuery.data?.body ? '수정' : '추가'}
@@ -83,23 +87,16 @@
 				bind:value={editorBody}
 				placeholder="주제에 대한 내용을 적어주세요..."
 				rows={6}
-				class="textarea w-full resize-none"
-			></textarea>
+				class="textarea w-full resize-none"></textarea>
 			{#if enrich.isError}
 				<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
 			{/if}
 			<div class="modal-action gap-2">
-				<button
-					type="button"
-					onclick={() => editDialog?.close()}
-					class="btn flex-1"
-				>
-					취소
-				</button>
+				<button type="button" onclick={() => editDialog?.close()} class="btn flex-1"> 취소 </button>
 				<button
 					type="submit"
 					disabled={!editorBody.trim() || enrich.isPending}
-					class="btn btn-primary flex-1"
+					class="btn flex-1 btn-primary"
 				>
 					{enrich.isPending ? '저장 중...' : '저장'}
 				</button>

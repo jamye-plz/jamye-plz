@@ -7,8 +7,13 @@
 		class?: string;
 	}
 
-	let { url, name, sizeClass = 'w-9', textClass = 'text-sm', class: extraClass = '' }: Props =
-		$props();
+	let {
+		url,
+		name,
+		sizeClass = 'w-9',
+		textClass = 'text-sm',
+		class: extraClass = ''
+	}: Props = $props();
 
 	function initial(n: string | undefined): string {
 		return n?.trim()?.[0]?.toUpperCase() ?? '?';

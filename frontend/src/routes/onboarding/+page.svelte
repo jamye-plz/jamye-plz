@@ -23,11 +23,11 @@
 	}
 </script>
 
-<main class="min-h-screen flex items-center justify-center bg-base-100 px-4">
+<main class="flex min-h-screen items-center justify-center bg-base-100 px-4">
 	<div class="w-full max-w-sm space-y-8">
-		<div class="text-center space-y-2">
+		<div class="space-y-2 text-center">
 			<h1 class="text-2xl font-bold text-base-content">프로필 설정</h1>
-			<p class="text-base-content/70 text-sm">닉네임을 입력해 시작하세요</p>
+			<p class="text-sm text-base-content/70">닉네임을 입력해 시작하세요</p>
 		</div>
 
 		<form onsubmit={handleSubmit} class="space-y-4">
@@ -51,7 +51,7 @@
 			<button
 				type="submit"
 				disabled={submitting || !nickname.trim()}
-				class="btn btn-primary btn-block"
+				class="btn btn-block btn-primary"
 			>
 				{submitting ? '저장 중...' : '시작하기'}
 			</button>

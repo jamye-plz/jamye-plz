@@ -41,10 +41,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 	throw new ApiError(res.status, detail);
 }
 
-export async function apiFetch<T>(
-	path: string,
-	init: RequestInit = {}
-): Promise<T> {
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 	const res = await fetch(`/api${path}`, {
 		...init,
 		credentials: 'include',

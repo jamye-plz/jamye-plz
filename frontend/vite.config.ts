@@ -7,8 +7,7 @@ export default defineConfig({
 	// Required so the injectManifest service worker (imports workbox-*) registers
 	// correctly — see @vite-pwa/sveltekit docs.
 	define: {
-		'process.env.NODE_ENV':
-			process.env.NODE_ENV === 'production' ? '"production"' : '"development"'
+		'process.env.NODE_ENV': process.env.NODE_ENV === 'production' ? '"production"' : '"development"'
 	},
 	plugins: [
 		tailwindcss(),

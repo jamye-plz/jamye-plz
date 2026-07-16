@@ -5,15 +5,15 @@
 	const loginError = $derived(page.url.searchParams.get('error'));
 </script>
 
-<main class="min-h-screen flex items-center justify-center bg-base-100 px-4">
+<main class="flex min-h-screen items-center justify-center bg-base-100 px-4">
 	<div class="w-full max-w-sm space-y-8">
-		<div class="text-center space-y-2">
+		<div class="space-y-2 text-center">
 			<h1 class="text-3xl font-bold text-base-content">잼얘좀</h1>
-			<p class="text-base-content/70 text-sm">폐쇄 그룹에서 주제를 던지고 실시간으로 떠드는 공간</p>
+			<p class="text-sm text-base-content/70">폐쇄 그룹에서 주제를 던지고 실시간으로 떠드는 공간</p>
 		</div>
 
 		{#if loginError}
-			<p class="text-sm text-error text-center" role="alert">
+			<p class="text-center text-sm text-error" role="alert">
 				로그인에 실패했어요. 다시 시도해 주세요.
 			</p>
 		{/if}

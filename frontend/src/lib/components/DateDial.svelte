@@ -44,7 +44,9 @@
 	let selfCommit = false;
 
 	function reduceMotion(): boolean {
-		return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		return (
+			typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+		);
 	}
 
 	function subtractOneDay(yyyymmdd: string): string {
@@ -261,7 +263,7 @@
 		onpointerup={onPointerUp}
 		onpointercancel={onPointerUp}
 		onkeydown={onKeydown}
-		class="flex items-stretch overflow-x-auto overscroll-x-contain py-1 outline-none transition-opacity duration-150 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-2 focus-visible:outline-primary rounded-xl {ready
+		class="flex [scrollbar-width:none] items-stretch overflow-x-auto overscroll-x-contain rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
 			? 'opacity-100'
 			: 'opacity-0'}"
 		style="scroll-snap-type: {snapOff ? 'none' : 'x mandatory'}; cursor: {dragging
@@ -279,7 +281,7 @@
 				tabindex="-1"
 				data-date={date}
 				onclick={() => pick(date)}
-				class="shrink-0 min-w-0 snap-center flex items-center justify-center transition-[opacity,transform] duration-150"
+				class="flex min-w-0 shrink-0 snap-center items-center justify-center transition-[opacity,transform] duration-150"
 				style="width: {ITEM_W}px; opacity: {hidden
 					? 0
 					: Math.max(0.35, 1 - 0.3 * dist(i))}; transform: scale({active
@@ -292,8 +294,8 @@
 				<!-- The centered date is wrapped in a pill sized to its own text:
 				     short labels (오늘/어제) become round, full dates a wider stadium. -->
 				<span
-					class="rounded-full whitespace-nowrap leading-none transition-colors {active
-						? 'bg-primary text-primary-content px-3 py-2 text-[15px] font-semibold'
+					class="rounded-full leading-none whitespace-nowrap transition-colors {active
+						? 'bg-primary px-3 py-2 text-[15px] font-semibold text-primary-content'
 						: 'px-2 py-1 text-[13px] font-medium text-base-content/70'}"
 				>
 					{label(date)}

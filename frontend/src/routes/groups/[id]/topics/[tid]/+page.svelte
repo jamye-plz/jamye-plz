@@ -17,46 +17,52 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
+	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
 		<button
 			onclick={() => goto(`/groups/${groupId}`)}
-			class="btn btn-ghost btn-square btn-sm -ml-2"
+			class="btn -ml-2 btn-square btn-ghost btn-sm"
 			aria-label="뒤로 가기"
 		>
-			<ArrowLeft class="w-5 h-5" />
+			<ArrowLeft class="h-5 w-5" />
 		</button>
-		<div class="flex-1 min-w-0">
+		<div class="min-w-0 flex-1">
 			{#if topicQuery.data}
-				<h1 class="text-base font-semibold text-base-content truncate">{topicQuery.data.title}</h1>
+				<h1 class="truncate text-base font-semibold text-base-content">{topicQuery.data.title}</h1>
 			{:else}
-				<div class="skeleton h-4 w-48"></div>
+				<div class="h-4 w-48 skeleton"></div>
 			{/if}
 		</div>
 		{#if topicQuery.data}
 			<a
 				href="/groups/{groupId}/topics/{topicId}/chat"
-				class="btn btn-ghost btn-square btn-sm shrink-0"
+				class="btn btn-square shrink-0 btn-ghost btn-sm"
 				aria-label="주제 채팅"
 			>
-				<MessageCircle class="w-5 h-5" />
+				<MessageCircle class="h-5 w-5" />
 			</a>
 		{/if}
 	</header>
 
-	<main class="px-4 py-6 space-y-6 max-w-lg mx-auto">
+	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
 		{#if topicQuery.isPending}
-			<p class="text-base-content/70 text-sm text-center py-8">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
 		{:else if topicQuery.isError}
-			<p class="text-error text-sm text-center py-8">주제를 불러올 수 없습니다.</p>
+			<p class="py-8 text-center text-sm text-error">주제를 불러올 수 없습니다.</p>
 		{:else if topicQuery.data}
 			{@const topic = topicQuery.data}
 			<article class="space-y-4">
 				<header class="space-y-2">
-					<h2 class="text-xl font-bold text-base-content leading-snug">{topic.title}</h2>
+					<h2 class="text-xl leading-snug font-bold text-base-content">{topic.title}</h2>
 					<div class="flex items-center gap-2 text-xs text-base-content/50">
 						<span>{topic.author_nickname}</span>
 						<span>·</span>
-						<span>{new Date(topic.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+						<span
+							>{new Date(topic.created_at).toLocaleDateString('ko-KR', {
+								year: 'numeric',
+								month: 'long',
+								day: 'numeric'
+							})}</span
+						>
 					</div>
 				</header>
 
@@ -65,7 +71,7 @@
 						{@html renderMarkdown(topic.body)}
 					</div>
 				{:else}
-					<p class="text-base-content/50 text-sm italic">아직 내용이 없습니다.</p>
+					<p class="text-sm text-base-content/50 italic">아직 내용이 없습니다.</p>
 				{/if}
 
 				{#if topic.tags.length > 0}
@@ -87,7 +93,7 @@
 									alt="첨부 이미지"
 									width={media.width ?? undefined}
 									height={media.height ?? undefined}
-									class="rounded-xl w-full object-cover max-h-80 bg-base-200"
+									class="max-h-80 w-full rounded-xl bg-base-200 object-cover"
 									loading="lazy"
 								/>
 							{/if}
@@ -97,10 +103,7 @@
 			</article>
 
 			<div class="border-t border-base-300 pt-4">
-				<a
-					href="/groups/{groupId}/topics/{topicId}/chat"
-					class="btn btn-primary btn-block"
-				>
+				<a href="/groups/{groupId}/topics/{topicId}/chat" class="btn btn-block btn-primary">
 					채팅에 참여하기
 				</a>
 			</div>

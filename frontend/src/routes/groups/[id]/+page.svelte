@@ -48,8 +48,7 @@
 
 	const topicsQuery = createInfiniteQuery(() => ({
 		queryKey: ['topics', groupId, selectedDate],
-		queryFn: ({ pageParam }) =>
-			listTopics(groupId, pageParam as string | undefined, selectedDate),
+		queryFn: ({ pageParam }) => listTopics(groupId, pageParam as string | undefined, selectedDate),
 		initialPageParam: undefined as string | undefined,
 		getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
 		enabled: !!selectedDate && !!groupId
@@ -105,36 +104,44 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
-		<div class="w-full flex items-center gap-3">
+	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto('/groups')}
-				class="btn btn-ghost btn-square btn-sm -ml-2"
+				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
-				<ArrowLeft class="w-5 h-5" />
+				<ArrowLeft class="h-5 w-5" />
 			</button>
-			<div class="flex-1 min-w-0">
+			<div class="min-w-0 flex-1">
 				{#if groupQuery.data}
-					<h1 class="text-base font-semibold text-base-content truncate">{groupQuery.data.name}</h1>
+					<h1 class="truncate text-base font-semibold text-base-content">{groupQuery.data.name}</h1>
 					<p class="text-xs text-base-content/50">{groupQuery.data.member_count}명</p>
 				{:else}
-					<div class="skeleton h-4 w-32"></div>
+					<div class="h-4 w-32 skeleton"></div>
 				{/if}
 			</div>
 			<div class="flex items-center gap-1">
-				<a href="/groups/{groupId}/chat" class="btn btn-ghost btn-square btn-sm" aria-label="그룹 채팅">
-					<MessageCircle class="w-5 h-5" />
+				<a
+					href="/groups/{groupId}/chat"
+					class="btn btn-square btn-ghost btn-sm"
+					aria-label="그룹 채팅"
+				>
+					<MessageCircle class="h-5 w-5" />
 				</a>
-				<a href="/groups/{groupId}/invite" class="btn btn-ghost btn-square btn-sm" aria-label="초대">
-					<UserPlus class="w-5 h-5" />
+				<a
+					href="/groups/{groupId}/invite"
+					class="btn btn-square btn-ghost btn-sm"
+					aria-label="초대"
+				>
+					<UserPlus class="h-5 w-5" />
 				</a>
 			</div>
 		</div>
 	</header>
 
 	<main>
-		<div class="px-4 py-4 space-y-4 max-w-lg mx-auto">
+		<div class="mx-auto max-w-lg space-y-4 px-4 py-4">
 			<form onsubmit={submitTopic} class="join w-full">
 				<input
 					bind:value={newTitle}
@@ -147,14 +154,14 @@
 				<button
 					type="submit"
 					disabled={!newTitle.trim() || createTopic.isPending}
-					class="btn btn-primary join-item shrink-0"
+					class="btn join-item shrink-0 btn-primary"
 				>
 					{createTopic.isPending ? '...' : '던지기'}
 				</button>
 			</form>
 
 			{#if createTopic.isError}
-				<p class="text-error text-xs px-1">주제를 만들지 못했어요. 다시 시도해 주세요.</p>
+				<p class="px-1 text-xs text-error">주제를 만들지 못했어요. 다시 시도해 주세요.</p>
 			{/if}
 
 			<!-- Date dial: directly below the composer, same width. Drag/scroll to a
@@ -168,7 +175,7 @@
 				/>
 			{:else if datesQuery.isPending}
 				<div class="flex justify-center py-2" aria-hidden="true">
-					<div class="skeleton h-9 w-40 rounded-xl"></div>
+					<div class="h-9 w-40 skeleton rounded-xl"></div>
 				</div>
 			{/if}
 
@@ -180,11 +187,11 @@
 				class="space-y-3 outline-none"
 			>
 				{#if topicsQuery.isPending && selectedDate}
-					<p class="text-base-content/70 text-sm text-center py-8">불러오는 중...</p>
+					<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
 				{:else if topicsQuery.isError}
-					<p class="text-error text-sm text-center py-8">주제 목록을 불러올 수 없습니다.</p>
+					<p class="py-8 text-center text-sm text-error">주제 목록을 불러올 수 없습니다.</p>
 				{:else if allTopics.length === 0 && selectedDate}
-					<div class="text-center py-16">
+					<div class="py-16 text-center">
 						<p class="text-base-content/50">이 날짜엔 주제가 없어요</p>
 					</div>
 				{:else if allTopics.length > 0}
@@ -193,14 +200,15 @@
 							<li>
 								<a
 									href="/groups/{groupId}/topics/{topic.id}/chat?date={selectedDate}"
-									class="card card-border card-sm bg-base-200 hover:bg-base-300 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+									class="card bg-base-200 transition-colors card-sm card-border hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-primary"
 									aria-label={topic.title}
 								>
 									<div class="card-body">
 										<div class="flex items-start justify-between gap-2">
-											<span class="font-medium text-base-content leading-snug">{topic.title}</span>
+											<span class="leading-snug font-medium text-base-content">{topic.title}</span>
 											{#if topic.unread}
-												<span class="shrink-0 status status-primary mt-1" aria-label="안 읽음"></span>
+												<span class="mt-1 status shrink-0 status-primary" aria-label="안 읽음"
+												></span>
 											{/if}
 										</div>
 										<div class="flex items-center gap-2 text-xs text-base-content/50">
@@ -216,7 +224,7 @@
 
 					<div bind:this={sentinel} class="h-1"></div>
 					{#if topicsQuery.isFetchingNextPage}
-						<p class="text-base-content/50 text-xs text-center py-3">더 불러오는 중...</p>
+						<p class="py-3 text-center text-xs text-base-content/50">더 불러오는 중...</p>
 					{/if}
 				{/if}
 			</div>

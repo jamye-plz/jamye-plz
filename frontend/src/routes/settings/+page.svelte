@@ -50,31 +50,31 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 bg-base-100/80 backdrop-blur border-b border-base-300">
-		<div class="w-full flex items-center gap-3">
+	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto('/groups')}
-				class="btn btn-ghost btn-square btn-sm -ml-2"
+				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
-				<ArrowLeft class="w-5 h-5" />
+				<ArrowLeft class="h-5 w-5" />
 			</button>
 			<h1 class="text-base font-semibold text-base-content">내 정보</h1>
 		</div>
 	</header>
 
-	<main class="px-4 py-6 space-y-6 max-w-lg mx-auto">
+	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
 		{#if meQuery.isPending}
-			<p class="text-base-content/70 text-sm text-center py-8">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
 		{:else if meQuery.isError}
-			<p class="text-error text-sm text-center py-8">정보를 불러올 수 없습니다.</p>
+			<p class="py-8 text-center text-sm text-error">정보를 불러올 수 없습니다.</p>
 		{:else if meQuery.data}
 			{@const me = meQuery.data}
 
 			<section class="flex items-center gap-4">
 				<UserAvatar url={me.avatar_url} name={me.nickname} sizeClass="w-16" textClass="text-2xl" />
 				<div class="min-w-0">
-					<p class="font-semibold text-base-content truncate">{me.nickname}</p>
+					<p class="truncate font-semibold text-base-content">{me.nickname}</p>
 					<p class="text-xs text-base-content/50">
 						{PROVIDER_LABEL[me.provider] ?? me.provider} 로그인 ·
 						{new Date(me.created_at).toLocaleDateString('ko-KR', {
@@ -98,12 +98,12 @@
 							maxlength={64}
 							required
 							aria-label="닉네임"
-							class="input join-item validator flex-1"
+							class="validator input join-item flex-1"
 						/>
 						<button
 							type="submit"
 							disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
-							class="btn btn-primary join-item shrink-0"
+							class="btn join-item shrink-0 btn-primary"
 						>
 							{save.isPending ? '저장 중...' : '저장'}
 						</button>
@@ -113,7 +113,7 @@
 					<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
 				{/if}
 				{#if saved}
-					<div class="toast toast-bottom toast-center z-50">
+					<div class="toast toast-center toast-bottom z-50">
 						<div class="alert alert-success" role="status">
 							<span>저장되었어요.</span>
 						</div>
@@ -126,7 +126,7 @@
 				<button
 					onclick={doLogout}
 					disabled={loggingOut}
-					class="btn btn-outline btn-error btn-block"
+					class="btn btn-block btn-outline btn-error"
 				>
 					{loggingOut ? '로그아웃 중...' : '로그아웃'}
 				</button>
