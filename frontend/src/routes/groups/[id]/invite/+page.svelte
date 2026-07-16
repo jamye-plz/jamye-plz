@@ -110,11 +110,10 @@
 							aria-label={copied ? '복사됨' : '링크 복사'}
 							class="btn btn-ghost btn-square btn-sm shrink-0"
 						>
-							{#if copied}
-								<Check class="w-4 h-4 text-primary" />
-							{:else}
-								<Copy class="w-4 h-4" />
-							{/if}
+							<span class="swap swap-rotate {copied ? 'swap-active' : ''}">
+								<Check class="swap-on w-4 h-4 text-primary" />
+								<Copy class="swap-off w-4 h-4" />
+							</span>
 						</button>
 					</div>
 					{#if canShare}

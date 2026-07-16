@@ -122,10 +122,15 @@
 						</button>
 					</div>
 				</fieldset>
-				{#if saved}
-					<p class="text-xs text-success" role="status">저장되었어요.</p>
-				{:else if save.isError}
+				{#if save.isError}
 					<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
+				{/if}
+				{#if saved}
+					<div class="toast toast-bottom toast-center z-50">
+						<div class="alert alert-success" role="status">
+							<span>저장되었어요.</span>
+						</div>
+					</div>
 				{/if}
 				<p class="text-xs text-base-content/50">프로필 사진 변경은 곧 지원될 예정이에요.</p>
 			</form>

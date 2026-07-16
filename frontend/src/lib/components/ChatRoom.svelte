@@ -477,63 +477,45 @@
 		{:else}
 			{#each messages as msg, i (msg.id)}
 					{#if showDateDivider(i)}
-						<div class="flex justify-center py-1">
-							<span class="text-[11px] text-base-content/50 bg-base-200 px-3 py-1 rounded-full">
-								{dateLabel(msg.created_at)}
-							</span>
-						</div>
+						<div class="divider my-1 text-[11px] text-base-content/50">{dateLabel(msg.created_at)}</div>
 					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
-							<span class="text-xs text-base-content/50 bg-base-200 px-3 py-1 rounded-full"
-								>{msg.body}</span
-							>
+							<span class="badge badge-ghost badge-sm">{msg.body}</span>
 						</div>
 					{:else if isMine(msg)}
-						<div class="flex items-end justify-end gap-1.5">
-							{#if showTime(i)}
-								<span class="text-[10px] text-base-content/50 shrink-0 pb-1">{hm(msg.created_at)}</span>
-							{/if}
-							<div
-								class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-primary text-primary-content rounded-br-sm {msg.pending ? 'opacity-60' : ''}"
-							>
+						<div class="chat chat-end">
+							<div class="chat-bubble chat-bubble-primary text-sm {msg.pending ? 'opacity-60' : ''}">
 								{@render messageBody(msg.body, 'var(--color-primary-content)')}
 							</div>
+							{#if showTime(i)}
+								<div class="chat-footer text-[10px] text-base-content/50">{hm(msg.created_at)}</div>
+							{/if}
 						</div>
 					{:else}
-						<div class="flex items-start gap-2">
-							<div class="w-8 shrink-0">
+						<div class="chat chat-start">
+							<div class="chat-image avatar {msg.sender_avatar_url ? '' : 'avatar-placeholder'} w-8">
 								{#if showHeader(i)}
 									{#if msg.sender_avatar_url}
-										<div class="avatar">
-											<div class="w-8 rounded-full">
-												<img src={msg.sender_avatar_url} alt={msg.sender_nickname ?? ''} />
-											</div>
+										<div class="w-8 rounded-full">
+											<img src={msg.sender_avatar_url} alt={msg.sender_nickname ?? ''} />
 										</div>
 									{:else}
-										<div class="avatar avatar-placeholder" aria-hidden="true">
-											<div class="w-8 rounded-full bg-primary/20 text-primary">
-												<span class="text-xs font-semibold">{initial(msg.sender_nickname)}</span>
-											</div>
+										<div class="w-8 rounded-full bg-primary/20 text-primary" aria-hidden="true">
+											<span class="text-xs font-semibold">{initial(msg.sender_nickname)}</span>
 										</div>
 									{/if}
 								{/if}
 							</div>
-							<div class="flex-1 min-w-0 space-y-0.5">
-								{#if showHeader(i) && msg.sender_nickname}
-									<span class="block text-xs text-base-content/50 px-1">{msg.sender_nickname}</span>
-								{/if}
-								<div class="flex items-end gap-1.5">
-									<div
-										class="max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-relaxed break-words bg-base-300 text-base-content rounded-bl-sm"
-									>
-										{@render messageBody(msg.body, 'var(--color-primary)')}
-									</div>
-									{#if showTime(i)}
-										<span class="text-[10px] text-base-content/50 shrink-0 pb-1">{hm(msg.created_at)}</span>
-									{/if}
-								</div>
+							{#if showHeader(i) && msg.sender_nickname}
+								<div class="chat-header text-xs text-base-content/50">{msg.sender_nickname}</div>
+							{/if}
+							<div class="chat-bubble text-sm">
+								{@render messageBody(msg.body, 'var(--color-primary)')}
 							</div>
+							{#if showTime(i)}
+								<div class="chat-footer text-[10px] text-base-content/50">{hm(msg.created_at)}</div>
+							{/if}
 						</div>
 					{/if}
 				{/each}
