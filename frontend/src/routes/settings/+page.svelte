@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import UserAvatar from '$lib/components/UserAvatar.svelte';
 
 	const queryClient = useQueryClient();
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
@@ -46,9 +47,6 @@
 	}
 
 	const PROVIDER_LABEL: Record<string, string> = { kakao: '카카오', google: '구글' };
-	function initial(name: string | undefined): string {
-		return name?.trim()?.[0]?.toUpperCase() ?? '?';
-	}
 </script>
 
 <div class="min-h-screen bg-base-100">
@@ -74,19 +72,7 @@
 			{@const me = meQuery.data}
 
 			<section class="flex items-center gap-4">
-				{#if me.avatar_url}
-					<div class="avatar">
-						<div class="w-16 rounded-full">
-							<img src={me.avatar_url} alt="프로필 사진" />
-						</div>
-					</div>
-				{:else}
-					<div class="avatar avatar-placeholder" aria-hidden="true">
-						<div class="w-16 rounded-full bg-primary/20 text-primary text-2xl font-semibold">
-							{initial(me.nickname)}
-						</div>
-					</div>
-				{/if}
+				<UserAvatar url={me.avatar_url} name={me.nickname} sizeClass="w-16" textClass="text-2xl" />
 				<div class="min-w-0">
 					<p class="font-semibold text-base-content truncate">{me.nickname}</p>
 					<p class="text-xs text-base-content/50">

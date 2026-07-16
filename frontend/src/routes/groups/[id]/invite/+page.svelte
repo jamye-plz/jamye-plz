@@ -9,6 +9,7 @@
 	import Copy from '@lucide/svelte/icons/copy';
 	import Check from '@lucide/svelte/icons/check';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import UserAvatar from '$lib/components/UserAvatar.svelte';
 
 	// Always defined for the [id] route; assert so dependent calls stay typed.
 	const groupId = $derived(page.params.id!);
@@ -18,10 +19,6 @@
 		queryFn: () => getMembers(groupId),
 		enabled: !!groupId
 	}));
-
-	function initial(name: string): string {
-		return name?.trim()?.[0]?.toUpperCase() ?? '?';
-	}
 
 	let copied = $state(false);
 	let canShare = $state(false);
@@ -142,19 +139,7 @@
 				<ul class="list bg-base-200 rounded-xl border border-base-300">
 					{#each membersQuery.data as m (m.user_id)}
 						<li class="list-row flex items-center gap-3">
-							{#if m.avatar_url}
-								<div class="avatar shrink-0">
-									<div class="w-9 rounded-full">
-										<img src={m.avatar_url} alt={m.nickname} />
-									</div>
-								</div>
-							{:else}
-								<div class="avatar avatar-placeholder shrink-0" aria-hidden="true">
-									<div class="w-9 rounded-full bg-primary/20 text-primary">
-										<span class="text-sm font-semibold">{initial(m.nickname)}</span>
-									</div>
-								</div>
-							{/if}
+							<UserAvatar url={m.avatar_url} name={m.nickname} class="shrink-0" />
 							<span class="flex-1 text-sm text-base-content truncate">{m.nickname}</span>
 							{#if m.role === 'owner'}
 								<span class="badge badge-soft badge-primary badge-sm shrink-0">그룹장</span>
