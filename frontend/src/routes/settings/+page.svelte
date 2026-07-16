@@ -111,6 +111,7 @@
 							oninput={() => (dirty = true)}
 							maxlength={64}
 							required
+							aria-label="닉네임"
 							class="input join-item validator flex-1"
 						/>
 						<button

@@ -84,7 +84,15 @@
 			+ 새 그룹 만들기
 		</button>
 
-		<dialog bind:this={createDialog} class="modal modal-bottom sm:modal-middle" aria-labelledby="create-group-title">
+		<dialog
+			bind:this={createDialog}
+			class="modal modal-bottom sm:modal-middle"
+			aria-labelledby="create-group-title"
+			onclose={() => {
+				newGroupName = '';
+				createError = null;
+			}}
+		>
 			<div class="modal-box space-y-4">
 				<h2 id="create-group-title" class="text-base font-semibold text-base-content">새 그룹 만들기</h2>
 				<form onsubmit={handleCreate} class="space-y-3">
@@ -105,7 +113,7 @@
 					<div class="modal-action gap-2">
 						<button
 							type="button"
-							onclick={() => { createDialog?.close(); newGroupName = ''; createError = null; }}
+							onclick={() => createDialog?.close()}
 							class="btn flex-1"
 						>
 							취소
