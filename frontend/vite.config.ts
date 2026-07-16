@@ -24,8 +24,8 @@ export default defineConfig({
 				short_name: '잼얘좀',
 				description: '재밌는 얘기 좀 해봐',
 				lang: 'ko',
-				theme_color: '#09090b',
-				background_color: '#09090b',
+				theme_color: '#ffffff',
+				background_color: '#ffffff',
 				display: 'standalone',
 				start_url: '/',
 				icons: [
