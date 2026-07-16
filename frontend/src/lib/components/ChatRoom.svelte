@@ -402,10 +402,9 @@
 	}
 </script>
 
-{#snippet messageBody(body: string, linkColor: string)}
+{#snippet messageBody(body: string, onPrimary: boolean)}
 	<div
-		class="prose prose-sm max-w-none break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
-		style="--tw-prose-links: {linkColor}"
+		class="prose prose-sm max-w-none break-words {onPrimary ? 'prose-primary-content' : ''} [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_a]:font-normal [&_pre]:overflow-x-auto"
 	>
 		{@html renderMarkdown(body)}
 	</div>
@@ -485,8 +484,8 @@
 						</div>
 					{:else if isMine(msg)}
 						<div class="chat chat-end">
-							<div class="chat-bubble chat-bubble-primary text-sm {msg.pending ? 'opacity-60' : ''}">
-								{@render messageBody(msg.body, 'var(--color-primary-content)')}
+							<div class="chat-bubble chat-bubble-primary chat-bubble-primary-readable text-sm {msg.pending ? 'opacity-60' : ''}">
+								{@render messageBody(msg.body, true)}
 							</div>
 							{#if showTime(i)}
 								<div class="chat-footer text-[10px] text-base-content/50">{hm(msg.created_at)}</div>
@@ -511,7 +510,7 @@
 								<div class="chat-header text-xs text-base-content/50">{msg.sender_nickname}</div>
 							{/if}
 							<div class="chat-bubble text-sm">
-								{@render messageBody(msg.body, 'var(--color-primary)')}
+								{@render messageBody(msg.body, false)}
 							</div>
 							{#if showTime(i)}
 								<div class="chat-footer text-[10px] text-base-content/50">{hm(msg.created_at)}</div>
