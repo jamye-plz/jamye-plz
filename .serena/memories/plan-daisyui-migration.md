@@ -1,6 +1,6 @@
 # Plan: daisyUI 전면 마이그레이션 (session oma-00mr90qovpetqtnnlq)
 
-- Tracker: `docs/planning/work/001-daisyui-migration.md` / JSON: `.agents/results/plan-oma-00mr90qovpetqtnnlq.json`
+- Tracker: `docs/planning/001-daisyui-migration.md` / JSON: `.agents/results/plan-oma-00mr90qovpetqtnnlq.json`
 - Goal: frontend 전체를 daisyUI 5 + 빌트인 테마로 완전 이관. daisyUI 제공 값 > 기존 커스텀 값.
 - 확정 결정: (1) 빌트인 `dark` 테마, (2) `light --default, dark --prefersdark` 시스템 추종 양 모드,
   (3) CTA `btn-primary` 통일, (4) 이모지→lucide, (5) elevation은 daisyUI 시맨틱 수용,

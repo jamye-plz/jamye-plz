@@ -5,7 +5,7 @@
 - **Workflow**: ultrawork (5-Phase Gate Loop, 11 reviews)
 - **Runtime**: Claude Code / all agents target claude (native Agent tool dispatch)
 - **User request**: 기존 커스텀 컬러 토큰을 전부 daisyUI 제공 값으로 교체하는 완전한 마이그레이션 + 구현.
-  승인된 플랜 `mem:plan-daisyui-migration` (tracker: docs/planning/work/001-daisyui-migration.md,
+  승인된 플랜 `mem:plan-daisyui-migration` (tracker: docs/planning/001-daisyui-migration.md,
   JSON: .agents/results/plan-oma-00mrnfuw0trni9gnb8.json)을 ultrawork로 실행.
 - **Confirmed decisions**: built-in dark theme / light --default + dark --prefersdark / CTA btn-primary 통일 /
   emoji→lucide / elevation daisyUI 시맨틱 / Kakao #FEE500 유지 / DateDial 커스텀 유지

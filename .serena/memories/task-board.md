@@ -1,6 +1,6 @@
 # Task Board — ultrawork daisyUI migration (oma-00mrnfuw0trni9gnb8)
 
-Plan: `.agents/results/plan-oma-00mrnfuw0trni9gnb8.json` / tracker `docs/planning/work/001-daisyui-migration.md`
+Plan: `.agents/results/plan-oma-00mrnfuw0trni9gnb8.json` / tracker `docs/planning/001-daisyui-migration.md`
 Runtime handoff: Claude Code → Codex (`019f6af3-0936-7a20-8aa4-2850dddd33aa`)
 
 | Task | Owner | Priority | Status | Dependencies | exposed_skill_set | exposure_fallback |
