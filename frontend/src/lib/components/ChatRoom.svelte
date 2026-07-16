@@ -500,7 +500,7 @@
 							<span class="badge badge-ghost badge-sm">{msg.body}</span>
 						</div>
 					{:else if isMine(msg)}
-						<div class="chat-end chat">
+						<div class="chat-end chat {!showHeader(i) ? '-mt-3' : ''}">
 							<div
 								class="chat-bubble-primary-readable chat-bubble chat-bubble-primary text-sm {msg.pending
 									? 'opacity-60'
@@ -515,7 +515,7 @@
 							{/if}
 						</div>
 					{:else}
-						<div class="chat-start chat">
+						<div class="chat-start chat {!showHeader(i) ? '-mt-3' : ''}">
 							<div
 								class="avatar chat-image {msg.sender_avatar_url ? '' : 'avatar-placeholder'} w-8"
 							>
