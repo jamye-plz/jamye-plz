@@ -412,7 +412,7 @@
 
 {#snippet messageBody(body: string, onPrimary: boolean)}
 	<div
-		class="wrap-break-words prose prose-sm max-w-none {onPrimary
+		class="prose prose-sm max-w-none wrap-anywhere {onPrimary
 			? 'prose-primary-content'
 			: ''} [&_a]:font-normal [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 	>
