@@ -198,26 +198,28 @@
 					<ul class="space-y-3" role="list" aria-label="주제 목록">
 						{#each allTopics as topic (topic.id)}
 							<li>
-								<a
-									href="/groups/{groupId}/topics/{topic.id}/chat?date={selectedDate}"
-									class="card bg-base-200 transition-colors card-sm card-border hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-primary"
-									aria-label={topic.title}
+								<div
+									class="w-full duration-100 motion-reduce:[&::after]:animate-none motion-reduce:[&::before]:animate-none"
+									class:aura={topic.unread}
+									class:aura-glow={topic.unread}
+									class:aura-sm={topic.unread}
+									class:text-primary={topic.unread}
 								>
-									<div class="card-body">
-										<div class="flex items-start justify-between gap-2">
+									<a
+										href="/groups/{groupId}/topics/{topic.id}/chat?date={selectedDate}"
+										class="card bg-base-200 transition-colors card-sm card-border hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-primary"
+										aria-label={topic.unread ? `${topic.title}, 안 읽음` : topic.title}
+									>
+										<div class="card-body">
 											<span class="leading-snug font-medium text-base-content">{topic.title}</span>
-											{#if topic.unread}
-												<span class="mt-1 status shrink-0 status-primary" aria-label="안 읽음"
-												></span>
-											{/if}
+											<div class="flex items-center gap-2 text-xs text-base-content/50">
+												<span>{topic.author_nickname}</span>
+												<span>·</span>
+												<span>{timeLabel(topic.created_at)}</span>
+											</div>
 										</div>
-										<div class="flex items-center gap-2 text-xs text-base-content/50">
-											<span>{topic.author_nickname}</span>
-											<span>·</span>
-											<span>{timeLabel(topic.created_at)}</span>
-										</div>
-									</div>
-								</a>
+									</a>
+								</div>
 							</li>
 						{/each}
 					</ul>
