@@ -67,8 +67,7 @@
 					<li class="list-row p-0">
 						<button
 							onclick={() => navigateTo(group)}
-							class="w-full text-left px-4 py-4 rounded-xl bg-base-200 hover:bg-base-300 border border-base-300 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
-							aria-label={`${group.name} 그룹으로 이동`}
+							class="list-col-grow w-full text-left px-4 py-4 rounded-xl bg-base-200 hover:bg-base-300 border border-base-300 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
 						>
 							<div class="flex items-center justify-between">
 								<span class="font-medium text-base-content">{group.name}</span>
