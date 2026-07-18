@@ -23,9 +23,7 @@ class ChatroomReadRepository:
         )
         return result.scalar_one_or_none()
 
-    async def upsert(
-        self, user_id: str, chatroom_id: str, last_read_at: datetime
-    ) -> ChatroomRead:
+    async def upsert(self, user_id: str, chatroom_id: str, last_read_at: datetime) -> ChatroomRead:
         """Atomically record/refresh the read receipt.
 
         Uses Postgres ``INSERT ... ON CONFLICT DO UPDATE`` on the
@@ -59,9 +57,7 @@ class ChatroomReadRepository:
         await self._db.refresh(record)
         return record
 
-    async def get_last_read_map(
-        self, user_id: str, chatroom_ids: list[str]
-    ) -> dict[str, datetime]:
+    async def get_last_read_map(self, user_id: str, chatroom_ids: list[str]) -> dict[str, datetime]:
         """Return {chatroom_id: last_read_at} for the given user and chatroom ids.
 
         One query using WHERE chatroom_id IN (...).

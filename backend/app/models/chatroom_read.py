@@ -18,4 +18,6 @@ class ChatroomRead(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"))
     chatroom_id: Mapped[str] = mapped_column(String(36), ForeignKey("chatrooms.id"))
-    last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

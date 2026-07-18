@@ -2,11 +2,15 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class PushSubscription(Base):
@@ -20,6 +24,4 @@ class PushSubscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships
-    user: Mapped["User"] = relationship(  # noqa: F821
-        "User", back_populates="push_subscriptions", lazy="noload"
-    )
+    user: Mapped["User"] = relationship("User", back_populates="push_subscriptions", lazy="noload")

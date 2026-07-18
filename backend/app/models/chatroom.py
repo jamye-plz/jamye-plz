@@ -2,11 +2,17 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.group import Group
+    from app.models.message import Message
+    from app.models.topic import Topic
 
 
 class Chatroom(Base):
@@ -19,12 +25,8 @@ class Chatroom(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships
-    group: Mapped["Group"] = relationship(  # noqa: F821
-        "Group", back_populates="chatrooms", lazy="noload"
-    )
-    topic: Mapped["Topic | None"] = relationship(  # noqa: F821
-        "Topic", back_populates="chatroom", lazy="noload"
-    )
-    messages: Mapped[list["Message"]] = relationship(  # noqa: F821
+    group: Mapped["Group"] = relationship("Group", back_populates="chatrooms", lazy="noload")
+    topic: Mapped["Topic | None"] = relationship("Topic", back_populates="chatroom", lazy="noload")
+    messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="chatroom", lazy="noload", cascade="all, delete-orphan"
     )

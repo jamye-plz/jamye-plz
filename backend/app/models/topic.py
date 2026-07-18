@@ -2,11 +2,19 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.chatroom import Chatroom
+    from app.models.group import Group
+    from app.models.topic_media import TopicMedia
+    from app.models.topic_tag import TopicTag
+    from app.models.user import User
 
 
 class Topic(Base):
@@ -24,18 +32,14 @@ class Topic(Base):
     )
 
     # relationships
-    group: Mapped["Group"] = relationship(  # noqa: F821
-        "Group", back_populates="topics", lazy="noload"
-    )
-    author: Mapped["User"] = relationship(  # noqa: F821
-        "User", back_populates="topics", lazy="noload"
-    )
-    media: Mapped[list["TopicMedia"]] = relationship(  # noqa: F821
+    group: Mapped["Group"] = relationship("Group", back_populates="topics", lazy="noload")
+    author: Mapped["User"] = relationship("User", back_populates="topics", lazy="noload")
+    media: Mapped[list["TopicMedia"]] = relationship(
         "TopicMedia", back_populates="topic", lazy="noload", cascade="all, delete-orphan"
     )
-    tags: Mapped[list["TopicTag"]] = relationship(  # noqa: F821
+    tags: Mapped[list["TopicTag"]] = relationship(
         "TopicTag", back_populates="topic", lazy="noload", cascade="all, delete-orphan"
     )
-    chatroom: Mapped["Chatroom | None"] = relationship(  # noqa: F821
+    chatroom: Mapped["Chatroom | None"] = relationship(
         "Chatroom", back_populates="topic", lazy="noload", uselist=False
     )

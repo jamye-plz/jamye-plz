@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.timeutil import seoul_day_window
@@ -66,7 +66,7 @@ class TopicRepository:
             cur_created, cur_id = cursor.split("|", 1)
             query = query.where(
                 tuple_(Topic.created_at, Topic.id)
-                < tuple_(datetime.fromisoformat(cur_created), cur_id)
+                < tuple_(literal(datetime.fromisoformat(cur_created)), literal(cur_id))
             )
         query = query.limit(limit + 1)
         result = await self._db.execute(query)

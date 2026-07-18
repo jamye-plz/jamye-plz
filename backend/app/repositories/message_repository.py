@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
@@ -46,9 +46,7 @@ class MessageRepository:
         await self._db.refresh(message)
         return message
 
-    async def latest_created_at_by_chatrooms(
-        self, chatroom_ids: list[str]
-    ) -> dict[str, datetime]:
+    async def latest_created_at_by_chatrooms(self, chatroom_ids: list[str]) -> dict[str, datetime]:
         """Return {chatroom_id: max(created_at)} for the given chatroom ids.
 
         One query using GROUP BY chatroom_id — no N+1.
@@ -79,7 +77,7 @@ class MessageRepository:
             cur_created, cur_id = cursor.split("|", 1)
             query = query.where(
                 tuple_(Message.created_at, Message.id)
-                < tuple_(datetime.fromisoformat(cur_created), cur_id)
+                < tuple_(literal(datetime.fromisoformat(cur_created)), literal(cur_id))
             )
         query = query.limit(limit + 1)
         result = await self._db.execute(query)
