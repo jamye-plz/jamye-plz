@@ -87,7 +87,7 @@
 				bind:value={editorBody}
 				placeholder="주제에 대한 내용을 적어주세요..."
 				rows={6}
-				class="textarea w-full resize-none"></textarea>
+				class="textarea w-full resize-none focus:border-primary focus:outline-none!"></textarea>
 			{#if enrich.isError}
 				<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
 			{/if}

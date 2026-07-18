@@ -98,7 +98,7 @@
 							maxlength={64}
 							required
 							aria-label="닉네임"
-							class="validator input join-item flex-1"
+							class="validator input join-item flex-1 focus:border-primary focus:outline-none!"
 						/>
 						<button
 							type="submit"

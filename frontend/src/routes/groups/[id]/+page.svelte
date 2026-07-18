@@ -149,7 +149,7 @@
 					placeholder="새 주제 던지기..."
 					maxlength="256"
 					aria-label="새 주제 제목"
-					class="input join-item flex-1"
+					class="input join-item flex-1 focus:border-primary focus:outline-none!"
 				/>
 				<button
 					type="submit"

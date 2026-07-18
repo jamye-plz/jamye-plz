@@ -115,7 +115,7 @@
 							placeholder="그룹 이름"
 							maxlength={50}
 							required
-							class="validator input w-full"
+							class="validator input w-full focus:border-primary focus:outline-none!"
 						/>
 					</fieldset>
 					{#if createError}
