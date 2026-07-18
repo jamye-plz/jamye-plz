@@ -27,7 +27,7 @@
   # Add an entry after building on a new arch (set to lib.fakeHash, build, paste
   # the `got:`). Unlisted systems fail fast with a clear message.
   nodeModulesHashes = {
-    aarch64-linux = "sha256-7tbiTwIGASAwxgIiRRir5jD/5/O7cJHRSmpVI6WBZso=";
+    aarch64-linux = "sha256-z5VIg5qiuGeu3xxX891TXr/yeFfIHhfAdTSH6FehsTw=";
   };
   nodeModulesHash =
     nodeModulesHashes.${pkgs.system}
