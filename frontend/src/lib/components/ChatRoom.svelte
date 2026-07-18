@@ -132,6 +132,7 @@
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
+	let rootEl = $state<HTMLElement | null>(null);
 
 	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
@@ -140,6 +141,49 @@
 			inputEl.style.height = 'auto';
 			inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
 		}
+	});
+
+	// Pin the header to the true top while the on-screen keyboard is open.
+	// Mobile Safari reveals a focused input by panning the WHOLE layout
+	// viewport upward — a `position: sticky` header pinned to that viewport
+	// gets carried off-screen with it, and pure CSS (svh/dvh) can't detect
+	// this because the layout viewport itself never resizes on iOS.
+	// `visualViewport` reports the actual visible area, so we size the root
+	// container to it manually and re-anchor scroll to 0 so iOS can't keep
+	// the layout viewport panned.
+	$effect(() => {
+		if (typeof window === 'undefined' || !window.visualViewport || !rootEl) return;
+
+		const vv = window.visualViewport;
+		const root = rootEl;
+
+		function applyViewport() {
+			const keyboardOpen = vv.height < window.innerHeight - 60;
+			const stick = isNearBottom();
+			root.style.height = keyboardOpen ? `${vv.height}px` : '';
+			window.scrollTo(0, 0);
+			requestAnimationFrame(() => {
+				if (stick) scrollToBottom();
+			});
+		}
+
+		// iOS 26 regression: `visualViewport` height/offsetTop can fail to
+		// settle immediately when the keyboard is dismissed via blur, leaving
+		// the layout viewport panned with the header still off-screen. Re-check
+		// shortly after focus leaves the composer to force it back.
+		function onFocusOut() {
+			setTimeout(applyViewport, 100);
+		}
+
+		vv.addEventListener('resize', applyViewport);
+		vv.addEventListener('scroll', applyViewport);
+		inputEl?.addEventListener('focusout', onFocusOut);
+
+		return () => {
+			vv.removeEventListener('resize', applyViewport);
+			vv.removeEventListener('scroll', applyViewport);
+			inputEl?.removeEventListener('focusout', onFocusOut);
+		};
 	});
 
 	// Seed the room from the latest page (newest-first → reversed to oldest-first
@@ -420,7 +464,7 @@
 	</div>
 {/snippet}
 
-<div class="flex h-screen flex-col bg-base-100">
+<div bind:this={rootEl} class="flex h-dvh flex-col bg-base-100">
 	<header
 		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 backdrop-blur"
 	>
