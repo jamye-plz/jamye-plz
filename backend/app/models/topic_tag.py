@@ -1,11 +1,15 @@
 """TopicTag model — AI and user tags for a topic."""
 
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.topic import Topic
 
 
 class TopicTag(Base):
@@ -19,6 +23,4 @@ class TopicTag(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # relationships
-    topic: Mapped["Topic"] = relationship(  # noqa: F821
-        "Topic", back_populates="tags", lazy="noload"
-    )
+    topic: Mapped["Topic"] = relationship("Topic", back_populates="tags", lazy="noload")

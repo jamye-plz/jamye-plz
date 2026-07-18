@@ -2,11 +2,15 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.topic import Topic
 
 
 class TopicMedia(Base):
@@ -22,6 +26,4 @@ class TopicMedia(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships
-    topic: Mapped["Topic"] = relationship(  # noqa: F821
-        "Topic", back_populates="media", lazy="noload"
-    )
+    topic: Mapped["Topic"] = relationship("Topic", back_populates="media", lazy="noload")

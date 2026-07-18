@@ -2,11 +2,20 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.group import Group
+    from app.models.membership import Membership
+    from app.models.message import Message
+    from app.models.notification import Notification
+    from app.models.push_subscription import PushSubscription
+    from app.models.topic import Topic
 
 
 class User(Base):
@@ -23,21 +32,19 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships
-    memberships: Mapped[list["Membership"]] = relationship(  # noqa: F821
+    memberships: Mapped[list["Membership"]] = relationship(
         "Membership", back_populates="user", lazy="noload"
     )
-    owned_groups: Mapped[list["Group"]] = relationship(  # noqa: F821
+    owned_groups: Mapped[list["Group"]] = relationship(
         "Group", back_populates="owner", lazy="noload"
     )
-    topics: Mapped[list["Topic"]] = relationship(  # noqa: F821
-        "Topic", back_populates="author", lazy="noload"
-    )
-    messages: Mapped[list["Message"]] = relationship(  # noqa: F821
+    topics: Mapped[list["Topic"]] = relationship("Topic", back_populates="author", lazy="noload")
+    messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="sender", lazy="noload"
     )
-    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(  # noqa: F821
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(
         "PushSubscription", back_populates="user", lazy="noload"
     )
-    notifications: Mapped[list["Notification"]] = relationship(  # noqa: F821
+    notifications: Mapped[list["Notification"]] = relationship(
         "Notification", back_populates="user", lazy="noload"
     )

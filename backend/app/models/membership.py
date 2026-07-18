@@ -2,11 +2,16 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.group import Group
+    from app.models.user import User
 
 
 class Membership(Base):
@@ -20,9 +25,5 @@ class Membership(Base):
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships
-    group: Mapped["Group"] = relationship(  # noqa: F821
-        "Group", back_populates="memberships", lazy="noload"
-    )
-    user: Mapped["User"] = relationship(  # noqa: F821
-        "User", back_populates="memberships", lazy="noload"
-    )
+    group: Mapped["Group"] = relationship("Group", back_populates="memberships", lazy="noload")
+    user: Mapped["User"] = relationship("User", back_populates="memberships", lazy="noload")

@@ -71,6 +71,7 @@
 
 	function subtractOneDay(yyyymmdd: string): string {
 		const [y, m, d] = yyyymmdd.split('-').map(Number);
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- pure date arithmetic, not reactive state
 		const dt = new Date(Date.UTC(y!, m! - 1, d!));
 		dt.setUTCDate(dt.getUTCDate() - 1);
 		const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
@@ -204,6 +205,7 @@
 	// Skipped right after a user-driven commit so a fresh gesture isn't fought and
 	// so we don't loop back into firing onselect again.
 	$effect(() => {
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- reactive dep: re-center when selected changes
 		selected;
 		if (!emblaApi || !selected) return;
 		if (ordered.indexOf(selected) < 0) return;
@@ -244,7 +246,7 @@
 		onwheel={onWheel}
 		use:emblaCarouselSvelte={{ options, plugins }}
 		onemblaInit={onInit}
-		class="[scrollbar-width:none] overflow-hidden rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
+		class="scrollbar-none overflow-hidden rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
 			? 'opacity-100'
 			: 'opacity-0'}"
 		style="cursor: {dragging ? 'grabbing' : 'grab'};"
@@ -253,7 +255,7 @@
 			{#each ordered as date, i (date)}
 				{@const active = i === centerIndex}
 				{@const hidden = dist(i) > VISIBLE_EACH_SIDE}
-				<div class="flex min-w-0 shrink-0 grow-0 basis-[112px] items-center justify-center">
+				<div class="flex min-w-0 shrink-0 grow-0 basis-28 items-center justify-center">
 					<button
 						type="button"
 						tabindex="-1"

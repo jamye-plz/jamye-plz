@@ -36,7 +36,10 @@ async def list_notifications(
 ):
     svc = NotificationService(db)
     items, unread_count = await svc.list_view(current_user.id, limit=limit)
-    return NotificationListResponse(items=items, unread_count=unread_count)
+    return NotificationListResponse(
+        items=[NotificationItem(**item) for item in items],
+        unread_count=unread_count,
+    )
 
 
 @router.post("/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)

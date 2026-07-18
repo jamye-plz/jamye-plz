@@ -97,13 +97,9 @@ class TopicService:
         limit: int = 20,
         date: str | None = None,
     ) -> tuple[list[Topic], str | None]:
-        return await self._topic_repo.list_by_group(
-            group_id, cursor=cursor, limit=limit, date=date
-        )
+        return await self._topic_repo.list_by_group(group_id, cursor=cursor, limit=limit, date=date)
 
-    async def compute_unread_map(
-        self, topics: list[Topic], user_id: str
-    ) -> dict[str, bool]:
+    async def compute_unread_map(self, topics: list[Topic], user_id: str) -> dict[str, bool]:
         """Batch-compute unread status for a page of topics — no N+1.
 
         Steps:

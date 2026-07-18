@@ -106,7 +106,7 @@ class NotificationService:
         if notif.type == "chat_unread":
             # Explicitly handled before new_topic/chat_started to avoid fall-through.
             title_text = payload.get("title", "")
-            title = f'{title_text}에 대해 안 읽은 채팅이 있어요'
+            title = f"{title_text}에 대해 안 읽은 채팅이 있어요"
             body = payload.get("group_name", "")
             gid, tid = payload.get("group_id"), payload.get("topic_id")
             action_url = f"/groups/{gid}/topics/{tid}/chat" if gid and tid else None

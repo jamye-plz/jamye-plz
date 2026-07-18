@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { patchMe } from '$lib/api/auth.api';
 
 	// TODO: implement avatar upload via presign when backend is provisioned
@@ -14,7 +15,7 @@
 		error = null;
 		try {
 			await patchMe({ nickname: nickname.trim() });
-			goto('/groups');
+			goto(resolve('/groups'));
 		} catch (err) {
 			error = err instanceof Error ? err.message : '저장에 실패했습니다.';
 		} finally {

@@ -2,6 +2,7 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
@@ -44,7 +45,7 @@
 			// even if the call fails, drop local state and return to login
 		}
 		queryClient.clear();
-		goto('/login');
+		goto(resolve('/login'));
 	}
 
 	const PROVIDER_LABEL: Record<string, string> = { kakao: '카카오', google: '구글' };
@@ -54,7 +55,7 @@
 	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
-				onclick={() => goto('/groups')}
+				onclick={() => goto(resolve('/groups'))}
 				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
