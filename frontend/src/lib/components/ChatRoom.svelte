@@ -523,7 +523,7 @@
 
 <div
 	bind:this={rootEl}
-	class="fixed inset-x-0 top-0 flex flex-col bg-base-100 [will-change:transform]"
+	class="fixed inset-x-0 top-0 flex flex-col bg-base-100 will-change-transform"
 	style="height: 100dvh"
 >
 	<AppHeader>

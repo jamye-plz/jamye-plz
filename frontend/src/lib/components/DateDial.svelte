@@ -246,7 +246,7 @@
 		onwheel={onWheel}
 		use:emblaCarouselSvelte={{ options, plugins }}
 		onemblaInit={onInit}
-		class="[scrollbar-width:none] overflow-hidden rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
+		class="scrollbar-none overflow-hidden rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
 			? 'opacity-100'
 			: 'opacity-0'}"
 		style="cursor: {dragging ? 'grabbing' : 'grab'};"
@@ -255,7 +255,7 @@
 			{#each ordered as date, i (date)}
 				{@const active = i === centerIndex}
 				{@const hidden = dist(i) > VISIBLE_EACH_SIDE}
-				<div class="flex min-w-0 shrink-0 grow-0 basis-[112px] items-center justify-center">
+				<div class="flex min-w-0 shrink-0 grow-0 basis-28 items-center justify-center">
 					<button
 						type="button"
 						tabindex="-1"
