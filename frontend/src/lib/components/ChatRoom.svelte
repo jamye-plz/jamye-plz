@@ -134,6 +134,9 @@
 	let messagesEl = $state<HTMLElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
 	let rootEl = $state<HTMLElement | null>(null);
+	// True while the on-screen keyboard is open — drops the composer's home-indicator
+	// bottom inset so the input sits flush on the keyboard (no gap) while it's up.
+	let keyboardOpen = $state(false);
 	// Topic body (pinned) is collapsed by default and revealed only via the header
 	// chevron. Reset the toggle when switching to a different room/topic so a body
 	// left open on one topic doesn't auto-open on the next.
@@ -194,7 +197,10 @@
 		body.style.inset = '0';
 		body.style.width = '100%';
 
+		let fullHeight = window.innerHeight;
 		function apply() {
+			fullHeight = Math.max(fullHeight, window.innerHeight);
+			keyboardOpen = fullHeight - vv.height > 100;
 			const stick = isNearBottom();
 			root.style.height = `${vv.height}px`;
 			root.style.transform = `translateY(${vv.offsetTop}px)`;
@@ -502,12 +508,12 @@
 	style="height: 100dvh"
 >
 	<header
-		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] backdrop-blur"
+		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
 	>
 		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
-				class="btn -ml-2 btn-square btn-ghost btn-sm"
+				class="btn btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
 				<ArrowLeft class="h-5 w-5" />
@@ -656,7 +662,9 @@
 	</section>
 
 	<footer
-		class="shrink-0 border-t border-base-300 bg-base-100 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+		class="shrink-0 border-t border-base-300 bg-base-100 px-4 pt-3 {keyboardOpen
+			? 'pb-3'
+			: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
 	>
 		<div class="mx-auto flex max-w-2xl items-end gap-2">
 			<textarea
