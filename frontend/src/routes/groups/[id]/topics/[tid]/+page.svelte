@@ -21,7 +21,7 @@
 	<AppHeader>
 		<button
 			onclick={() => goto(`/groups/${groupId}`)}
-			class="btn btn-square btn-ghost btn-sm"
+			class="btn -ml-2 btn-square btn-ghost btn-sm"
 			aria-label="뒤로 가기"
 		>
 			<ArrowLeft class="h-5 w-5" />

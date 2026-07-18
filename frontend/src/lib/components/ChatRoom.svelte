@@ -512,7 +512,7 @@
 		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
-				class="btn btn-square btn-ghost btn-sm"
+				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
 				<ArrowLeft class="h-5 w-5" />

@@ -42,8 +42,8 @@
 <div class="min-h-screen bg-base-100">
 	<AppHeader>
 		<div class="flex w-full items-center justify-between">
-			<h1 class="text-lg font-semibold text-base-content">내 그룹</h1>
-			<div class="flex items-center gap-2">
+			<h1 class="text-base font-semibold text-base-content">내 그룹</h1>
+			<div class="flex items-center gap-1">
 				<a href="/notifications" class="btn btn-square btn-ghost btn-sm" aria-label="알림"
 					><Bell class="h-5 w-5" /></a
 				>
