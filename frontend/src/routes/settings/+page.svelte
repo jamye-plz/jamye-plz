@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
@@ -50,9 +51,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header
-		class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
-	>
+	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto('/groups')}
@@ -63,7 +62,7 @@
 			</button>
 			<h1 class="text-base font-semibold text-base-content">내 정보</h1>
 		</div>
-	</header>
+	</AppHeader>
 
 	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
 		{#if meQuery.isPending}

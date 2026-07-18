@@ -9,6 +9,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import AppHeader from '$lib/components/AppHeader.svelte';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -507,9 +508,7 @@
 	class="fixed inset-x-0 top-0 flex flex-col bg-base-100 [will-change:transform]"
 	style="height: 100dvh"
 >
-	<header
-		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
-	>
+	<AppHeader>
 		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
@@ -553,7 +552,7 @@
 				title={connected ? '연결됨' : '연결 중...'}
 			></div>
 		</div>
-	</header>
+	</AppHeader>
 
 	{#if pinnedBody && bodyOpen}
 		<div id="topic-body" class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">

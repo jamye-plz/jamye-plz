@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listGroups, createGroup } from '$lib/api/group.api';
@@ -39,9 +40,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header
-		class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
-	>
+	<AppHeader>
 		<div class="flex w-full items-center justify-between">
 			<h1 class="text-lg font-semibold text-base-content">내 그룹</h1>
 			<div class="flex items-center gap-2">
@@ -53,7 +52,7 @@
 				>
 			</div>
 		</div>
-	</header>
+	</AppHeader>
 
 	<main class="mx-auto max-w-lg space-y-4 px-4 py-6">
 		{#if groupsQuery.isPending}
