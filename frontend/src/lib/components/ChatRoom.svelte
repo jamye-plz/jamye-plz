@@ -8,6 +8,7 @@
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -133,6 +134,17 @@
 	let messagesEl = $state<HTMLElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
 	let rootEl = $state<HTMLElement | null>(null);
+	// Topic body (pinned) is collapsed by default and revealed only via the header
+	// chevron. Reset the toggle when switching to a different room/topic so a body
+	// left open on one topic doesn't auto-open on the next.
+	let bodyOpen = $state(false);
+	let bodyOpenRoom = '';
+	$effect(() => {
+		if (chatroomId !== bodyOpenRoom) {
+			bodyOpenRoom = chatroomId;
+			bodyOpen = false;
+		}
+	});
 
 	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
@@ -500,11 +512,35 @@
 			>
 				<ArrowLeft class="h-5 w-5" />
 			</button>
-			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-base font-semibold text-base-content">
+			<div class="flex min-w-0 flex-1 items-center gap-1">
+				<h1 class="min-w-0 truncate text-base font-semibold text-base-content">
 					{title}
 				</h1>
+				{#if pinnedBody}
+					<button
+						type="button"
+						onclick={() => (bodyOpen = !bodyOpen)}
+						class="btn btn-square shrink-0 btn-ghost btn-xs"
+						aria-expanded={bodyOpen}
+						aria-controls="topic-body"
+						aria-label={bodyOpen ? '본문 접기' : '본문 펼치기'}
+					>
+						<ChevronDown
+							class="h-4 w-4 transition-transform duration-200 {bodyOpen ? 'rotate-180' : ''}"
+						/>
+					</button>
+				{/if}
 			</div>
+			{#if canEditPinned && !pinnedBody}
+				<button
+					type="button"
+					onclick={onEditPinned}
+					class="btn shrink-0 btn-ghost text-primary btn-xs"
+					aria-label="본문 추가"
+				>
+					본문 추가
+				</button>
+			{/if}
 			<div
 				class="status shrink-0 {connected ? 'status-success' : ''}"
 				aria-label={connected ? '연결됨' : '연결 중'}
@@ -513,23 +549,23 @@
 		</div>
 	</header>
 
-	{#if pinnedBody || canEditPinned}
-		<div class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">
+	{#if pinnedBody && bodyOpen}
+		<div id="topic-body" class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">
 			<div class="mx-auto flex w-full max-w-2xl items-start gap-2">
 				<div class="max-h-40 min-w-0 flex-1 overflow-y-auto">
-					{#if pinnedBody}
-						<div
-							class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-						>
-							{@html renderMarkdown(pinnedBody)}
-						</div>
-					{:else}
-						<p class="text-sm text-base-content/50 italic">아직 본문이 없어요</p>
-					{/if}
+					<div
+						class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+					>
+						{@html renderMarkdown(pinnedBody)}
+					</div>
 				</div>
 				{#if canEditPinned}
-					<button onclick={onEditPinned} class="btn shrink-0 btn-ghost text-primary btn-xs">
-						{pinnedBody ? '수정' : '본문 추가'}
+					<button
+						onclick={onEditPinned}
+						class="btn shrink-0 btn-ghost text-primary btn-xs"
+						aria-label="본문 수정"
+					>
+						수정
 					</button>
 				{/if}
 			</div>
