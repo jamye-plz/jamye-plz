@@ -132,7 +132,6 @@
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
-	let rootEl = $state<HTMLElement | null>(null);
 
 	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
@@ -143,46 +142,50 @@
 		}
 	});
 
-	// Pin the header to the true top while the on-screen keyboard is open.
-	// Mobile Safari reveals a focused input by panning the WHOLE layout
-	// viewport upward — a `position: sticky` header pinned to that viewport
-	// gets carried off-screen with it, and pure CSS (svh/dvh) can't detect
-	// this because the layout viewport itself never resizes on iOS.
-	// `visualViewport` reports the actual visible area, so we size the root
-	// container to it manually and re-anchor scroll to 0 so iOS can't keep
-	// the layout viewport panned.
+	// Keep the whole chat inside the visible area while the on-screen keyboard is
+	// open. Mobile Safari / a standalone PWA reveals a focused input by panning the
+	// layout viewport, which drags the sticky header off-screen; CSS viewport units
+	// (svh/dvh) can't see the keyboard. Instead, lock the document so there is
+	// nothing for iOS to pan, and size the chat root to `visualViewport.height` via
+	// a `--vvh` custom property — the composer then sits just above the keyboard and
+	// the header stays pinned at the top. Resizing an in-flow element alone does not
+	// hold in a standalone PWA (iOS still pans the document); the document-lock is
+	// what makes it stick.
 	$effect(() => {
-		if (typeof window === 'undefined' || !window.visualViewport || !rootEl) return;
+		if (typeof window === 'undefined' || !window.visualViewport) return;
 
 		const vv = window.visualViewport;
-		const root = rootEl;
+		const docEl = document.documentElement;
+		const prevBodyOverflow = document.body.style.overflow;
+		const prevBodyTouch = document.body.style.touchAction;
+		const prevHtmlOverflow = docEl.style.overflow;
+		// A non-scrollable document leaves iOS nothing to pan to reveal the input.
+		document.body.style.overflow = 'hidden';
+		document.body.style.touchAction = 'none';
+		docEl.style.overflow = 'hidden';
 
-		function applyViewport() {
-			const keyboardOpen = vv.height < window.innerHeight - 60;
+		// Tallest layout height seen — so the known iOS 26 residual (visualViewport
+		// height staying ~24px short after the keyboard closes) can't leave a gap.
+		let fullHeight = window.innerHeight;
+		function apply() {
+			fullHeight = Math.max(fullHeight, window.innerHeight, vv.height);
+			const keyboardOpen = fullHeight - vv.height > 100;
 			const stick = isNearBottom();
-			root.style.height = keyboardOpen ? `${vv.height}px` : '';
-			window.scrollTo(0, 0);
-			requestAnimationFrame(() => {
-				if (stick) scrollToBottom();
-			});
+			docEl.style.setProperty('--vvh', `${keyboardOpen ? vv.height : fullHeight}px`);
+			if (stick) requestAnimationFrame(scrollToBottom);
 		}
+		apply();
 
-		// iOS 26 regression: `visualViewport` height/offsetTop can fail to
-		// settle immediately when the keyboard is dismissed via blur, leaving
-		// the layout viewport panned with the header still off-screen. Re-check
-		// shortly after focus leaves the composer to force it back.
-		function onFocusOut() {
-			setTimeout(applyViewport, 100);
-		}
-
-		vv.addEventListener('resize', applyViewport);
-		vv.addEventListener('scroll', applyViewport);
-		inputEl?.addEventListener('focusout', onFocusOut);
+		vv.addEventListener('resize', apply);
+		vv.addEventListener('scroll', apply);
 
 		return () => {
-			vv.removeEventListener('resize', applyViewport);
-			vv.removeEventListener('scroll', applyViewport);
-			inputEl?.removeEventListener('focusout', onFocusOut);
+			vv.removeEventListener('resize', apply);
+			vv.removeEventListener('scroll', apply);
+			document.body.style.overflow = prevBodyOverflow;
+			document.body.style.touchAction = prevBodyTouch;
+			docEl.style.overflow = prevHtmlOverflow;
+			docEl.style.removeProperty('--vvh');
 		};
 	});
 
@@ -464,7 +467,7 @@
 	</div>
 {/snippet}
 
-<div bind:this={rootEl} class="flex h-dvh flex-col bg-base-100">
+<div class="flex flex-col bg-base-100" style="height: var(--vvh, 100dvh)">
 	<header
 		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 backdrop-blur"
 	>
@@ -515,7 +518,7 @@
 	<section
 		bind:this={messagesEl}
 		onscroll={handleScroll}
-		class="flex-1 overflow-y-auto px-4 py-4"
+		class="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
