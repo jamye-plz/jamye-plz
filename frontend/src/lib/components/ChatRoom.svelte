@@ -559,7 +559,7 @@
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="textarea max-h-40 flex-1 resize-none overflow-y-auto"
+				class="textarea max-h-40 flex-1 resize-none overflow-y-auto focus:border-primary focus:outline-none!"
 				aria-label="메시지 입력"></textarea>
 			<button
 				onclick={sendMessage}
