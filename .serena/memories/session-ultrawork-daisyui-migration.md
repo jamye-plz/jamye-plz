@@ -43,6 +43,10 @@
   완료 — dev 서버 /login 라이트(흰 배경·카카오 브랜드 유지)/다크(#1d232a) 자동 전환 정상,
   콘솔 에러 0. SHIP_GATE는 사용자 최종 승인 대기 예정.
 - 총 9 commits: e5fe737..35ffded
+- [2026-07-18] SESSION CLOSED: 사용자 승인 (SHIP_GATE passed by user, session.ended emitted,
+  ultrawork persistent state file 삭제). 후속 폴리시는 별도 세션에서 PR #11
+  (agent/daisyui-frontend-polish — 채팅 오버플로/간격 수정, unread aura glow, Prettier/ESLint)로
+  머지 완료. docs/plans/ 로컬 아티팩트는 해당 세션에서 정리됨(tracker 파일 부재 확인).
 - [2026-07-16] SHIP_GATE 사용자 결정: **보류 — 런타임 검증 먼저** (채팅 회귀·양 모드 실화면을
   직접 확인 후 승인 예정). 세션은 SHIP_GATE 대기 상태 유지. push 미수행.
   검증 명령: backend `cd backend && uv run dev` (uvicorn :8000) + frontend `cd frontend && bun run dev` (:5173, /api 프록시)
