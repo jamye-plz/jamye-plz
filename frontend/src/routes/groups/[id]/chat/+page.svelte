@@ -4,7 +4,7 @@
 	import { getGroup } from '$lib/api/group.api';
 	import ChatRoom from '$lib/components/ChatRoom.svelte';
 
-	const groupId = $derived(page.params.id);
+	const groupId = $derived(page.params.id!);
 
 	const groupQuery = createQuery(() => ({
 		queryKey: ['group', groupId],

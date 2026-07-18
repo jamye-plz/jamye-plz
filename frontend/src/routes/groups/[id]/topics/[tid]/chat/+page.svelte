@@ -5,8 +5,8 @@
 	import { getMe } from '$lib/api/auth.api';
 	import ChatRoom from '$lib/components/ChatRoom.svelte';
 
-	const groupId = $derived(page.params.id);
-	const topicId = $derived(page.params.tid);
+	const groupId = $derived(page.params.id!);
+	const topicId = $derived(page.params.tid!);
 	const queryClient = useQueryClient();
 
 	const topicQuery = createQuery(() => ({

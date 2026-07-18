@@ -6,7 +6,7 @@
 	import { ApiError } from '$lib/api/client';
 
 	// Invite-link landing: redeem the code, then drop the user into the group.
-	const code = $derived(page.params.code);
+	const code = $derived(page.params.code!);
 
 	let status = $state<'joining' | 'error'>('joining');
 	let message = $state('');
