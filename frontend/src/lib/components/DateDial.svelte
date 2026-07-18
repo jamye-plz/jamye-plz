@@ -108,20 +108,34 @@
 	// each retarget Embla's in-flight scroll animation, so the last click wins.
 	function pick(date: string) {
 		if (!date) return;
-		selfCommit = true;
-		centerOnDate(date, false); // programmatic → onEmblaSelect won't double-commit
-		if (date !== selected) onselect(date);
+		centerOnDate(date, false); // programmatic → the resulting settle won't re-commit
+		// Only flag a self-commit when the selection actually changes; otherwise a no-op
+		// pick (re-clicking the current date, or an arrow clamped at an end) would leave
+		// selfCommit stale and make the next EXTERNAL `selected` change skip re-centering.
+		if (date !== selected) {
+			selfCommit = true;
+			onselect(date);
+		}
 	}
 
-	// The ONLY commit point for gesture-driven selection (drag/swipe release).
-	// Embla fires 'select' once the carousel has deterministically settled on a
-	// snap point — unlike the old scroll-quiescence timer, it cannot fire mid-snap
-	// with a stale index, which eliminates the iOS race.
+	// 'select' fires every time the TARGET snap changes — which happens several times
+	// during a single long drag or wheel gesture — so it only updates the visual
+	// centered index here. The actual commit happens once on 'settle' (onSettle), so a
+	// drag across many dates doesn't call onselect (→ URL replace + topics refetch) for
+	// each date it passes.
 	function onEmblaSelect(api: EmblaCarouselType) {
-		const idx = api.selectedScrollSnap();
-		centerIndex = idx;
-		if (programmatic) return; // init / click / external change — not a user commit
-		const date = ordered[idx];
+		centerIndex = api.selectedScrollSnap();
+	}
+
+	// The single commit point for gesture-driven selection (drag / wheel). Fires once
+	// when the carousel comes fully to rest. Programmatic moves (init / click / external
+	// re-centering) are skipped — clicks already commit in pick(); the rest must not.
+	function onSettle(api: EmblaCarouselType) {
+		const wasProgrammatic = programmatic;
+		userDriven = false;
+		programmatic = false;
+		if (wasProgrammatic) return;
+		const date = ordered[api.selectedScrollSnap()];
 		if (date && date !== selected) {
 			selfCommit = true;
 			onselect(date);
@@ -151,10 +165,7 @@
 		emblaApi.on('pointerUp', () => {
 			dragging = false;
 		});
-		emblaApi.on('settle', () => {
-			userDriven = false;
-			programmatic = false;
-		});
+		emblaApi.on('settle', onSettle);
 
 		// First render: snap instantly to `selected` then reveal, so entering shows
 		// TODAY immediately (no oldest-date flash / rotate). Marked programmatic so the
