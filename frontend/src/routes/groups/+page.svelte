@@ -40,7 +40,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<header
-		class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
+		class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
 	>
 		<div class="flex w-full items-center justify-between">
 			<h1 class="text-lg font-semibold text-base-content">내 그룹</h1>
