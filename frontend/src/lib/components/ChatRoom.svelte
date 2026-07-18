@@ -198,8 +198,16 @@
 		body.style.inset = '0';
 		body.style.width = '100%';
 
+		let baseWidth = window.innerWidth;
 		let fullHeight = window.innerHeight;
 		function apply() {
+			// On an orientation/layout flip the viewport WIDTH changes; rebase the height
+			// reference so the taller portrait max isn't mistaken for an open keyboard in
+			// landscape (which would wrongly drop the composer's safe-area bottom inset).
+			if (window.innerWidth !== baseWidth) {
+				baseWidth = window.innerWidth;
+				fullHeight = window.innerHeight;
+			}
 			fullHeight = Math.max(fullHeight, window.innerHeight);
 			keyboardOpen = fullHeight - vv.height > 100;
 			const stick = isNearBottom();
@@ -554,8 +562,12 @@
 		</div>
 	</AppHeader>
 
-	{#if pinnedBody && bodyOpen}
-		<div id="topic-body" class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">
+	{#if pinnedBody}
+		<div
+			id="topic-body"
+			hidden={!bodyOpen}
+			class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3"
+		>
 			<div class="mx-auto flex w-full max-w-2xl items-start gap-2">
 				<div class="max-h-40 min-w-0 flex-1 overflow-y-auto">
 					<div

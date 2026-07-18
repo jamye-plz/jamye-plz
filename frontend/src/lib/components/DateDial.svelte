@@ -95,8 +95,14 @@
 
 	function centerOnIndex(idx: number, jump: boolean) {
 		if (!emblaApi) return;
-		programmatic = true; // suppress the commit that Embla's 'select' would trigger
-		emblaApi.scrollTo(clampIndex(idx), jump || reduceMotion());
+		const target = clampIndex(idx);
+		// A no-op scrollTo (already on this snap) fires no 'settle', so setting
+		// `programmatic` here would leave it stuck true — a later wheel gesture (which
+		// emits no 'pointerDown' to clear it) would then be treated as programmatic and
+		// skip the commit. Skip entirely when we're already centered.
+		if (target === emblaApi.selectedScrollSnap()) return;
+		programmatic = true; // suppress the commit that Embla's 'settle' would trigger
+		emblaApi.scrollTo(target, jump || reduceMotion());
 	}
 
 	function centerOnDate(date: string, jump: boolean) {
@@ -172,8 +178,12 @@
 		// resulting 'select' does not fire a spurious onselect on entry.
 		const idx = ordered.indexOf(selected);
 		if (idx >= 0) {
-			programmatic = true;
-			emblaApi.scrollTo(idx, true);
+			// Guard the same no-op case as centerOnIndex: only flag programmatic when the
+			// initial snap actually moves, otherwise it stays stuck (no settle fires).
+			if (idx !== emblaApi.selectedScrollSnap()) {
+				programmatic = true;
+				emblaApi.scrollTo(idx, true);
+			}
 			centerIndex = idx;
 		}
 		lastOrderedKey = ordered.join('|');
