@@ -4,11 +4,11 @@ import logging
 import secrets
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.core.config import get_settings
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import DbSession, get_current_user
 from app.models.user import User
 from app.services.auth_service import AuthService
 
@@ -140,7 +140,7 @@ async def google_callback(
 # ── Logout ─────────────────────────────────────────────────────────────────────
 
 
-@router.post("/logout")
-async def logout(response: Response, current_user: CurrentUser):
+@router.post("/logout", dependencies=[Depends(get_current_user)])
+async def logout(response: Response):
     response.delete_cookie("access_token")
     return {"ok": True}
