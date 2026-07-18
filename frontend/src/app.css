@@ -76,8 +76,10 @@ body {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	min-height: 100dvh;
-	/* Safe area for iOS notch/home indicator */
-	padding-top: env(safe-area-inset-top);
+	/* Safe area for the iOS home indicator. The notch TOP inset is owned by AppHeader
+	   (and ChatRoom's fixed root uses AppHeader too), so applying it here as well would
+	   double-inset every AppHeader screen. Every headerless top-level page is vertically
+	   centered, so none of them need a top inset. */
 	padding-bottom: env(safe-area-inset-bottom);
 }
 

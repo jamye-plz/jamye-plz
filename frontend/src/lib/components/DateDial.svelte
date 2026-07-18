@@ -220,6 +220,15 @@
 		const delta = e.key === 'ArrowLeft' ? -1 : 1;
 		pick(ordered[clampIndex(ordered.indexOf(selected) + delta)]);
 	}
+
+	// A wheel/trackpad gesture doesn't emit Embla's 'pointerDown', so on its own it would
+	// leave `programmatic` set (e.g. mid click/external scroll) and its settle wouldn't
+	// commit. Treat a wheel over the dial as a real user gesture so onSettle commits the
+	// date it lands on.
+	function onWheel() {
+		programmatic = false;
+		userDriven = true;
+	}
 </script>
 
 <div class="relative select-none">
@@ -232,6 +241,7 @@
 		aria-valuemax={ordered.length - 1}
 		aria-valuenow={centerIndex}
 		onkeydown={onKeydown}
+		onwheel={onWheel}
 		use:emblaCarouselSvelte={{ options, plugins }}
 		onemblaInit={onInit}
 		class="[scrollbar-width:none] overflow-hidden rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
