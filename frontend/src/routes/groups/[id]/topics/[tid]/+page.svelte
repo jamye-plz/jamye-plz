@@ -3,6 +3,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { getTopic } from '$lib/api/topic.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
@@ -20,7 +21,7 @@
 <div class="min-h-screen bg-base-100">
 	<AppHeader>
 		<button
-			onclick={() => goto(`/groups/${groupId}`)}
+			onclick={() => goto(resolve(`/groups/${groupId}`))}
 			class="btn -ml-2 btn-square btn-ghost btn-sm"
 			aria-label="뒤로 가기"
 		>
@@ -35,7 +36,7 @@
 		</div>
 		{#if topicQuery.data}
 			<a
-				href="/groups/{groupId}/topics/{topicId}/chat"
+				href={resolve(`/groups/${groupId}/topics/${topicId}/chat`)}
 				class="btn btn-square shrink-0 btn-ghost btn-sm"
 				aria-label="주제 채팅"
 			>
@@ -69,6 +70,7 @@
 
 				{#if topic.body}
 					<div class="prose max-w-none [&_pre]:overflow-x-auto">
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -- output sanitized by renderMarkdown (DOMPurify) -->
 						{@html renderMarkdown(topic.body)}
 					</div>
 				{:else}
@@ -77,7 +79,7 @@
 
 				{#if topic.tags.length > 0}
 					<div class="flex flex-wrap gap-2" aria-label="태그">
-						{#each topic.tags as tag}
+						{#each topic.tags as tag (tag.tag)}
 							<span class="badge badge-ghost badge-sm">
 								#{tag.tag}
 							</span>
@@ -87,7 +89,7 @@
 
 				{#if topic.media.length > 0}
 					<div class="space-y-2">
-						{#each topic.media as media}
+						{#each topic.media as media (media.id)}
 							{#if media.content_type.startsWith('image/')}
 								<img
 									src={media.url}
@@ -104,7 +106,10 @@
 			</article>
 
 			<div class="border-t border-base-300 pt-4">
-				<a href="/groups/{groupId}/topics/{topicId}/chat" class="btn btn-block btn-primary">
+				<a
+					href={resolve(`/groups/${groupId}/topics/${topicId}/chat`)}
+					class="btn btn-block btn-primary"
+				>
 					채팅에 참여하기
 				</a>
 			</div>

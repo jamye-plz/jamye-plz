@@ -19,6 +19,7 @@
 		{/if}
 
 		<div class="space-y-3">
+			<!-- eslint-disable svelte/no-navigation-without-resolve -- OAuth endpoints proxied to backend (/api/auth/*), not app routes -->
 			<a
 				href={getOAuthLoginUrl('kakao')}
 				class="btn btn-block border-0 bg-[#FEE500] text-[#191919] hover:bg-[#FEE500]/90"
@@ -30,6 +31,7 @@
 			<a href={getOAuthLoginUrl('google')} class="btn btn-block" aria-label="구글로 로그인">
 				Google로 시작하기
 			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		</div>
 	</div>
 </main>

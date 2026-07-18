@@ -71,6 +71,7 @@
 
 	function subtractOneDay(yyyymmdd: string): string {
 		const [y, m, d] = yyyymmdd.split('-').map(Number);
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- pure date arithmetic, not reactive state
 		const dt = new Date(Date.UTC(y!, m! - 1, d!));
 		dt.setUTCDate(dt.getUTCDate() - 1);
 		const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
@@ -204,6 +205,7 @@
 	// Skipped right after a user-driven commit so a fresh gesture isn't fought and
 	// so we don't loop back into firing onselect again.
 	$effect(() => {
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- reactive dep: re-center when selected changes
 		selected;
 		if (!emblaApi || !selected) return;
 		if (ordered.indexOf(selected) < 0) return;

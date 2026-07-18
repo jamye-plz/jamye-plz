@@ -2,6 +2,7 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { listGroups, createGroup } from '$lib/api/group.api';
 	import type { Group } from '$lib/types/group.types';
 	import Bell from '@lucide/svelte/icons/bell';
@@ -26,7 +27,7 @@
 			const group = await createGroup(newGroupName.trim());
 			createDialog?.close();
 			newGroupName = '';
-			goto(`/groups/${group.id}`);
+			goto(resolve(`/groups/${group.id}`));
 		} catch (err) {
 			createError = err instanceof Error ? err.message : '그룹 생성에 실패했습니다.';
 		} finally {
@@ -35,7 +36,7 @@
 	}
 
 	function navigateTo(group: Group) {
-		goto(`/groups/${group.id}`);
+		goto(resolve(`/groups/${group.id}`));
 	}
 </script>
 
@@ -44,10 +45,12 @@
 		<div class="flex w-full items-center justify-between">
 			<h1 class="text-base font-semibold text-base-content">내 그룹</h1>
 			<div class="flex items-center gap-1">
-				<a href="/notifications" class="btn btn-square btn-ghost btn-sm" aria-label="알림"
-					><Bell class="h-5 w-5" /></a
+				<a
+					href={resolve('/notifications')}
+					class="btn btn-square btn-ghost btn-sm"
+					aria-label="알림"><Bell class="h-5 w-5" /></a
 				>
-				<a href="/settings" class="btn btn-square btn-ghost btn-sm" aria-label="설정"
+				<a href={resolve('/settings')} class="btn btn-square btn-ghost btn-sm" aria-label="설정"
 					><Settings class="h-5 w-5" /></a
 				>
 			</div>

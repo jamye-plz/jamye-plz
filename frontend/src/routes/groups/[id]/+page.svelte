@@ -8,6 +8,7 @@
 	} from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { getGroup } from '$lib/api/group.api';
 	import { listTopics, seedTopic, getTopicDates } from '$lib/api/topic.api';
 	import DateDial from '$lib/components/DateDial.svelte';
@@ -44,6 +45,9 @@
 		url.searchParams.set('date', date);
 		// replaceState: a date tap shouldn't stack history entries, but the updated
 		// URL is exactly what we return to when coming back from a topic chatroom.
+		// url is derived from page.url (already resolved, same-origin); resolve()'s
+		// typed-routes signature can't accept a runtime URL/string, so navigate directly.
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- url derived from page.url, already resolved
 		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
@@ -108,7 +112,7 @@
 	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
-				onclick={() => goto('/groups')}
+				onclick={() => goto(resolve('/groups'))}
 				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>
@@ -124,14 +128,14 @@
 			</div>
 			<div class="flex items-center gap-1">
 				<a
-					href="/groups/{groupId}/chat"
+					href={resolve(`/groups/${groupId}/chat`)}
 					class="btn btn-square btn-ghost btn-sm"
 					aria-label="그룹 채팅"
 				>
 					<MessageCircle class="h-5 w-5" />
 				</a>
 				<a
-					href="/groups/{groupId}/invite"
+					href={resolve(`/groups/${groupId}/invite`)}
 					class="btn btn-square btn-ghost btn-sm"
 					aria-label="초대"
 				>
@@ -207,7 +211,9 @@
 									class:text-primary={topic.unread}
 								>
 									<a
-										href="/groups/{groupId}/topics/{topic.id}/chat?date={selectedDate}"
+										href={resolve(
+											`/groups/${groupId}/topics/${topic.id}/chat?date=${selectedDate}`
+										)}
 										class="card bg-base-200 transition-colors card-sm card-border hover:bg-base-300 focus-visible:outline-2 focus-visible:outline-primary"
 										aria-label={topic.unread ? `${topic.title}, 안 읽음` : topic.title}
 									>

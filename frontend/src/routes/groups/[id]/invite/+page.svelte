@@ -4,6 +4,7 @@
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
 	import { createInvite, getMembers } from '$lib/api/group.api';
 	import { ApiError } from '$lib/api/client';
@@ -70,7 +71,7 @@
 	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
-				onclick={() => goto(`/groups/${groupId}`)}
+				onclick={() => goto(resolve(`/groups/${groupId}`))}
 				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>

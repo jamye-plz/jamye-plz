@@ -2,6 +2,7 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { listNotifications, markNotificationRead } from '$lib/api/notification.api';
 	import type { AppNotification } from '$lib/types/notification.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
@@ -19,6 +20,7 @@
 
 	async function open(n: AppNotification) {
 		if (!n.read) markRead.mutate(n.id);
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- action_url is a server-provided absolute app deep link (runtime string)
 		if (n.action_url) goto(n.action_url);
 	}
 
@@ -39,7 +41,7 @@
 	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
-				onclick={() => goto('/groups')}
+				onclick={() => goto(resolve('/groups'))}
 				class="btn -ml-2 btn-square btn-ghost btn-sm"
 				aria-label="뒤로 가기"
 			>

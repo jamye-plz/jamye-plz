@@ -36,6 +36,14 @@
 
 	const queryClient = useQueryClient();
 
+	// backHref is a caller-provided absolute app route (may carry a ?date query).
+	// resolve()'s typed-routes signature only accepts statically-known route
+	// literals, not a runtime string, so navigate directly.
+	function goBack() {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- backHref is a caller-provided absolute app route
+		goto(backHref);
+	}
+
 	// Throttle mark-read network calls, but coalesce a trailing call so the LAST
 	// visible message in a burst still clears the unread state. Dropping the read
 	// outright would leave a phantom unread dot/notification for a message the
@@ -152,6 +160,7 @@
 
 	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- reactive dep: re-run effect when inputText changes
 		inputText; // track changes (incl. reset after send)
 		if (inputEl) {
 			inputEl.style.height = 'auto';
@@ -507,6 +516,7 @@
 			? 'prose-primary-content'
 			: ''} [&_a]:font-normal [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 	>
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -- output sanitized by renderMarkdown (DOMPurify) -->
 		{@html renderMarkdown(body)}
 	</div>
 {/snippet}
@@ -518,11 +528,7 @@
 >
 	<AppHeader>
 		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
-			<button
-				onclick={() => goto(backHref)}
-				class="btn -ml-2 btn-square btn-ghost btn-sm"
-				aria-label="뒤로 가기"
-			>
+			<button onclick={goBack} class="btn -ml-2 btn-square btn-ghost btn-sm" aria-label="뒤로 가기">
 				<ArrowLeft class="h-5 w-5" />
 			</button>
 			<div class="flex min-w-0 flex-1 items-center gap-1">
@@ -573,6 +579,7 @@
 					<div
 						class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 					>
+						<!-- eslint-disable-next-line svelte/no-at-html-tags -- output sanitized by renderMarkdown (DOMPurify) -->
 						{@html renderMarkdown(pinnedBody)}
 					</div>
 				</div>

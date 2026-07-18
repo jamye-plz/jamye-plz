@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { joinByCode } from '$lib/api/group.api';
 	import { ApiError } from '$lib/api/client';
@@ -19,7 +20,7 @@
 			const res = await joinByCode(code);
 			sessionStorage.removeItem('pending_invite');
 			// replaceState so the back button doesn't return to this transient page.
-			await goto(`/groups/${res.group_id}`, { replaceState: true });
+			await goto(resolve(`/groups/${res.group_id}`), { replaceState: true });
 		} catch (err) {
 			if (err instanceof ApiError && err.status === 401) {
 				// Not logged in — client.ts is redirecting to /login; keep the code.
@@ -39,7 +40,7 @@
 			<p class="text-sm text-base-content/70">그룹에 입장하는 중...</p>
 		{:else}
 			<p class="font-medium text-base-content">{message}</p>
-			<a href="/groups" class="btn btn-primary"> 내 그룹으로 </a>
+			<a href={resolve('/groups')} class="btn btn-primary"> 내 그룹으로 </a>
 		{/if}
 	</div>
 </main>
