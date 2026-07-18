@@ -12,7 +12,7 @@
 	},
 	"src/lib/components/DateDial.svelte": {
 		"@typescript-eslint/no-unused-expressions": {
-			"count": 2
+			"count": 1
 		},
 		"svelte/prefer-svelte-reactivity": {
 			"count": 1

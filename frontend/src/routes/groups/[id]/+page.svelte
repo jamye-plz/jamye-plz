@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import {
 		createQuery,
 		createMutation,
@@ -104,7 +105,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto('/groups')}
@@ -138,7 +139,7 @@
 				</a>
 			</div>
 		</div>
-	</header>
+	</AppHeader>
 
 	<main>
 		<div class="mx-auto max-w-lg space-y-4 px-4 py-4">
@@ -149,7 +150,7 @@
 					placeholder="새 주제 던지기..."
 					maxlength="256"
 					aria-label="새 주제 제목"
-					class="input join-item flex-1"
+					class="input join-item flex-1 focus:border-primary focus:outline-none!"
 				/>
 				<button
 					type="submit"

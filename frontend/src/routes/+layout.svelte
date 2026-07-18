@@ -106,7 +106,7 @@
 {#if pullY > 0 || refreshing}
 	<div
 		class="pointer-events-none fixed left-1/2 z-50 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-base-300 bg-base-300 shadow-md"
-		style="top: {Math.max(8, pullY - 28)}px; opacity: {refreshing
+		style="top: calc({Math.max(8, pullY - 28)}px + env(safe-area-inset-top)); opacity: {refreshing
 			? 1
 			: Math.min(1, pullY / PTR_TRIGGER)}"
 	>

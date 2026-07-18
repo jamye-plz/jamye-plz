@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { onMount } from 'svelte';
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
@@ -66,7 +67,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto(`/groups/${groupId}`)}
@@ -77,7 +78,7 @@
 			</button>
 			<h1 class="text-base font-semibold text-base-content">초대</h1>
 		</div>
-	</header>
+	</AppHeader>
 
 	<main class="mx-auto max-w-lg space-y-4 px-4 py-6">
 		<p class="text-sm text-base-content/70">

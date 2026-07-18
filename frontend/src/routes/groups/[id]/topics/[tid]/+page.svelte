@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -17,7 +18,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+	<AppHeader>
 		<button
 			onclick={() => goto(`/groups/${groupId}`)}
 			class="btn -ml-2 btn-square btn-ghost btn-sm"
@@ -41,7 +42,7 @@
 				<MessageCircle class="h-5 w-5" />
 			</a>
 		{/if}
-	</header>
+	</AppHeader>
 
 	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
 		{#if topicQuery.isPending}

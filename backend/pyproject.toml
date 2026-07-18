@@ -50,8 +50,8 @@ target-version = "py312"
 
 # Developer tasks — run with `uv run poe <task>` (package.json-scripts style).
 [tool.poe.tasks]
-dev = "uvicorn app.main:app --reload --port 8000"
-start = "uvicorn app.main:app --port 8000"
+dev = "uvicorn app.main:app --reload --port 8000 --host 0.0.0.0"
+start = "uvicorn app.main:app --port 8000 --host 0.0.0.0"
 migrate = "alembic upgrade head"
 # Baseline an existing pre-Alembic DB (schema created by the old create_all but
 # missing alembic_version): run `poe stamp` ONCE to mark it at head, then use

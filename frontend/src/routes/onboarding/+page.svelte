@@ -40,7 +40,7 @@
 					placeholder="닉네임 입력"
 					maxlength={20}
 					required
-					class="input w-full"
+					class="input w-full focus:border-primary focus:outline-none!"
 				/>
 			</div>
 

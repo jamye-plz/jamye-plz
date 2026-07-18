@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listNotifications, markNotificationRead } from '$lib/api/notification.api';
@@ -35,7 +36,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<header class="navbar sticky top-0 z-10 border-b border-base-300 bg-base-100/80 backdrop-blur">
+	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto('/groups')}
@@ -51,7 +52,7 @@
 				</span>
 			{/if}
 		</div>
-	</header>
+	</AppHeader>
 
 	<main class="mx-auto max-w-lg px-4 py-4">
 		{#if notifsQuery.isPending}

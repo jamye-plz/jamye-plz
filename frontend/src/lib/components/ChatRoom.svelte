@@ -8,6 +8,8 @@
 	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import AppHeader from '$lib/components/AppHeader.svelte';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -132,6 +134,21 @@
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
+	let rootEl = $state<HTMLElement | null>(null);
+	// True while the on-screen keyboard is open — drops the composer's home-indicator
+	// bottom inset so the input sits flush on the keyboard (no gap) while it's up.
+	let keyboardOpen = $state(false);
+	// Topic body (pinned) is collapsed by default and revealed only via the header
+	// chevron. Reset the toggle when switching to a different room/topic so a body
+	// left open on one topic doesn't auto-open on the next.
+	let bodyOpen = $state(false);
+	let bodyOpenRoom = '';
+	$effect(() => {
+		if (chatroomId !== bodyOpenRoom) {
+			bodyOpenRoom = chatroomId;
+			bodyOpen = false;
+		}
+	});
 
 	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
@@ -140,6 +157,80 @@
 			inputEl.style.height = 'auto';
 			inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
 		}
+	});
+
+	// Keep the header pinned while the on-screen keyboard is open — only the messages +
+	// composer occupy the area above the keyboard (KakaoTalk-style). BEST-EFFORT: this
+	// is a documented WebKit limitation, not a fully solvable problem in a PWA. iOS
+	// reveals a focused input by PANNING the visual viewport (dragging even
+	// `position:fixed` elements up), and it fires NO per-frame visualViewport events
+	// during the keyboard animation — only the settled value. So the SETTLED (fully
+	// open/closed) state is correct, but the open/close transition still shows iOS's own
+	// slide, which JS cannot intercept. `env(keyboard-inset-height)` would be cleaner but
+	// Safari/WebKit does not support it; a native shell (Capacitor) is the only complete fix.
+	//
+	// Mechanism: pin the whole document (body position:fixed) so iOS never scrolls the
+	// window (that scroll used to fight our reset in a feedback loop), then, on each
+	// visualViewport change, size the fixed root to `visualViewport.height` and translate
+	// it back down by `visualViewport.offsetTop` (GPU transform, frame-accurate) to cancel
+	// the pan — so at rest the header sits at the visible top and the composer above the keyboard.
+	$effect(() => {
+		if (typeof window === 'undefined' || !window.visualViewport || !rootEl) return;
+
+		const vv = window.visualViewport;
+		const root = rootEl;
+		const docEl = document.documentElement;
+		const body = document.body;
+		const prev = {
+			htmlOverflow: docEl.style.overflow,
+			bodyOverflow: body.style.overflow,
+			bodyPosition: body.style.position,
+			bodyInset: body.style.inset,
+			bodyWidth: body.style.width
+		};
+		// Fully immobilise the document so iOS never scrolls the window — otherwise
+		// window.scrollY drifts and fights any reset in a feedback loop (the values
+		// "count" and the page rises from the bottom). With the document pinned, the
+		// only remaining motion is the visual-viewport pan, which the transform cancels.
+		docEl.style.overflow = 'hidden';
+		body.style.overflow = 'hidden';
+		body.style.position = 'fixed';
+		body.style.inset = '0';
+		body.style.width = '100%';
+
+		let baseWidth = window.innerWidth;
+		let fullHeight = window.innerHeight;
+		function apply() {
+			// On an orientation/layout flip the viewport WIDTH changes; rebase the height
+			// reference so the taller portrait max isn't mistaken for an open keyboard in
+			// landscape (which would wrongly drop the composer's safe-area bottom inset).
+			if (window.innerWidth !== baseWidth) {
+				baseWidth = window.innerWidth;
+				fullHeight = window.innerHeight;
+			}
+			fullHeight = Math.max(fullHeight, window.innerHeight);
+			keyboardOpen = fullHeight - vv.height > 100;
+			const stick = isNearBottom();
+			root.style.height = `${vv.height}px`;
+			root.style.transform = `translateY(${vv.offsetTop}px)`;
+			if (stick) requestAnimationFrame(scrollToBottom);
+		}
+		apply();
+
+		vv.addEventListener('resize', apply);
+		vv.addEventListener('scroll', apply);
+
+		return () => {
+			vv.removeEventListener('resize', apply);
+			vv.removeEventListener('scroll', apply);
+			root.style.height = '';
+			root.style.transform = '';
+			docEl.style.overflow = prev.htmlOverflow;
+			body.style.overflow = prev.bodyOverflow;
+			body.style.position = prev.bodyPosition;
+			body.style.inset = prev.bodyInset;
+			body.style.width = prev.bodyWidth;
+		};
 	});
 
 	// Seed the room from the latest page (newest-first → reversed to oldest-first
@@ -420,10 +511,12 @@
 	</div>
 {/snippet}
 
-<div class="flex h-screen flex-col bg-base-100">
-	<header
-		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 backdrop-blur"
-	>
+<div
+	bind:this={rootEl}
+	class="fixed inset-x-0 top-0 flex flex-col bg-base-100 [will-change:transform]"
+	style="height: 100dvh"
+>
+	<AppHeader>
 		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
 			<button
 				onclick={() => goto(backHref)}
@@ -432,36 +525,64 @@
 			>
 				<ArrowLeft class="h-5 w-5" />
 			</button>
-			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-base font-semibold text-base-content">
+			<div class="flex min-w-0 flex-1 items-center gap-1">
+				<h1 class="min-w-0 truncate text-base font-semibold text-base-content">
 					{title}
 				</h1>
+				{#if pinnedBody}
+					<button
+						type="button"
+						onclick={() => (bodyOpen = !bodyOpen)}
+						class="btn btn-square shrink-0 btn-ghost btn-xs"
+						aria-expanded={bodyOpen}
+						aria-controls="topic-body"
+						aria-label={bodyOpen ? '본문 접기' : '본문 펼치기'}
+					>
+						<ChevronDown
+							class="h-4 w-4 transition-transform duration-200 {bodyOpen ? 'rotate-180' : ''}"
+						/>
+					</button>
+				{/if}
 			</div>
+			{#if canEditPinned && !pinnedBody}
+				<button
+					type="button"
+					onclick={onEditPinned}
+					class="btn shrink-0 btn-ghost text-primary btn-xs"
+					aria-label="본문 추가"
+				>
+					본문 추가
+				</button>
+			{/if}
 			<div
 				class="status shrink-0 {connected ? 'status-success' : ''}"
 				aria-label={connected ? '연결됨' : '연결 중'}
 				title={connected ? '연결됨' : '연결 중...'}
 			></div>
 		</div>
-	</header>
+	</AppHeader>
 
-	{#if pinnedBody || canEditPinned}
-		<div class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3">
+	{#if pinnedBody}
+		<div
+			id="topic-body"
+			hidden={!bodyOpen}
+			class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3"
+		>
 			<div class="mx-auto flex w-full max-w-2xl items-start gap-2">
 				<div class="max-h-40 min-w-0 flex-1 overflow-y-auto">
-					{#if pinnedBody}
-						<div
-							class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-						>
-							{@html renderMarkdown(pinnedBody)}
-						</div>
-					{:else}
-						<p class="text-sm text-base-content/50 italic">아직 본문이 없어요</p>
-					{/if}
+					<div
+						class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+					>
+						{@html renderMarkdown(pinnedBody)}
+					</div>
 				</div>
 				{#if canEditPinned}
-					<button onclick={onEditPinned} class="btn shrink-0 btn-ghost text-primary btn-xs">
-						{pinnedBody ? '수정' : '본문 추가'}
+					<button
+						onclick={onEditPinned}
+						class="btn shrink-0 btn-ghost text-primary btn-xs"
+						aria-label="본문 수정"
+					>
+						수정
 					</button>
 				{/if}
 			</div>
@@ -471,7 +592,7 @@
 	<section
 		bind:this={messagesEl}
 		onscroll={handleScroll}
-		class="flex-1 overflow-y-auto px-4 py-4"
+		class="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
@@ -551,7 +672,11 @@
 		</div>
 	</section>
 
-	<footer class="shrink-0 border-t border-base-300 bg-base-100 px-4 py-3">
+	<footer
+		class="shrink-0 border-t border-base-300 bg-base-100 px-4 pt-3 {keyboardOpen
+			? 'pb-3'
+			: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
+	>
 		<div class="mx-auto flex max-w-2xl items-end gap-2">
 			<textarea
 				bind:this={inputEl}
@@ -559,7 +684,7 @@
 				onkeydown={handleKeydown}
 				placeholder="메시지 입력..."
 				rows={1}
-				class="textarea max-h-40 flex-1 resize-none overflow-y-auto focus:border-primary focus:outline-none!"
+				class="textarea max-h-40 min-h-0 flex-1 resize-none overflow-y-auto focus:border-primary focus:outline-none!"
 				aria-label="메시지 입력"></textarea>
 			<button
 				onclick={sendMessage}
