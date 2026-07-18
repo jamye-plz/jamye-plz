@@ -132,6 +132,7 @@
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
+	let rootEl = $state<HTMLElement | null>(null);
 
 	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
@@ -142,36 +143,49 @@
 		}
 	});
 
-	// Keep the whole chat inside the visible area while the on-screen keyboard is
-	// open. Mobile Safari / a standalone PWA reveals a focused input by panning the
-	// layout viewport, which drags the sticky header off-screen; CSS viewport units
-	// (svh/dvh) can't see the keyboard. Instead, lock the document so there is
-	// nothing for iOS to pan, and size the chat root to `visualViewport.height` via
-	// a `--vvh` custom property — the composer then sits just above the keyboard and
-	// the header stays pinned at the top. Resizing an in-flow element alone does not
-	// hold in a standalone PWA (iOS still pans the document); the document-lock is
-	// what makes it stick.
+	// Keep the header pinned while the on-screen keyboard is open — only the messages +
+	// composer occupy the area above the keyboard (KakaoTalk-style). BEST-EFFORT: this
+	// is a documented WebKit limitation, not a fully solvable problem in a PWA. iOS
+	// reveals a focused input by PANNING the visual viewport (dragging even
+	// `position:fixed` elements up), and it fires NO per-frame visualViewport events
+	// during the keyboard animation — only the settled value. So the SETTLED (fully
+	// open/closed) state is correct, but the open/close transition still shows iOS's own
+	// slide, which JS cannot intercept. `env(keyboard-inset-height)` would be cleaner but
+	// Safari/WebKit does not support it; a native shell (Capacitor) is the only complete fix.
+	//
+	// Mechanism: pin the whole document (body position:fixed) so iOS never scrolls the
+	// window (that scroll used to fight our reset in a feedback loop), then, on each
+	// visualViewport change, size the fixed root to `visualViewport.height` and translate
+	// it back down by `visualViewport.offsetTop` (GPU transform, frame-accurate) to cancel
+	// the pan — so at rest the header sits at the visible top and the composer above the keyboard.
 	$effect(() => {
-		if (typeof window === 'undefined' || !window.visualViewport) return;
+		if (typeof window === 'undefined' || !window.visualViewport || !rootEl) return;
 
 		const vv = window.visualViewport;
+		const root = rootEl;
 		const docEl = document.documentElement;
-		const prevBodyOverflow = document.body.style.overflow;
-		const prevBodyTouch = document.body.style.touchAction;
-		const prevHtmlOverflow = docEl.style.overflow;
-		// A non-scrollable document leaves iOS nothing to pan to reveal the input.
-		document.body.style.overflow = 'hidden';
-		document.body.style.touchAction = 'none';
+		const body = document.body;
+		const prev = {
+			htmlOverflow: docEl.style.overflow,
+			bodyOverflow: body.style.overflow,
+			bodyPosition: body.style.position,
+			bodyInset: body.style.inset,
+			bodyWidth: body.style.width
+		};
+		// Fully immobilise the document so iOS never scrolls the window — otherwise
+		// window.scrollY drifts and fights any reset in a feedback loop (the values
+		// "count" and the page rises from the bottom). With the document pinned, the
+		// only remaining motion is the visual-viewport pan, which the transform cancels.
 		docEl.style.overflow = 'hidden';
+		body.style.overflow = 'hidden';
+		body.style.position = 'fixed';
+		body.style.inset = '0';
+		body.style.width = '100%';
 
-		// Tallest layout height seen — so the known iOS 26 residual (visualViewport
-		// height staying ~24px short after the keyboard closes) can't leave a gap.
-		let fullHeight = window.innerHeight;
 		function apply() {
-			fullHeight = Math.max(fullHeight, window.innerHeight, vv.height);
-			const keyboardOpen = fullHeight - vv.height > 100;
 			const stick = isNearBottom();
-			docEl.style.setProperty('--vvh', `${keyboardOpen ? vv.height : fullHeight}px`);
+			root.style.height = `${vv.height}px`;
+			root.style.transform = `translateY(${vv.offsetTop}px)`;
 			if (stick) requestAnimationFrame(scrollToBottom);
 		}
 		apply();
@@ -182,10 +196,13 @@
 		return () => {
 			vv.removeEventListener('resize', apply);
 			vv.removeEventListener('scroll', apply);
-			document.body.style.overflow = prevBodyOverflow;
-			document.body.style.touchAction = prevBodyTouch;
-			docEl.style.overflow = prevHtmlOverflow;
-			docEl.style.removeProperty('--vvh');
+			root.style.height = '';
+			root.style.transform = '';
+			docEl.style.overflow = prev.htmlOverflow;
+			body.style.overflow = prev.bodyOverflow;
+			body.style.position = prev.bodyPosition;
+			body.style.inset = prev.bodyInset;
+			body.style.width = prev.bodyWidth;
 		};
 	});
 
@@ -467,9 +484,13 @@
 	</div>
 {/snippet}
 
-<div class="flex flex-col bg-base-100" style="height: var(--vvh, 100dvh)">
+<div
+	bind:this={rootEl}
+	class="fixed inset-x-0 top-0 flex flex-col bg-base-100 [will-change:transform]"
+	style="height: 100dvh"
+>
 	<header
-		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 backdrop-blur"
+		class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] backdrop-blur"
 	>
 		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
 			<button
@@ -598,7 +619,9 @@
 		</div>
 	</section>
 
-	<footer class="shrink-0 border-t border-base-300 bg-base-100 px-4 py-3">
+	<footer
+		class="shrink-0 border-t border-base-300 bg-base-100 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+	>
 		<div class="mx-auto flex max-w-2xl items-end gap-2">
 			<textarea
 				bind:this={inputEl}
