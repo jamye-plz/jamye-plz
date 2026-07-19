@@ -32,9 +32,13 @@ class FakeAsyncSession:
 
     def __init__(self) -> None:
         self.commits = 0
+        self.rollbacks = 0
 
     async def commit(self) -> None:
         self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
 
 
 @dataclass
@@ -122,6 +126,8 @@ class TestSendPushEnabled:
             assert call["ttl"] > 0
         assert push_repo.deleted == []
         assert db.commits == 0
+        # DB connection released before the outbound sends (pool not held).
+        assert db.rollbacks == 1
 
     async def test_no_subscriptions_is_a_no_op(self, monkeypatch) -> None:
         calls: list[dict[str, Any]] = []
@@ -474,6 +480,15 @@ class TestEndpointSsrfValidation:
 
         body = PushSubscribeBody(endpoint="https://93.184.216.34/x", p256dh="p", auth="a")
         assert body.endpoint.startswith("https://")
+
+    def test_rejects_cgnat_shared_range(self) -> None:
+        """100.64.0.0/10 (CGNAT/Tailscale) isn't is_private but isn't global."""
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        with pytest.raises(ValueError):
+            PushSubscribeBody(endpoint="https://100.64.0.1/x", p256dh="p", auth="a")
 
 
 # ── vapid-public-key endpoint gates on full provisioning ─────────────────────

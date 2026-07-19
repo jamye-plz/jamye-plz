@@ -36,10 +36,13 @@ def _as_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address |
 def is_safe_push_endpoint(endpoint: str) -> bool:
     """Whether ``endpoint`` is a public https URL safe to send a push to.
 
-    Requires https and rejects loopback/private/link-local/reserved hosts,
-    including the non-canonical numeric aliases above. (DNS-rebinding of a real
-    hostname is out of scope for the homelab threat model; real push services
-    are public https.)
+    Requires https and, for literal-IP hosts, that the address is globally
+    routable — ``is_global`` rejects loopback/private/link-local/reserved AND
+    the shared CGNAT range 100.64.0.0/10 (Tailscale et al.) that none of the
+    narrower flags catch, plus multicast/unspecified. Numeric aliases (``127.1``,
+    ``2130706433``, ``0x7f000001``) are normalized first. (DNS-rebinding of a
+    real hostname is out of scope for the homelab threat model; real push
+    services are public https.)
     """
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.hostname:
@@ -48,6 +51,6 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     if host == "localhost":
         return False
     ip = _as_ip_literal(host)
-    if ip is not None and (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved):
+    if ip is not None and not ip.is_global:
         return False
     return True

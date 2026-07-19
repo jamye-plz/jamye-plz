@@ -215,13 +215,16 @@ class NotificationService:
         Real delivery only runs when VAPID keys are provisioned
         (settings.vapid_enabled); without keys this is a silent no-op so the
         demo/dev environment works without push infrastructure provisioned.
-        pywebpush performs a synchronous HTTP call (via `requests`), so each
-        send is offloaded to a worker thread with `asyncio.to_thread` to avoid
-        blocking the event loop. A 404/410 response means the push service
-        revoked the subscription (uninstalled app, expired endpoint, etc.); it
-        is pruned so future sends don't keep hitting a dead endpoint. Any
-        other failure is logged and does not stop delivery to the user's
-        remaining devices.
+
+        The subscription rows are read and the DB connection released (rollback
+        — nothing to persist yet) *before* any network I/O, so a slow endpoint
+        can't hold a pool connection for up to the timeout per send and starve
+        the small async pool during fan-out. pywebpush performs a synchronous
+        HTTP call (via `requests`), so each send is offloaded to a worker thread
+        with `asyncio.to_thread`. A 404/410 response (or an unsafe/dead
+        endpoint) means the subscription should go; those are pruned together in
+        one short transaction afterwards. Any other failure is logged and does
+        not stop delivery to the user's remaining devices.
         """
         settings = get_settings()
         if not settings.vapid_enabled:
@@ -229,25 +232,30 @@ class NotificationService:
             return
 
         subs = await self._push_repo.list_by_user(user_id)
+        # Snapshot the fields the network loop needs, then release the read
+        # connection back to the pool before doing any outbound requests.
+        targets = [(sub, sub.endpoint, sub.p256dh, sub.auth) for sub in subs]
+        await self._db.rollback()
+
         data = json.dumps(payload)
-        for sub in subs:
+        to_prune: list[Any] = []
+        for sub, endpoint, p256dh, auth in targets:
             # Defence in depth: re-validate the stored endpoint before an
             # outbound request. The subscribe-time validator only guards new
             # POSTs; a row written before it existed (or inserted directly)
             # could carry a private/loopback endpoint, which would turn this
             # send into an SSRF. Prune such a row — it can never deliver.
-            if not is_safe_push_endpoint(sub.endpoint):
+            if not is_safe_push_endpoint(endpoint):
                 logger.warning(
                     "pruning push subscription %s (user %s): unsafe endpoint",
                     sub.id,
                     user_id,
                 )
-                await self._push_repo.delete(sub)
-                await self._db.commit()
+                to_prune.append(sub)
                 continue
             subscription_info = {
-                "endpoint": sub.endpoint,
-                "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                "endpoint": endpoint,
+                "keys": {"p256dh": p256dh, "auth": auth},
             }
             # pywebpush mutates vapid_claims in place (adds aud/exp), so each
             # subscription needs its own fresh dict.
@@ -267,8 +275,7 @@ class NotificationService:
                 # status; any other exception (e.g. network error) has none.
                 status_code = getattr(getattr(exc, "response", None), "status_code", None)
                 if status_code in (404, 410):
-                    await self._push_repo.delete(sub)
-                    await self._db.commit()
+                    to_prune.append(sub)
                 else:
                     logger.warning(
                         "push send failed for subscription %s (user %s): %s",
@@ -276,3 +283,9 @@ class NotificationService:
                         user_id,
                         exc,
                     )
+
+        # Prune revoked/unsafe rows in one short transaction after the network I/O.
+        for sub in to_prune:
+            await self._push_repo.delete(sub)
+        if to_prune:
+            await self._db.commit()
