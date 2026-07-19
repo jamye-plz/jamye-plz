@@ -60,7 +60,12 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
 
     # ── MinIO / S3 ────────────────────────────────────────────────────────────
-    # TODO(oma-deferred): integrate minio when key is provisioned
+    # Real presigned URLs (app.core.storage) are generated only when
+    # MINIO_ACCESS_KEY/MINIO_SECRET_KEY are set (see minio_enabled below);
+    # otherwise a deterministic local fallback URL is returned so the demo
+    # keeps working. MINIO_ENDPOINT must be a browser-reachable address (not
+    # a container-internal hostname) since it is embedded directly in
+    # presigned upload/read URLs returned to the client.
     minio_endpoint: str = "http://localhost:9000"
     minio_access_key: str = ""
     minio_secret_key: str = ""
@@ -153,6 +158,22 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"{', '.join(offenders)} must use HTTPS and a non-localhost host "
                 "when APP_ENV=production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_prod_storage_keys(self) -> "Settings":
+        # Fail closed: the object-storage fallback (app.core.storage) returns
+        # plain, unsigned, non-expiring URLs — fine for a local demo, but it
+        # silently defeats policy B (private bucket + short-TTL presigned
+        # GET) if it were ever active in production. Catches an env file
+        # that forgot MINIO_ACCESS_KEY/MINIO_SECRET_KEY before the backend
+        # serves traffic.
+        if self.is_production and not self.minio_enabled:
+            raise ValueError(
+                "MINIO_ACCESS_KEY and MINIO_SECRET_KEY must both be set when "
+                "APP_ENV=production (object storage must not silently fall back "
+                "to plain, unsigned URLs in production)"
             )
         return self
 
