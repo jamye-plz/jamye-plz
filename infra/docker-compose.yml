@@ -1,8 +1,9 @@
 # jamye-plz — local dev infrastructure
 #
-# Postgres only. Backend (uv) and frontend (npm) run on the host and connect
-# to this DB at localhost:5432. Defaults mirror backend/.env.example
-# (DATABASE_URL=postgresql+asyncpg://jamye:password@localhost:5432/jamye).
+# Postgres + MinIO (S3-compatible object storage). Backend (uv) and frontend
+# (npm) run on the host and connect to these services at localhost. Defaults
+# mirror backend/.env.example (DATABASE_URL=postgresql+asyncpg://jamye:password
+# @localhost:5432/jamye, MINIO_ENDPOINT=http://localhost:9000).
 #
 # Override values via infra/.env (copy from infra/.env.example).
 #
@@ -10,8 +11,14 @@
 #   podman compose up -d          # start in background
 #   podman compose ps             # status
 #   podman compose logs -f db     # follow logs
-#   podman compose down           # stop (data persists in the named volume)
+#   podman compose logs -f minio  # follow MinIO logs
+#   podman compose down           # stop (data persists in the named volumes)
 #   podman compose down -v        # stop and wipe data
+#
+# MinIO console (bucket browser): http://localhost:9001, login with
+# MINIO_ROOT_USER / MINIO_ROOT_PASSWORD below. The bucket itself
+# (MINIO_BUCKET, default "jamye") is created automatically by the backend
+# on startup (see app.core.storage.ensure_bucket), not by this compose file.
 
 services:
   db:
@@ -34,5 +41,30 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    # Pinned deliberately (not :latest) for reproducible dev environments.
+    # Bump by hand when needed — check available tags at
+    # https://hub.docker.com/r/minio/minio/tags before upgrading.
+    image: docker.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: jamye-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-jamye-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password12345}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - jamye-miniodata:/data
+    healthcheck:
+      # `mc` ships inside the minio/minio image itself (no extra client
+      # needed); `curl` is not guaranteed to be present on all base images.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   jamye-pgdata:
+  jamye-miniodata:
