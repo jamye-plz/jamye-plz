@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError
+from app.core.push_endpoint import is_safe_push_endpoint
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
 from app.repositories.notification_repository import (
@@ -230,6 +231,20 @@ class NotificationService:
         subs = await self._push_repo.list_by_user(user_id)
         data = json.dumps(payload)
         for sub in subs:
+            # Defence in depth: re-validate the stored endpoint before an
+            # outbound request. The subscribe-time validator only guards new
+            # POSTs; a row written before it existed (or inserted directly)
+            # could carry a private/loopback endpoint, which would turn this
+            # send into an SSRF. Prune such a row — it can never deliver.
+            if not is_safe_push_endpoint(sub.endpoint):
+                logger.warning(
+                    "pruning push subscription %s (user %s): unsafe endpoint",
+                    sub.id,
+                    user_id,
+                )
+                await self._push_repo.delete(sub)
+                await self._db.commit()
+                continue
             subscription_info = {
                 "endpoint": sub.endpoint,
                 "keys": {"p256dh": sub.p256dh, "auth": sub.auth},

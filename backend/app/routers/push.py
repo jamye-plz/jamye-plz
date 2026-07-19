@@ -1,61 +1,14 @@
 """Push subscription router — Web Push VAPID management."""
 
-import ipaddress
-import socket
-from urllib.parse import urlparse
-
 from fastapi import APIRouter
 from pydantic import BaseModel, field_validator
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
+from app.core.push_endpoint import is_safe_push_endpoint
 from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/push", tags=["push"])
-
-
-def _reject_ssrf_endpoint(endpoint: str) -> str:
-    """Reject push endpoints that could be used for SSRF.
-
-    The stored ``endpoint`` is later handed verbatim to pywebpush, which makes
-    an outbound HTTP request to it. Since it originates from an authenticated
-    but otherwise untrusted client, an attacker could register an internal URL
-    and have the backend connect to it when a push fires. Require https and
-    reject loopback/private/link-local hosts — including non-canonical numeric
-    aliases (``127.1``, ``2130706433``, ``0x7f000001``) that the OS resolver
-    still maps to internal addresses. (DNS-rebinding of a real hostname is out
-    of scope for the homelab threat model; real push services are public
-    https.)
-    """
-    parsed = urlparse(endpoint)
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise ValueError("push endpoint must be an https URL")
-    host = parsed.hostname
-    if host == "localhost":
-        raise ValueError("push endpoint host is not allowed")
-    ip = _as_ip_literal(host)
-    if ip is not None and (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved):
-        raise ValueError("push endpoint host is not allowed")
-    return endpoint
-
-
-def _as_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
-    """Return the IP a literal host denotes, or None for a genuine hostname.
-
-    Handles the canonical dotted form plus the numeric aliases the C resolver
-    accepts (``127.1``, decimal ``2130706433``, hex ``0x7f000001``). Names with
-    letters (``fcm.googleapis.com``) raise in inet_aton and fall through to
-    None so they're treated as hostnames.
-    """
-    try:
-        return ipaddress.ip_address(host)  # canonical IPv4/IPv6
-    except ValueError:
-        pass
-    try:
-        packed = socket.inet_aton(host)  # 127.1 / 2130706433 / 0x7f000001
-    except OSError:
-        return None
-    return ipaddress.ip_address(packed)
 
 
 class PushSubscribeBody(BaseModel):
@@ -66,7 +19,9 @@ class PushSubscribeBody(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def validate_endpoint(cls, v: str) -> str:
-        return _reject_ssrf_endpoint(v)
+        if not is_safe_push_endpoint(v):
+            raise ValueError("push endpoint must be a public https URL")
+        return v
 
 
 class PushUnsubscribeBody(BaseModel):

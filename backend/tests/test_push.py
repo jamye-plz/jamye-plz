@@ -184,7 +184,11 @@ class TestSendPushPrunesExpired:
         monkeypatch.setattr(
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
         )
-        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        subs = [
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/e1", p256dh="p1", auth="a1"
+            )
+        ]
         db = FakeAsyncSession()
         svc, push_repo = _make_service(db, subs)
 
@@ -201,7 +205,11 @@ class TestSendPushPrunesExpired:
         monkeypatch.setattr(
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
         )
-        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        subs = [
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/e1", p256dh="p1", auth="a1"
+            )
+        ]
         db = FakeAsyncSession()
         svc, push_repo = _make_service(db, subs)
 
@@ -216,7 +224,7 @@ class TestSendPushPrunesExpired:
         def fake_webpush(**kwargs: Any) -> str:
             endpoint = kwargs["subscription_info"]["endpoint"]
             calls.append(endpoint)
-            if endpoint == "e1":
+            if endpoint == "https://push.example/e1":
                 raise RuntimeError("network blip")
             return "ok"
 
@@ -225,16 +233,49 @@ class TestSendPushPrunesExpired:
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
         )
         subs = [
-            FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1"),
-            FakeSub(id="s2", user_id="u1", endpoint="e2", p256dh="p2", auth="a2"),
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/e1", p256dh="p1", auth="a1"
+            ),
+            FakeSub(
+                id="s2", user_id="u1", endpoint="https://push.example/e2", p256dh="p2", auth="a2"
+            ),
         ]
         db = FakeAsyncSession()
         svc, push_repo = _make_service(db, subs)
 
         await svc.send_push("u1", PAYLOAD)  # must not raise
 
-        assert calls == ["e1", "e2"]
+        assert calls == ["https://push.example/e1", "https://push.example/e2"]
         assert push_repo.deleted == []
+
+    async def test_unsafe_stored_endpoint_is_pruned_not_sent(self, monkeypatch) -> None:
+        """A row whose endpoint predates the validator must be pruned, not sent."""
+        sent: list[str] = []
+        monkeypatch.setattr(
+            notification_service_module,
+            "webpush",
+            lambda **kw: sent.append(kw["subscription_info"]["endpoint"]),
+        )
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        subs = [
+            FakeSub(id="bad", user_id="u1", endpoint="http://127.0.0.1/x", p256dh="p", auth="a"),
+            FakeSub(
+                id="ok",
+                user_id="u1",
+                endpoint="https://push.example/ok",
+                p256dh="p",
+                auth="a",
+            ),
+        ]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert [s.id for s in push_repo.deleted] == ["bad"]
+        assert sent == ["https://push.example/ok"]
 
 
 # ── (c) disabled → no webpush calls (silent no-op) ──────────────────────────
@@ -248,7 +289,11 @@ class TestSendPushDisabled:
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=False)
         )
 
-        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        subs = [
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/e1", p256dh="p1", auth="a1"
+            )
+        ]
         db = FakeAsyncSession()
         svc, push_repo = _make_service(db, subs)
 
@@ -283,7 +328,11 @@ class TestPayloadContract:
         monkeypatch.setattr(
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
         )
-        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        subs = [
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/e1", p256dh="p1", auth="a1"
+            )
+        ]
         db = FakeAsyncSession()
         svc, _ = _make_service(db, subs)
 
