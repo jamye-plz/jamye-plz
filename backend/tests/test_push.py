@@ -521,3 +521,46 @@ class TestVapidPublicKeyEndpoint:
         )
         out = await push_module.get_vapid_public_key()
         assert out.public_key == ""
+
+
+# ── outbound push POST refuses redirects (SSRF-via-redirect) ─────────────────
+
+
+class TestNoRedirectSession:
+    def test_post_forces_allow_redirects_false(self, monkeypatch) -> None:
+        import requests
+
+        from app.services.notification_service import _NoRedirectSession
+
+        captured: dict[str, Any] = {}
+
+        def fake_super_post(self, url, **kwargs):  # noqa: ANN001
+            captured.update(kwargs)
+            return SimpleNamespace(status_code=201)
+
+        monkeypatch.setattr(requests.Session, "post", fake_super_post)
+        _NoRedirectSession().post("https://push.example/x", data=b"d")
+        assert captured["allow_redirects"] is False
+
+    async def test_send_push_passes_no_redirect_session(self, monkeypatch) -> None:
+        from app.services.notification_service import _NoRedirectSession
+
+        seen: list[Any] = []
+        monkeypatch.setattr(
+            notification_service_module,
+            "webpush",
+            lambda **kw: seen.append(kw.get("requests_session")),
+        )
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        subs = [
+            FakeSub(id="s1", user_id="u1", endpoint="https://push.example/1", p256dh="p", auth="a")
+        ]
+        db = FakeAsyncSession()
+        svc, _ = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert len(seen) == 1
+        assert isinstance(seen[0], _NoRedirectSession)

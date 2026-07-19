@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import requests
 from pywebpush import webpush
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +34,20 @@ logger = logging.getLogger(__name__)
 # deliver-now-or-discard, which defeats the point of push for a suspended app).
 PUSH_REQUEST_TIMEOUT_SECONDS = 10
 PUSH_TTL_SECONDS = 60 * 60 * 24  # 1 day
+
+
+class _NoRedirectSession(requests.Session):
+    """requests session that never follows redirects on a push POST.
+
+    is_safe_push_endpoint only vets the *stored* URL; requests would otherwise
+    follow a 3xx to an attacker-controlled internal host (e.g. a public https
+    endpoint that 302s to http://169.254.169.254/…), re-opening the SSRF hole.
+    With redirects off, such a response just fails the send safely.
+    """
+
+    def post(self, url, **kwargs):  # type: ignore[override]
+        kwargs.setdefault("allow_redirects", False)
+        return super().post(url, **kwargs)
 
 
 class NotificationService:
@@ -271,6 +286,9 @@ class NotificationService:
                     vapid_claims=vapid_claims,
                     ttl=PUSH_TTL_SECONDS,
                     timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
+                    # Fresh per-send session (requests.Session isn't guaranteed
+                    # thread-safe under asyncio.to_thread) that refuses redirects.
+                    requests_session=_NoRedirectSession(),
                 )
             except Exception as exc:  # noqa: BLE001 - one bad sub must not break the batch
                 # WebPushException carries a response with the push service's
