@@ -77,7 +77,15 @@ export async function detachPushOnLogout(): Promise<void> {
 		if (!reg) return;
 		const sub = await reg.pushManager.getSubscription();
 		if (!sub) return;
-		await unsubscribePush(sub.endpoint);
+		// Server delete and browser unsubscribe are independent: if the server
+		// call fails (transient 5xx/network) we must STILL drop the live browser
+		// subscription, otherwise this device keeps showing the previous
+		// account's pushes. Each is best-effort on its own.
+		try {
+			await unsubscribePush(sub.endpoint);
+		} catch {
+			// keep going — still detach the browser subscription below
+		}
 		await sub.unsubscribe();
 	} catch {
 		// Logout must proceed regardless of push cleanup failures.

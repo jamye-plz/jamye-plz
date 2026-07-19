@@ -61,30 +61,46 @@ self.addEventListener('notificationclick', (event) => {
 	);
 });
 
+function base64urlToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+	const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+	const raw = atob((base64 + padding).replace(/-/g, '+').replace(/_/g, '/'));
+	const out = new Uint8Array(new ArrayBuffer(raw.length));
+	for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+	return out;
+}
+
 // The browser can invalidate/rotate a push subscription at any time (key
-// rotation, expiry). Re-subscribe with the same applicationServerKey and
-// hand the new subscription to the backend so future pushes still land.
+// rotation, expiry). Re-subscribe with the CURRENT server VAPID key — fetched
+// fresh, not `oldSubscription`'s key, which may be stale after a server-side
+// rotation (a subscription bound to the old public key would be rejected by
+// the push service once the backend signs with the new private key). Fall back
+// to the old key only if the fetch fails.
 self.addEventListener('pushsubscriptionchange', (event) => {
-	const applicationServerKey = event.oldSubscription?.options.applicationServerKey;
 	event.waitUntil(
-		self.registration.pushManager
-			.subscribe({
+		(async () => {
+			let applicationServerKey: BufferSource | undefined =
+				event.oldSubscription?.options.applicationServerKey ?? undefined;
+			try {
+				const res = await fetch('/api/push/vapid-public-key', { credentials: 'include' });
+				if (res.ok) {
+					const { public_key } = (await res.json()) as { public_key: string };
+					if (public_key) applicationServerKey = base64urlToUint8Array(public_key);
+				}
+			} catch {
+				// keep the old key as a best-effort fallback
+			}
+			if (!applicationServerKey) return;
+			const sub = await self.registration.pushManager.subscribe({
 				userVisibleOnly: true,
 				applicationServerKey
-			})
-			.then((sub) => {
-				const raw = sub.toJSON();
-				const keys = raw.keys as { p256dh: string; auth: string };
-				return fetch('/api/push/subscribe', {
-					method: 'POST',
-					credentials: 'include',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						endpoint: sub.endpoint,
-						p256dh: keys.p256dh,
-						auth: keys.auth
-					})
-				});
-			})
+			});
+			const keys = sub.toJSON().keys as { p256dh: string; auth: string };
+			await fetch('/api/push/subscribe', {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ endpoint: sub.endpoint, p256dh: keys.p256dh, auth: keys.auth })
+			});
+		})()
 	);
 });
