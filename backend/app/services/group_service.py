@@ -103,8 +103,11 @@ class GroupService:
         return out
 
     async def update_group_name(self, group_id: str, actor_id: str, name: str) -> Group:
-        # require_owner -> require_membership already 404s a missing/soft-deleted
-        # group before the ownership check, so no separate existence check here.
+        # Row-lock the group so a rename serializes with a concurrent ownership
+        # transfer (same race as delete: a former owner must not rename after
+        # ownership moved).
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
         await self.require_owner(group_id, actor_id)
         group = await self._group_repo.update_name(group_id, name)
         if group is None:
@@ -114,6 +117,12 @@ class GroupService:
         return group
 
     async def soft_delete_group(self, group_id: str, actor_id: str) -> None:
+        # Row-lock the group so this serializes with a concurrent ownership
+        # transfer: without the lock the owner check can pass, then soft_delete
+        # waits on the transfer's lock and commits anyway — letting a former
+        # owner delete the group right after ownership moved.
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
         await self.require_owner(group_id, actor_id)
         await self._group_repo.soft_delete(group_id)
         await self._db.commit()
