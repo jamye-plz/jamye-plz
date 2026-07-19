@@ -45,6 +45,10 @@ async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     # so check membership BEFORE validate() (which would 410 a used/expired code).
     invite = await invite_svc.get_invite_or_404(code)
     group_id = invite.group_id
+    # Soft-deleted groups must look gone to invites too (404) — including the
+    # existing-member fast path below, which otherwise answers joined:false
+    # and redirects the SPA into a group that no longer exists.
+    await group_svc.get_group_or_404(group_id)
     if await group_svc.is_member(group_id, current_user.id):
         return {"group_id": group_id, "joined": False}
     # New member: validate() row-locks the invite + checks expiry/exhaustion,
