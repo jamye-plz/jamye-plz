@@ -1,9 +1,11 @@
 <script lang="ts">
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import { onMount } from 'svelte';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
+	import { getVapidPublicKey, requestAndSubscribe, unsubscribePush } from '$lib/api/push.api';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
 
@@ -34,6 +36,60 @@
 		const name = nickname.trim();
 		if (!name || name === meQuery.data?.nickname || save.isPending) return;
 		save.mutate(name);
+	}
+
+	// Push notifications: hidden until we know the server has VAPID keys
+	// configured *and* this browser supports the Push API.
+	let pushSectionVisible = $state(false);
+	let pushSubscribed = $state(false);
+	let pushBusy = $state(false);
+	let pushHint = $state('');
+	let vapidPublicKey: string | null = null;
+
+	onMount(() => {
+		if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+		(async () => {
+			try {
+				const { public_key } = await getVapidPublicKey();
+				if (!public_key) return; // push disabled server-side (no VAPID keys)
+				vapidPublicKey = public_key;
+				const reg = await navigator.serviceWorker.ready;
+				const sub = await reg.pushManager.getSubscription();
+				pushSubscribed = !!sub;
+				pushSectionVisible = true;
+			} catch {
+				// Keep the toggle hidden if the check fails (offline, no SW, etc.)
+			}
+		})();
+	});
+
+	async function onTogglePush(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const turnOn = input.checked;
+		pushBusy = true;
+		pushHint = '';
+		try {
+			if (turnOn) {
+				const sub = await requestAndSubscribe(vapidPublicKey!);
+				if (!sub) {
+					input.checked = false;
+					pushHint = '브라우저 알림 권한이 차단되어 있어요';
+					return;
+				}
+				pushSubscribed = true;
+			} else {
+				const reg = await navigator.serviceWorker.ready;
+				const sub = await reg.pushManager.getSubscription();
+				await sub?.unsubscribe();
+				await unsubscribePush();
+				pushSubscribed = false;
+			}
+		} catch {
+			input.checked = !turnOn;
+			pushHint = '알림 설정을 변경하지 못했어요. 잠시 후 다시 시도해 주세요.';
+		} finally {
+			pushBusy = false;
+		}
 	}
 
 	let loggingOut = $state(false);
@@ -123,6 +179,32 @@
 				{/if}
 				<p class="text-xs text-base-content/50">프로필 사진 변경은 곧 지원될 예정이에요.</p>
 			</form>
+
+			{#if pushSectionVisible}
+				<section class="space-y-2 border-t border-base-300 pt-4">
+					<div class="flex items-center justify-between gap-3">
+						<div class="min-w-0">
+							<label for="push-toggle" class="block text-sm font-medium text-base-content">
+								푸시 알림
+							</label>
+							<p class="text-xs text-base-content/50">새 게시글과 채팅 알림을 받아요.</p>
+						</div>
+						<input
+							id="push-toggle"
+							type="checkbox"
+							role="switch"
+							class="toggle shrink-0 toggle-primary"
+							checked={pushSubscribed}
+							disabled={pushBusy}
+							aria-label="푸시 알림"
+							onchange={onTogglePush}
+						/>
+					</div>
+					{#if pushHint}
+						<p class="text-xs text-error" role="alert">{pushHint}</p>
+					{/if}
+				</section>
+			{/if}
 
 			<div class="border-t border-base-300 pt-4">
 				<button

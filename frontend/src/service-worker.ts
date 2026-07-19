@@ -36,7 +36,6 @@ self.addEventListener('activate', (event) => {
 	event.waitUntil(self.clients.claim());
 });
 
-// TODO: Add push notification handling when backend VAPID is provisioned
 self.addEventListener('push', (event) => {
 	if (!event.data) return;
 	const data = event.data.json() as { title: string; body: string; url?: string };
@@ -59,5 +58,33 @@ self.addEventListener('notificationclick', (event) => {
 			if (client) return client.focus();
 			return self.clients.openWindow(url);
 		})
+	);
+});
+
+// The browser can invalidate/rotate a push subscription at any time (key
+// rotation, expiry). Re-subscribe with the same applicationServerKey and
+// hand the new subscription to the backend so future pushes still land.
+self.addEventListener('pushsubscriptionchange', (event) => {
+	const applicationServerKey = event.oldSubscription?.options.applicationServerKey;
+	event.waitUntil(
+		self.registration.pushManager
+			.subscribe({
+				userVisibleOnly: true,
+				applicationServerKey
+			})
+			.then((sub) => {
+				const raw = sub.toJSON();
+				const keys = raw.keys as { p256dh: string; auth: string };
+				return fetch('/api/push/subscribe', {
+					method: 'POST',
+					credentials: 'include',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						endpoint: sub.endpoint,
+						p256dh: keys.p256dh,
+						auth: keys.auth
+					})
+				});
+			})
 	);
 });
