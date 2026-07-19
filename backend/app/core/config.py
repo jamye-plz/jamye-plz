@@ -175,6 +175,18 @@ class Settings(BaseSettings):
                 "APP_ENV=production (object storage must not silently fall back "
                 "to plain, unsigned URLs in production)"
             )
+        # The endpoint is embedded verbatim into presigned URLs handed to
+        # browsers, so a localhost/container-internal or plain-http endpoint
+        # would make every upload/read link unusable (or downgrade it to
+        # http) even though the app itself starts fine.
+        if self.is_production and (
+            _is_localhost(self.minio_endpoint) or not self.minio_endpoint.startswith("https://")
+        ):
+            raise ValueError(
+                "MINIO_ENDPOINT must be a browser-reachable https:// URL when "
+                "APP_ENV=production (it is embedded in presigned URLs returned "
+                f"to clients); got: {self.minio_endpoint}"
+            )
         return self
 
 

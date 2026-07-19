@@ -314,10 +314,39 @@ class TestProdStorageKeysFailClosed:
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@db.example.com:5432/jamye")
         monkeypatch.setenv("MINIO_ACCESS_KEY", "real-access-key")
         monkeypatch.setenv("MINIO_SECRET_KEY", "real-secret-key")
+        monkeypatch.setenv("MINIO_ENDPOINT", "https://media.example.com")
 
         settings = Settings(_env_file=None)
 
         assert settings.minio_enabled is True
+
+    def test_raises_when_production_endpoint_is_localhost(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.setenv("JWT_SECRET", "x" * 40)
+        monkeypatch.setenv("FRONTEND_ORIGIN", "https://app.example.com")
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@db.example.com:5432/jamye")
+        monkeypatch.setenv("MINIO_ACCESS_KEY", "real-access-key")
+        monkeypatch.setenv("MINIO_SECRET_KEY", "real-secret-key")
+        monkeypatch.setenv("MINIO_ENDPOINT", "http://localhost:9000")
+
+        with pytest.raises(ValueError, match="MINIO_ENDPOINT"):
+            Settings(_env_file=None)
+
+    def test_raises_when_production_endpoint_is_plain_http(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.setenv("JWT_SECRET", "x" * 40)
+        monkeypatch.setenv("FRONTEND_ORIGIN", "https://app.example.com")
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@db.example.com:5432/jamye")
+        monkeypatch.setenv("MINIO_ACCESS_KEY", "real-access-key")
+        monkeypatch.setenv("MINIO_SECRET_KEY", "real-secret-key")
+        monkeypatch.setenv("MINIO_ENDPOINT", "http://media.example.com")
+
+        with pytest.raises(ValueError, match="MINIO_ENDPOINT"):
+            Settings(_env_file=None)
 
     def test_dev_env_does_not_require_minio_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("APP_ENV", "development")
