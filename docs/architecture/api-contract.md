@@ -44,13 +44,13 @@
 
 | 메서드 | 경로 | 설명 | 인증 |
 |---|---|---|---|
-| POST | `/api/groups/{id}/topics` | 주제 시드 등록 (title만, status=seed) | 필요 (멤버) |
-| PATCH | `/api/topics/{id}` | enrich: 본문 추가 (status=enriched). 작성자만 | 필요 (작성자) |
-| GET | `/api/groups/{id}/topics?cursor=&date=` | 일별 타임라인 (cursor 페이지네이션) | 필요 (멤버) |
-| GET | `/api/topics/{id}` | 주제 상세 (본문·미디어·태그) | 필요 (멤버) |
-| POST | `/api/topics/{id}/media/presign` | MinIO presigned PUT URL 발급 | 필요 (작성자) |
-| POST | `/api/topics/{id}/media` | 업로드 확정 (object_key, 치수 등록) | 필요 (작성자) |
-| PUT | `/api/topics/{id}/tags` | ai/user 태그 동기화 | 필요 (작성자) |
+| POST | `/api/groups/{gid}/topics` | 주제 시드 등록 (title만, status=seed) | 필요 (멤버) |
+| PATCH | `/api/groups/{gid}/topics/{tid}` | enrich: 본문 추가 (status=enriched). 작성자만 | 필요 (작성자) |
+| GET | `/api/groups/{gid}/topics?cursor=&date=` | 일별 타임라인 (cursor 페이지네이션) | 필요 (멤버) |
+| GET | `/api/groups/{gid}/topics/{tid}` | 주제 상세 (본문·미디어·태그, 미디어 URL은 단기 presigned GET) | 필요 (멤버) |
+| POST | `/api/groups/{gid}/topics/{tid}/media/presign` | MinIO presigned PUT URL 발급 (이미지 MIME allowlist + 10MiB 이하) | 필요 (작성자) |
+| POST | `/api/groups/{gid}/topics/{tid}/media/confirm` | 업로드 확정 (object_key 형식·MIME 재검증 후 치수 등록) | 필요 (작성자) |
+| PUT | `/api/groups/{gid}/topics/{tid}/tags` | ai/user 태그 동기화 | 필요 (작성자) |
 
 ### chat — 채팅 히스토리
 
@@ -97,7 +97,7 @@
 }
 ```
 
-### PATCH /api/topics/{id} — enrich
+### PATCH /api/groups/{gid}/topics/{tid} — enrich
 
 나중에 본문을 붙이면 상태가 `enriched`로 바뀐다. 작성자만 수정할 수 있다.
 
@@ -114,9 +114,15 @@
 }
 ```
 
-### POST /api/topics/{id}/media/presign — 업로드 URL 발급
+### 미디어 업로드/조회 흐름
 
-클라이언트는 발급받은 presigned URL로 MinIO에 직접 PUT 업로드한 뒤, `POST /api/topics/{id}/media`로 확정한다.
+주제 이미지는 실제 오브젝트 스토리지(MinIO, S3 호환)에 저장한다. 클라이언트는 presign으로 발급받은 URL로 MinIO에 직접 PUT 업로드한 뒤, `POST /api/groups/{gid}/topics/{tid}/media/confirm`으로 확정(confirm)한다. 조회는 `GET /api/groups/{gid}/topics/{tid}` 응답의 `media[].url`이 매 요청마다 새로 발급되는 **단기(600초) presigned GET**이다 — 버킷이 프라이빗이라 서명 없는 URL로는 접근할 수 없다(정책 B). `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`가 설정되지 않은 로컬 데모 환경에서는 presign 발급·미디어 조회 모두 서명 없는 결정적 로컬 fallback URL을 반환한다([tech-stack](./tech-stack.md), [deployment](./deployment.md) 참고).
+
+`content_type`/`byte_size`는 presign과 confirm 양쪽에서 동일하게 검증한다: 이미지 MIME allowlist(`image/gif`, `image/jpeg`, `image/png`, `image/webp`)만 허용하고, `byte_size`는 10MiB(10,485,760바이트)를 넘으면 422를 반환한다. confirm은 추가로 `object_key`가 presign이 발급한 형식(`topics/{topic_id}/{uuid4}`)인지 검사해, 다른 topic이나 다른 요청에서 관찰한 object_key를 재사용하려는 시도를 422로 거부한다(BOLA 방지).
+
+### POST /api/groups/{gid}/topics/{tid}/media/presign — 업로드 URL 발급
+
+`upload_url`에는 `content_type`·`byte_size`가 서명에 바인딩돼 있어, 실제 PUT 요청의 `Content-Type`/`Content-Length`가 일치하지 않으면 MinIO가 업로드를 거부한다.
 
 ```json
 // 요청
@@ -124,10 +130,40 @@
 
 // 응답 200
 {
-  "object_key": "topics/tpc_01HX/img_a1b2c3.webp",
-  "upload_url": "https://minio.example/jamye/topics/tpc_01HX/img_a1b2c3.webp?X-Amz-Signature=...",
-  "expires_in": 600
+  "object_key": "topics/tpc_01HX/018f2e6a-4b1e-7c3a-9c2d-6a1b2c3d4e5f",
+  "upload_url": "https://minio.example/jamye/topics/tpc_01HX/018f2e6a-4b1e-7c3a-9c2d-6a1b2c3d4e5f?X-Amz-Signature=...",
+  "expires_in": 3600
 }
+
+// content_type이 allowlist 밖이거나 byte_size가 10MiB를 넘으면 422
+```
+
+### POST /api/groups/{gid}/topics/{tid}/media/confirm — 업로드 확정
+
+```json
+// 요청
+{
+  "object_key": "topics/tpc_01HX/018f2e6a-4b1e-7c3a-9c2d-6a1b2c3d4e5f",
+  "content_type": "image/webp",
+  "width": 1080,
+  "height": 1350,
+  "byte_size": 184320
+}
+
+// 응답 201
+{
+  "id": "med_01HX...",
+  "topic_id": "tpc_01HX...",
+  "type": "image/webp",
+  "object_key": "topics/tpc_01HX/018f2e6a-4b1e-7c3a-9c2d-6a1b2c3d4e5f",
+  "width": 1080,
+  "height": 1350,
+  "byte_size": 184320,
+  "created_at": "2026-06-16T09:20:00Z"
+}
+
+// object_key가 topics/{topic_id}/{uuid4} 형식이 아니거나(다른 topic 소속 등) content_type/byte_size가
+// 허용 범위를 벗어나면 422
 ```
 
 ## WebSocket 프로토콜
