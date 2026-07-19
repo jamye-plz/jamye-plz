@@ -77,13 +77,29 @@
 		rename.mutate(name);
 	}
 
+	// After the group is gone for us (deleted or left), drop every cache scoped
+	// to it — otherwise the 5-minute staleTime lets Back / an internal link
+	// re-render the now-inaccessible group and its topics from cache instead of
+	// refetching the backend 404.
+	function dropGroupCaches() {
+		queryClient.invalidateQueries({ queryKey: ['groups'] });
+		for (const key of [
+			['group', groupId],
+			['members', groupId],
+			['topics', groupId],
+			['topic-dates', groupId]
+		]) {
+			queryClient.removeQueries({ queryKey: key });
+		}
+	}
+
 	// --- Delete group (owner only) ---
 	let deleteDialog = $state<HTMLDialogElement | null>(null);
 
 	const del = createMutation(() => ({
 		mutationFn: () => deleteGroup(groupId),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['groups'] });
+			dropGroupCaches();
 			goto(resolve('/groups'));
 		}
 	}));
@@ -94,7 +110,7 @@
 	const leave = createMutation(() => ({
 		mutationFn: (userId: string) => leaveGroup(groupId, userId),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['groups'] });
+			dropGroupCaches();
 			goto(resolve('/groups'));
 		}
 	}));
