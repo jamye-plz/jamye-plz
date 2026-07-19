@@ -5,8 +5,19 @@ export function subscribePush(payload: PushSubscriptionPayload): Promise<void> {
 	return apiPost<void>('/push/subscribe', payload);
 }
 
-export function unsubscribePush(): Promise<void> {
-	return apiDelete<void>('/push/subscribe');
+/**
+ * Unsubscribe on the server. Pass an `endpoint` to remove just this device's
+ * subscription (so other devices keep receiving pushes); omit it to remove all
+ * of the current user's subscriptions.
+ */
+export function unsubscribePush(endpoint?: string): Promise<void> {
+	return apiDelete<void>('/push/subscribe', endpoint ? { endpoint } : undefined);
+}
+
+/** Re-register an already-present browser subscription for the current user. */
+export function reconcilePush(sub: PushSubscription): Promise<void> {
+	const keys = sub.toJSON().keys as { p256dh: string; auth: string };
+	return subscribePush({ endpoint: sub.endpoint, p256dh: keys.p256dh, auth: keys.auth });
 }
 
 /** Fetch the server's VAPID public key. Empty string means push is disabled. */

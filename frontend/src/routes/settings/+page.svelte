@@ -5,7 +5,12 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
-	import { getVapidPublicKey, requestAndSubscribe, unsubscribePush } from '$lib/api/push.api';
+	import {
+		getVapidPublicKey,
+		reconcilePush,
+		requestAndSubscribe,
+		unsubscribePush
+	} from '$lib/api/push.api';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
 
@@ -55,6 +60,18 @@
 				vapidPublicKey = public_key;
 				const reg = await navigator.serviceWorker.ready;
 				const sub = await reg.pushManager.getSubscription();
+				// A subscription may already exist for this browser but belong to
+				// a different (or no longer synced) user — e.g. a prior /subscribe
+				// POST failed, or another account used this browser. Reconcile it
+				// to the current user before showing the toggle as enabled so we
+				// never claim "on" while no row is keyed to this user.
+				if (sub) {
+					try {
+						await reconcilePush(sub);
+					} catch {
+						// Network hiccup — still reflect the browser's own state.
+					}
+				}
 				pushSubscribed = !!sub;
 				pushSectionVisible = true;
 			} catch {
@@ -80,8 +97,10 @@
 			} else {
 				const reg = await navigator.serviceWorker.ready;
 				const sub = await reg.pushManager.getSubscription();
+				// Remove only THIS device's row so the user's other devices keep
+				// receiving pushes.
+				await unsubscribePush(sub?.endpoint);
 				await sub?.unsubscribe();
-				await unsubscribePush();
 				pushSubscribed = false;
 			}
 		} catch {
