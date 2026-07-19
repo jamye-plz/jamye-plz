@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 # deliver-now-or-discard, which defeats the point of push for a suspended app).
 PUSH_REQUEST_TIMEOUT_SECONDS = 10
 PUSH_TTL_SECONDS = 60 * 60 * 24  # 1 day
+# Cap on push subscriptions kept per user. Real users have a handful of devices;
+# this bounds the per-user send fan-out so one account can't register hundreds
+# of slow endpoints and delay/starve group notifications for everyone else.
+MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10
 
 
 class _NoRedirectSession(requests.Session):
@@ -188,6 +192,10 @@ class NotificationService:
         sub = await self._push_repo.upsert(
             user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth
         )
+        # Cap per-user fan-out: drop all but the most-recent devices so an
+        # account can't register hundreds of slow endpoints and starve group
+        # notifications for everyone else.
+        await self._push_repo.prune_to_limit(user_id, MAX_PUSH_SUBSCRIPTIONS_PER_USER)
         await self._db.commit()
         return sub
 

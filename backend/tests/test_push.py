@@ -54,6 +54,7 @@ class FakePushRepo:
     def __init__(self, subs: list[FakeSub]) -> None:
         self._subs = subs
         self.deleted: list[FakeSub] = []
+        self.prune_calls: list[tuple[str, int]] = []
 
     async def list_by_user(self, user_id: str) -> list[FakeSub]:
         return [s for s in self._subs if s.user_id == user_id]
@@ -65,6 +66,20 @@ class FakePushRepo:
     async def delete_by_id(self, sub_id: str) -> None:
         self.deleted.append(sub_id)
         self._subs = [s for s in self._subs if s.id != sub_id]
+
+    async def upsert(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> FakeSub:
+        for s in self._subs:
+            if s.endpoint == endpoint:
+                s.user_id, s.p256dh, s.auth = user_id, p256dh, auth
+                return s
+        sub = FakeSub(id=endpoint, user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth)
+        self._subs.append(sub)
+        return sub
+
+    async def prune_to_limit(self, user_id: str, limit: int) -> None:
+        self.prune_calls.append((user_id, limit))
+        kept = [s for s in self._subs if s.user_id == user_id][-limit:]
+        self._subs = [s for s in self._subs if s.user_id != user_id or s in kept]
 
 
 def _settings(*, vapid_enabled: bool) -> SimpleNamespace:
@@ -564,3 +579,21 @@ class TestNoRedirectSession:
 
         assert len(seen) == 1
         assert isinstance(seen[0], _NoRedirectSession)
+
+
+# ── per-user subscription cap bounds fan-out ─────────────────────────────────
+
+
+class TestSubscriptionCap:
+    async def test_upsert_prunes_to_per_user_limit(self) -> None:
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs=[])
+
+        await svc.upsert_push_subscription(
+            user_id="u1", endpoint="https://push.example/new", p256dh="p", auth="a"
+        )
+
+        assert push_repo.prune_calls == [
+            ("u1", notification_service_module.MAX_PUSH_SUBSCRIPTIONS_PER_USER)
+        ]
+        assert db.commits == 1

@@ -190,10 +190,36 @@ class PushSubscriptionRepository:
         )
         stmt = insert_stmt.on_conflict_do_update(
             index_elements=[PushSubscription.endpoint],
-            set_={"user_id": user_id, "p256dh": p256dh, "auth": auth},
+            # Bump created_at on re-register so this device counts as most-recent
+            # for the per-user cap prune (prune_to_limit) — a device that just
+            # re-subscribed must never be the one pruned.
+            set_={"user_id": user_id, "p256dh": p256dh, "auth": auth, "created_at": func.now()},
         ).returning(PushSubscription)
         result = await self._db.execute(stmt)
         return result.scalar_one()
+
+    async def prune_to_limit(self, user_id: str, limit: int) -> None:
+        """Keep only the `limit` most-recently-registered subscriptions for a
+        user, deleting the rest.
+
+        Bounds per-user push fan-out: without a cap an account could register
+        hundreds of (slow) endpoints and make every group notification spend up
+        to timeout*N on it, starving other recipients. Real users have a handful
+        of devices.
+        """
+        keep = (
+            select(PushSubscription.id)
+            .where(PushSubscription.user_id == user_id)
+            .order_by(PushSubscription.created_at.desc(), PushSubscription.id.desc())
+            .limit(limit)
+            .scalar_subquery()
+        )
+        await self._db.execute(
+            sa_delete(PushSubscription).where(
+                PushSubscription.user_id == user_id,
+                PushSubscription.id.not_in(keep),
+            )
+        )
 
     async def delete(self, sub: PushSubscription) -> None:
         await self._db.delete(sub)
