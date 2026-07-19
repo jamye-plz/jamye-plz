@@ -8,7 +8,7 @@
 	import {
 		detachPushOnLogout,
 		getVapidPublicKey,
-		reconcilePush,
+		reconcileOrRecreate,
 		requestAndSubscribe,
 		unsubscribePush
 	} from '$lib/api/push.api';
@@ -59,25 +59,18 @@
 				const { public_key } = await getVapidPublicKey();
 				if (!public_key) return; // push disabled server-side (no VAPID keys)
 				vapidPublicKey = public_key;
-				const reg = await navigator.serviceWorker.ready;
-				const sub = await reg.pushManager.getSubscription();
-				// A subscription may already exist for this browser but belong to
-				// a different (or no longer synced) user — e.g. a prior /subscribe
-				// POST failed, or another account used this browser. Reconcile it
-				// to the current user BEFORE claiming the toggle is on. If that
-				// fails we must not show "on" (there is no row for this user, so
-				// delivery would target the stale owner or no one) — reflect
-				// off + a hint so the user can re-enable to retry.
-				if (sub) {
-					try {
-						await reconcilePush(sub);
-						pushSubscribed = true;
-					} catch {
-						pushSubscribed = false;
-						pushHint = '알림 상태를 확인하지 못했어요. 다시 켜서 등록해 주세요.';
-					}
-				} else {
+				// An existing browser subscription may belong to a different user
+				// (a prior /subscribe POST failed, or another account used this
+				// browser) or be signed under a rotated VAPID key. reconcileOrRecreate
+				// reattaches it to the current user, or drops+recreates it under the
+				// current key, before we claim the toggle is on. On failure we must
+				// NOT show "on" (no row for this user → delivery targets the stale
+				// owner or no one) — reflect off + a hint so the user can retry.
+				try {
+					pushSubscribed = await reconcileOrRecreate(vapidPublicKey);
+				} catch {
 					pushSubscribed = false;
+					pushHint = '알림 상태를 확인하지 못했어요. 다시 켜서 등록해 주세요.';
 				}
 				pushSectionVisible = true;
 			} catch {
@@ -101,8 +94,10 @@
 				}
 				pushSubscribed = true;
 			} else {
-				const reg = await navigator.serviceWorker.ready;
-				const sub = await reg.pushManager.getSubscription();
+				// getRegistration (not `.ready`, which never settles without a
+				// registered SW) so this can't hang.
+				const reg = await navigator.serviceWorker.getRegistration();
+				const sub = reg ? await reg.pushManager.getSubscription() : null;
 				// Remove only THIS device's row so the user's other devices keep
 				// receiving pushes. If the local subscription is already gone
 				// (revoked/expired), skip the server call — passing no endpoint
