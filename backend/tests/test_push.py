@@ -410,6 +410,22 @@ class TestEndpointSsrfValidation:
         with pytest.raises(ValueError):
             PushSubscribeBody(endpoint="https://127.0.0.1:9000/x", p256dh="p", auth="a")
 
+    def test_rejects_numeric_alias_hosts(self) -> None:
+        """127.1 / decimal / hex forms the OS resolver maps to loopback/metadata."""
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        for host in ("127.1", "2130706433", "0x7f000001", "0xa9fea9fe"):
+            with pytest.raises(ValueError):
+                PushSubscribeBody(endpoint=f"https://{host}/x", p256dh="p", auth="a")
+
+    def test_accepts_public_ip_literal(self) -> None:
+        from app.routers.push import PushSubscribeBody
+
+        body = PushSubscribeBody(endpoint="https://93.184.216.34/x", p256dh="p", auth="a")
+        assert body.endpoint.startswith("https://")
+
 
 # ── vapid-public-key endpoint gates on full provisioning ─────────────────────
 
