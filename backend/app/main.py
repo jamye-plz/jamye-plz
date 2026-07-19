@@ -167,7 +167,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         if active_chatroom and active_chatroom != chatroom_id:
                             ws_hub.leave(active_chatroom, websocket)
                         active_chatroom = chatroom_id
-                        ws_hub.join(chatroom_id, websocket)
+                        ws_hub.join(chatroom_id, websocket, user_id)
                         # No join ack: it surfaced as a "Joined chatroom <uuid>"
                         # system line in the room. Errors still report via "error".
                     except AppError as exc:

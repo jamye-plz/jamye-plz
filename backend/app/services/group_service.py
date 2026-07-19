@@ -1,9 +1,13 @@
 """GroupService — group and membership business logic."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import ws_hub
 from app.core.exceptions import (
     AlreadyMemberError,
+    ConflictError,
     ForbiddenError,
     GroupFullError,
     NotFoundError,
@@ -17,6 +21,8 @@ from app.repositories.group_repository import (
 )
 from app.repositories.user_repository import UserRepository
 from app.schemas.group import GroupMemberOut
+
+logger = logging.getLogger(__name__)
 
 
 class GroupService:
@@ -54,6 +60,12 @@ class GroupService:
         return group
 
     async def require_membership(self, group_id: str, user_id: str) -> Membership:
+        """Verify the group is alive (not soft-deleted) and the user belongs to
+        it. Checking existence first, before membership, closes the gap where a
+        soft-deleted group's memberships row is untouched: without this, every
+        membership-gated path (member list, topics, chatrooms, invites,
+        require_owner) would keep working against a "deleted" group."""
+        await self.get_group_or_404(group_id)
         membership = await self._membership_repo.get(group_id, user_id)
         if membership is None:
             raise ForbiddenError("You are not a member of this group")
@@ -89,6 +101,94 @@ class GroupService:
         # Owner first, then members in join order.
         out.sort(key=lambda x: (x.role != "owner", x.joined_at))
         return out
+
+    async def update_group_name(self, group_id: str, actor_id: str, name: str) -> Group:
+        # require_owner -> require_membership already 404s a missing/soft-deleted
+        # group before the ownership check, so no separate existence check here.
+        await self.require_owner(group_id, actor_id)
+        group = await self._group_repo.update_name(group_id, name)
+        if group is None:
+            raise NotFoundError("Group", group_id)
+        await self._db.commit()
+        await self._db.refresh(group)
+        return group
+
+    async def soft_delete_group(self, group_id: str, actor_id: str) -> None:
+        await self.require_owner(group_id, actor_id)
+        await self._group_repo.soft_delete(group_id)
+        await self._db.commit()
+
+    async def remove_member(self, group_id: str, actor_id: str, target_user_id: str) -> None:
+        """Owner-only removal of another member. Owner removing self is not
+        allowed here — ownership must be transferred first (leave semantics)."""
+        await self.require_owner(group_id, actor_id)
+        target_membership = await self._membership_repo.get(group_id, target_user_id)
+        if target_membership is None:
+            raise NotFoundError("Member", target_user_id)
+        if target_user_id == actor_id:
+            raise ConflictError("owner must transfer ownership before leaving")
+        await self._membership_repo.delete(target_membership)
+        await self._db.commit()
+        await self._evict_from_group_chatrooms(group_id, target_user_id)
+
+    async def leave_group(self, group_id: str, actor_id: str) -> None:
+        membership = await self.require_membership(group_id, actor_id)
+        if membership.role == "owner":
+            raise ConflictError("owner must transfer ownership before leaving")
+        await self._membership_repo.delete(membership)
+        await self._db.commit()
+        await self._evict_from_group_chatrooms(group_id, actor_id)
+
+    async def _evict_from_group_chatrooms(self, group_id: str, user_id: str) -> None:
+        """Best-effort: disconnect the user's live WebSocket(s) from every
+        chatroom in this group (main + topic chatrooms) so a removed/leaving
+        member stops receiving broadcasts for a group they no longer belong
+        to. Never raises — WS cleanup must not fail the HTTP request that
+        already committed the membership change."""
+        try:
+            chatrooms = await self._chatroom_repo.list_by_group(group_id)
+            chatroom_ids = [c.id for c in chatrooms]
+            if chatroom_ids:
+                await ws_hub.evict_user(chatroom_ids, user_id)
+        except Exception:
+            logger.exception(
+                "Failed to evict user %s from group %s chatrooms after membership change",
+                user_id,
+                group_id,
+            )
+
+    async def transfer_ownership(self, group_id: str, actor_id: str, target_user_id: str) -> Group:
+        group = await self.get_group_or_404(group_id)
+        actor_membership = await self.require_owner(group_id, actor_id)
+        target_membership = await self._membership_repo.get(group_id, target_user_id)
+        if target_membership is None:
+            raise NotFoundError("Member", target_user_id)
+        if target_membership.role == "owner":
+            raise ConflictError("target user is already the owner")
+        group.owner_id = target_user_id
+        self._db.add(group)
+        await self._membership_repo.update_role(target_membership, "owner")
+        await self._membership_repo.update_role(actor_membership, "member")
+        await self._db.commit()
+        await self._db.refresh(group)
+        return group
+
+    async def set_member_role(
+        self, group_id: str, actor_id: str, target_user_id: str, role: str
+    ) -> None:
+        """Owner-only role change. "owner" transfers ownership (see
+        transfer_ownership); "member" on an existing non-owner member is a
+        no-op; "member" on the current owner is rejected — transfer first."""
+        if role == "owner":
+            await self.transfer_ownership(group_id, actor_id, target_user_id)
+            return
+        await self.require_owner(group_id, actor_id)
+        target_membership = await self._membership_repo.get(group_id, target_user_id)
+        if target_membership is None:
+            raise NotFoundError("Member", target_user_id)
+        if target_membership.role == "owner":
+            raise ConflictError("cannot demote the current owner; transfer ownership instead")
+        # Already "member" — no-op.
 
     async def join_via_invite(self, group_id: str, user_id: str) -> Membership:
         """Add a user to a group. Caller validates the invite and commits, so
