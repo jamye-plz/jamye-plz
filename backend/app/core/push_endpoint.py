@@ -69,6 +69,9 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     if host in _LOCAL_HOST_ALIASES:
         return False
     ip = _as_ip_literal(host)
-    if ip is not None and not ip.is_global:
+    # Reject multicast/unspecified explicitly: Python 3.12+ reports
+    # is_global == True for multicast literals (224.0.0.1, ff02::1), so the
+    # is_global check alone would let them through.
+    if ip is not None and (not ip.is_global or ip.is_multicast or ip.is_unspecified):
         return False
     return True

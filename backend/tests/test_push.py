@@ -488,6 +488,16 @@ class TestEndpointSsrfValidation:
             with pytest.raises(ValueError):
                 PushSubscribeBody(endpoint=f"https://{host}:8443/x", p256dh="p", auth="a")
 
+    def test_rejects_multicast_literals(self) -> None:
+        """Python 3.12+ marks multicast as is_global; reject it explicitly."""
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        for host in ("224.0.0.1", "[ff02::1]"):
+            with pytest.raises(ValueError):
+                PushSubscribeBody(endpoint=f"https://{host}/x", p256dh="p", auth="a")
+
     def test_rejects_private_ip_literal(self) -> None:
         import pytest
 
