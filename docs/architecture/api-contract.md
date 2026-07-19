@@ -66,7 +66,7 @@
 |---|---|---|---|
 | GET | `/api/push/vapid-public-key` | VAPID 공개키 조회 (미설정 시 빈 문자열) | 불필요 |
 | POST | `/api/push/subscribe` | Web Push 구독 등록 (endpoint, p256dh, auth) | 필요 |
-| DELETE | `/api/push/subscribe` | 구독 해제 | 필요 |
+| DELETE | `/api/push/subscribe` | 구독 해제 (`{endpoint}` 지정 시 해당 기기만, 생략 시 전체) | 필요 |
 
 > **흐름**: 클라이언트가 `GET /api/push/vapid-public-key`로 공개키를 받아 브라우저 알림 권한을 요청하고,
 > 승인되면 `PushManager.subscribe(applicationServerKey=...)`로 얻은 구독 정보를 `POST /api/push/subscribe`로
