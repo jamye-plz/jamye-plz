@@ -64,8 +64,17 @@
 
 | 메서드 | 경로 | 설명 | 인증 |
 |---|---|---|---|
+| GET | `/api/push/vapid-public-key` | VAPID 공개키 조회 (미설정 시 빈 문자열) | 불필요 |
 | POST | `/api/push/subscribe` | Web Push 구독 등록 (endpoint, p256dh, auth) | 필요 |
 | DELETE | `/api/push/subscribe` | 구독 해제 | 필요 |
+
+> **흐름**: 클라이언트가 `GET /api/push/vapid-public-key`로 공개키를 받아 브라우저 알림 권한을 요청하고,
+> 승인되면 `PushManager.subscribe(applicationServerKey=...)`로 얻은 구독 정보를 `POST /api/push/subscribe`로
+> 등록한다. 발송은 **새 주제 등록**·**안 읽은 채팅 발생** 이벤트에서 요청/WS 흐름을 막지 않는
+> **fire-and-forget**으로 트리거되며, 페이로드는 `{title, body, url}` 고정 계약이다(서비스워커가 그대로
+> 알림에 렌더링하고 클릭 시 `url`로 이동). 만료·해지된 구독(푸시 서비스가 404/410 응답)은 발송 시점에
+> 자동으로 정리(prune)된다. `VAPID_PRIVATE_KEY`/`VAPID_PUBLIC_KEY`가 설정되지 않으면 발송은 조용히
+> no-op(데모 무중단)이고, `GET .../vapid-public-key`도 빈 문자열을 반환해 프론트가 구독 토글을 숨긴다.
 
 ### notifications — 인앱 알림
 

@@ -102,7 +102,7 @@ v1 구현을 **마일스톤** 기준으로 재정비한 진행 문서다. 구 `t
 | T11 | E5 | 리마인드(새 주제/첫 채팅 → 시스템 메시지 + 알림) | M2 | 🟡 새 주제✅ / 첫 채팅❌ |
 | T12 | E3 | WASM 자동 태깅(Transformers.js + e5-small, Worker) | M3 | 🔴 |
 | T13 | E5 | WASM 살 붙이기 비생성 추천(질문뱅크 + e5) | M3 | 🔴 |
-| T14 | E6 | Web Push(VAPID, pywebpush) + 인앱 알림 + iOS 설치유도 | M0(인앱)·M2(발송) | 🟡 구독·인앱✅ / 발송·iOS❌ |
+| T14 | E6 | Web Push(VAPID, pywebpush) + 인앱 알림 + iOS 설치유도 | M0(인앱)·M2(발송) | 🟡 구독·인앱·발송✅ (v2 M1) / iOS❌ |
 | T15 | 배포 | NixOS flake + 시크릿 + Caddy + cloudflared | 배포 | 🔴 |
 | T16 | QA | 통합 테스트 + 핵심 E2E + 배포 검증 | M4·배포 | 🔴 |
 
