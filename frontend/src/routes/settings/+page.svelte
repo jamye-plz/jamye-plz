@@ -63,16 +63,21 @@
 				// A subscription may already exist for this browser but belong to
 				// a different (or no longer synced) user — e.g. a prior /subscribe
 				// POST failed, or another account used this browser. Reconcile it
-				// to the current user before showing the toggle as enabled so we
-				// never claim "on" while no row is keyed to this user.
+				// to the current user BEFORE claiming the toggle is on. If that
+				// fails we must not show "on" (there is no row for this user, so
+				// delivery would target the stale owner or no one) — reflect
+				// off + a hint so the user can re-enable to retry.
 				if (sub) {
 					try {
 						await reconcilePush(sub);
+						pushSubscribed = true;
 					} catch {
-						// Network hiccup — still reflect the browser's own state.
+						pushSubscribed = false;
+						pushHint = '알림 상태를 확인하지 못했어요. 다시 켜서 등록해 주세요.';
 					}
+				} else {
+					pushSubscribed = false;
 				}
-				pushSubscribed = !!sub;
 				pushSectionVisible = true;
 			} catch {
 				// Keep the toggle hidden if the check fails (offline, no SW, etc.)
