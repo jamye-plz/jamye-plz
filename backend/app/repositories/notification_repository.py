@@ -172,24 +172,28 @@ class PushSubscriptionRepository:
         return result.scalar_one_or_none()
 
     async def upsert(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> PushSubscription:
-        existing = await self.get_by_endpoint(endpoint)
-        if existing:
-            # A browser push subscription is device-scoped and unique by
-            # endpoint. Whoever currently controls this browser owns the row —
-            # reassign user_id so a second account logging into the same
-            # browser can't inherit (or be shadowed by) the previous user's row.
-            existing.user_id = user_id
-            existing.p256dh = p256dh
-            existing.auth = auth
-            self._db.add(existing)
-            await self._db.flush()
-            await self._db.refresh(existing)
-            return existing
-        sub = PushSubscription(user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth)
-        self._db.add(sub)
-        await self._db.flush()
-        await self._db.refresh(sub)
-        return sub
+        # Atomic INSERT ... ON CONFLICT (endpoint) DO UPDATE. A browser push
+        # subscription is device-scoped and unique by endpoint; whoever
+        # currently controls this browser owns the row, so on conflict we
+        # reassign user_id (a second account on the same browser must not
+        # inherit or be shadowed by the previous user's row). Doing this as a
+        # single statement — rather than SELECT-then-INSERT — means two
+        # concurrent POSTs for the same endpoint (e.g. the global reclaim racing
+        # Settings' own reconcile) can't both miss the row and 500 on the unique
+        # constraint; one updates, the other conflict-updates.
+        insert_stmt = pg_insert(PushSubscription).values(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            endpoint=endpoint,
+            p256dh=p256dh,
+            auth=auth,
+        )
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[PushSubscription.endpoint],
+            set_={"user_id": user_id, "p256dh": p256dh, "auth": auth},
+        ).returning(PushSubscription)
+        result = await self._db.execute(stmt)
+        return result.scalar_one()
 
     async def delete(self, sub: PushSubscription) -> None:
         await self._db.delete(sub)
