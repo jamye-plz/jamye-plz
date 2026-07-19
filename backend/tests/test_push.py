@@ -115,6 +115,11 @@ class TestSendPushEnabled:
             assert call["data"] == json.dumps(PAYLOAD)
             assert call["vapid_private_key"] == "fake-private-key"
             assert call["vapid_claims"] == {"sub": "mailto:admin@example.com"}
+            # Bounded timeout (no worker-thread exhaustion) + nonzero TTL
+            # (offline devices get queued instead of dropped).
+            assert call["timeout"] == notification_service_module.PUSH_REQUEST_TIMEOUT_SECONDS
+            assert call["ttl"] == notification_service_module.PUSH_TTL_SECONDS
+            assert call["ttl"] > 0
         assert push_repo.deleted == []
         assert db.commits == 0
 

@@ -25,6 +25,14 @@ from app.repositories.notification_repository import (
 
 logger = logging.getLogger(__name__)
 
+# Web Push tuning. Endpoints are user-provided public HTTPS URLs, so a slow or
+# hostile one must not tie up an asyncio.to_thread worker: bound each send with
+# a short connect/read timeout. TTL asks the push service to hold the message
+# for offline devices instead of dropping it (pywebpush defaults to ttl=0 =
+# deliver-now-or-discard, which defeats the point of push for a suspended app).
+PUSH_REQUEST_TIMEOUT_SECONDS = 10
+PUSH_TTL_SECONDS = 60 * 60 * 24  # 1 day
+
 
 class NotificationService:
     def __init__(self, db: AsyncSession) -> None:
@@ -236,6 +244,8 @@ class NotificationService:
                     data=data,
                     vapid_private_key=settings.vapid_private_key,
                     vapid_claims=vapid_claims,
+                    ttl=PUSH_TTL_SECONDS,
+                    timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
                 )
             except Exception as exc:  # noqa: BLE001 - one bad sub must not break the batch
                 # WebPushException carries a response with the push service's
