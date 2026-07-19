@@ -62,6 +62,10 @@ class FakePushRepo:
         self.deleted.append(sub)
         self._subs = [s for s in self._subs if s is not sub]
 
+    async def delete_by_id(self, sub_id: str) -> None:
+        self.deleted.append(sub_id)
+        self._subs = [s for s in self._subs if s.id != sub_id]
+
 
 def _settings(*, vapid_enabled: bool) -> SimpleNamespace:
     return SimpleNamespace(
@@ -179,7 +183,7 @@ class TestSendPushPrunesExpired:
 
         # all three attempted despite the middle one raising
         assert len(calls) == 3
-        assert [s.id for s in push_repo.deleted] == ["s2"]
+        assert push_repo.deleted == ["s2"]
         assert db.commits == 1
 
     async def test_404_also_prunes(self, monkeypatch) -> None:
@@ -200,7 +204,7 @@ class TestSendPushPrunesExpired:
 
         await svc.send_push("u1", PAYLOAD)
 
-        assert [s.id for s in push_repo.deleted] == ["s1"]
+        assert push_repo.deleted == ["s1"]
         assert db.commits == 1
 
     async def test_other_status_logs_and_does_not_prune(self, monkeypatch) -> None:
@@ -280,7 +284,7 @@ class TestSendPushPrunesExpired:
 
         await svc.send_push("u1", PAYLOAD)
 
-        assert [s.id for s in push_repo.deleted] == ["bad"]
+        assert push_repo.deleted == ["bad"]
         assert sent == ["https://push.example/ok"]
 
 

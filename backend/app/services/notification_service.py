@@ -232,14 +232,16 @@ class NotificationService:
             return
 
         subs = await self._push_repo.list_by_user(user_id)
-        # Snapshot the fields the network loop needs, then release the read
-        # connection back to the pool before doing any outbound requests.
-        targets = [(sub, sub.endpoint, sub.p256dh, sub.auth) for sub in subs]
+        # Snapshot plain values (incl. the id) while the session is live, then
+        # release the read connection. We must NOT carry ORM instances past the
+        # rollback below: rollback expires them, so a later attribute access
+        # would trigger implicit async I/O and raise MissingGreenlet.
+        targets = [(sub.id, sub.endpoint, sub.p256dh, sub.auth) for sub in subs]
         await self._db.rollback()
 
         data = json.dumps(payload)
-        to_prune: list[Any] = []
-        for sub, endpoint, p256dh, auth in targets:
+        to_prune: list[str] = []
+        for sub_id, endpoint, p256dh, auth in targets:
             # Defence in depth: re-validate the stored endpoint before an
             # outbound request. The subscribe-time validator only guards new
             # POSTs; a row written before it existed (or inserted directly)
@@ -248,10 +250,10 @@ class NotificationService:
             if not is_safe_push_endpoint(endpoint):
                 logger.warning(
                     "pruning push subscription %s (user %s): unsafe endpoint",
-                    sub.id,
+                    sub_id,
                     user_id,
                 )
-                to_prune.append(sub)
+                to_prune.append(sub_id)
                 continue
             subscription_info = {
                 "endpoint": endpoint,
@@ -275,17 +277,18 @@ class NotificationService:
                 # status; any other exception (e.g. network error) has none.
                 status_code = getattr(getattr(exc, "response", None), "status_code", None)
                 if status_code in (404, 410):
-                    to_prune.append(sub)
+                    to_prune.append(sub_id)
                 else:
                     logger.warning(
                         "push send failed for subscription %s (user %s): %s",
-                        sub.id,
+                        sub_id,
                         user_id,
                         exc,
                     )
 
-        # Prune revoked/unsafe rows in one short transaction after the network I/O.
-        for sub in to_prune:
-            await self._push_repo.delete(sub)
+        # Prune revoked/unsafe rows by id in one short transaction after the
+        # network I/O (no ORM instances survive the rollback above).
+        for sub_id in to_prune:
+            await self._push_repo.delete_by_id(sub_id)
         if to_prune:
             await self._db.commit()

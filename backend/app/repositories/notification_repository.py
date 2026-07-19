@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import case, func, select, update
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -193,6 +194,16 @@ class PushSubscriptionRepository:
     async def delete(self, sub: PushSubscription) -> None:
         await self._db.delete(sub)
         await self._db.flush()
+
+    async def delete_by_id(self, sub_id: str) -> None:
+        """Delete by primary key without needing a live ORM instance.
+
+        Lets callers prune a subscription after they've released the read
+        transaction (e.g. send_push snapshots ids, does network I/O, then
+        prunes) — carrying an ORM instance across a rollback would expire it
+        and trigger MissingGreenlet on attribute access.
+        """
+        await self._db.execute(sa_delete(PushSubscription).where(PushSubscription.id == sub_id))
 
     async def list_by_user(self, user_id: str) -> list[PushSubscription]:
         result = await self._db.execute(
