@@ -77,18 +77,21 @@ export async function reclaimPushForCurrentUser(): Promise<void> {
 		const reg = await getActiveRegistration();
 		if (!reg) return;
 		if (!(await reg.pushManager.getSubscription())) return; // nothing to reclaim
-		const { public_key } = await getVapidPublicKey();
-		if (!public_key) return; // push disabled server-side
 		try {
+			// The key fetch is INSIDE this handler: a transient 5xx/network failure
+			// here is itself a failed reclaim and must trigger the same teardown,
+			// otherwise a previous account's row stays bound to this browser.
+			const { public_key } = await getVapidPublicKey();
+			if (!public_key) return; // push disabled server-side — nothing to reclaim
 			// Reassign to the current user, recreating the subscription if it was
 			// signed under a rotated VAPID key (reconcileOrRecreate compares
 			// applicationServerKey to the current public key).
 			await reconcileOrRecreate(public_key);
 		} catch {
-			// Reclaim failed (transient 401/5xx/network): tear the local
-			// subscription down so a PREVIOUS account's still-active backend row
-			// can't keep delivering that user's pushes to whoever is signed in
-			// here now. Better no push than cross-account push.
+			// Reclaim failed (key fetch or reconcile: transient 401/5xx/network):
+			// tear the local subscription down so a PREVIOUS account's still-active
+			// backend row can't keep delivering that user's pushes to whoever is
+			// signed in here now. Better no push than cross-account push.
 			await detachPushOnLogout();
 		}
 	} catch {
