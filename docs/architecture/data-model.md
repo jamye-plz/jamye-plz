@@ -40,6 +40,7 @@ erDiagram
         owner_id FK
         max_members "default 12"
         created_at
+        deleted_at "nullable, soft-delete"
     }
     memberships {
         id PK
@@ -156,6 +157,11 @@ erDiagram
 | owner_id | → `users` | FK |
 | max_members | int | default 12 |
 | created_at | timestamp | |
+| deleted_at | timestamp | nullable(soft-delete 시각, alembic `c3d4e5f6a7b8`) |
+
+- **soft-delete**: `DELETE /api/groups/{id}`(owner 전용)는 로우를 지우지 않고 `deleted_at`만 세팅한다.
+  `deleted_at IS NOT NULL`인 그룹은 멤버 목록·주제·채팅 등 멤버십 기반 조회에서 존재하지 않는 것으로
+  취급된다(404). 상세는 [`./api-contract.md`](./api-contract.md)의 groups·invites 절 참고.
 
 ### memberships
 사용자-그룹 N:M 연결 + 역할. 권한의 기준점이다.
