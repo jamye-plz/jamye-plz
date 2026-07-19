@@ -117,6 +117,9 @@ class GroupService:
         await self.require_owner(group_id, actor_id)
         await self._group_repo.soft_delete(group_id)
         await self._db.commit()
+        # Group is now inaccessible; drop every member's live socket so no
+        # broadcast committed just before deletion keeps fanning out.
+        await self._evict_all_from_group_chatrooms(group_id)
 
     async def remove_member(self, group_id: str, actor_id: str, target_user_id: str) -> None:
         """Owner-only removal of another member. Owner removing self is not
@@ -157,8 +160,28 @@ class GroupService:
                 group_id,
             )
 
+    async def _evict_all_from_group_chatrooms(self, group_id: str) -> None:
+        """Best-effort: disconnect *every* member's live socket from this
+        group's chatrooms after the group is deleted, so an in-flight broadcast
+        can't fan out to a chatroom that just became inaccessible. Never
+        raises — WS cleanup must not fail the already-committed delete."""
+        try:
+            chatrooms = await self._chatroom_repo.list_by_group(group_id)
+            chatroom_ids = [c.id for c in chatrooms]
+            if chatroom_ids:
+                await ws_hub.evict_room(chatroom_ids)
+        except Exception:
+            logger.exception(
+                "Failed to evict sockets from group %s chatrooms after delete", group_id
+            )
+
     async def transfer_ownership(self, group_id: str, actor_id: str, target_user_id: str) -> Group:
-        group = await self.get_group_or_404(group_id)
+        # Row-lock the group so two concurrent transfers serialize: without it
+        # both could read the same owner and each promote a different target,
+        # leaving multiple 'owner' memberships while owner_id points to one.
+        group = await self._group_repo.get_by_id_for_update(group_id)
+        if group is None:
+            raise NotFoundError("Group", group_id)
         actor_membership = await self.require_owner(group_id, actor_id)
         target_membership = await self._membership_repo.get(group_id, target_user_id)
         if target_membership is None:

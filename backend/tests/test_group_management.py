@@ -48,6 +48,10 @@ class FakeGroupRepo:
             return None
         return group
 
+    async def get_by_id_for_update(self, group_id: str) -> Group | None:
+        # No real row lock in the fake; behaves like a live-group read.
+        return await self.get_by_id(group_id)
+
     async def update_name(self, group_id: str, name: str) -> Group | None:
         group = await self.get_by_id(group_id)
         if group is None:
@@ -350,6 +354,24 @@ async def test_leave_group_evicts_member_from_all_group_chatrooms(
     await svc.leave_group(GROUP_ID, MEMBER_ID)
 
     assert calls == [(["chat-main", "chat-topic-1"], MEMBER_ID)]
+
+
+async def test_soft_delete_evicts_all_sockets_from_group_chatrooms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    svc, _db = make_service(
+        make_group(), owner_and_member(), chatroom_ids=["chat-main", "chat-topic-1"]
+    )
+    calls: list[list[str]] = []
+
+    async def fake_evict_room(chatroom_ids: list[str]) -> None:
+        calls.append(chatroom_ids)
+
+    monkeypatch.setattr("app.services.group_service.ws_hub.evict_room", fake_evict_room)
+
+    await svc.soft_delete_group(GROUP_ID, OWNER_ID)
+
+    assert calls == [["chat-main", "chat-topic-1"]]
 
 
 async def test_remove_member_evicts_target_from_all_group_chatrooms(

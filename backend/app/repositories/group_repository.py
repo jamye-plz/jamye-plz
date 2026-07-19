@@ -20,6 +20,18 @@ class GroupRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id_for_update(self, group_id: str) -> Group | None:
+        """Row-locked read (SELECT ... FOR UPDATE) of a live group.
+
+        Serializes concurrent owner mutations on the same group — e.g. two
+        simultaneous ownership transfers can't both read the old owner and each
+        promote a different target, which would leave multiple 'owner' rows.
+        """
+        result = await self._db.execute(
+            select(Group).where(Group.id == group_id, Group.deleted_at.is_(None)).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def create(self, name: str, owner_id: str, max_members: int = 12) -> Group:
         group = Group(name=name, owner_id=owner_id, max_members=max_members)
         self._db.add(group)

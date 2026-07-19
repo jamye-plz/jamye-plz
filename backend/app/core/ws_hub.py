@@ -78,3 +78,22 @@ async def evict_user(chatroom_ids: list[str], user_id: str) -> None:
                 await ws.close(code=EVICTED_CLOSE_CODE)
             except Exception:
                 pass
+
+
+async def evict_room(chatroom_ids: list[str]) -> None:
+    """Forcibly disconnect *every* live socket from the given rooms.
+
+    Used when a whole group is deleted: unlike `evict_user` (which targets one
+    member), this drops all members' sockets so no in-flight broadcast can fan
+    out to a chatroom that just became inaccessible. Removes each socket from
+    the registry before closing so a slow close() can't keep receiving fan-out.
+    """
+    for chatroom_id in chatroom_ids:
+        sockets = _connections.get(chatroom_id, set()).copy()
+        for ws in sockets:
+            _connections.get(chatroom_id, set()).discard(ws)
+            _forget_if_orphaned(ws)
+            try:
+                await ws.close(code=EVICTED_CLOSE_CODE)
+            except Exception:
+                pass
