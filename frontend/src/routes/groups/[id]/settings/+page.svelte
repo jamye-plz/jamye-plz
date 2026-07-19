@@ -91,6 +91,13 @@
 		]) {
 			queryClient.removeQueries({ queryKey: key });
 		}
+		// Topic detail (['topic', topicId]) and chat history (['messages',
+		// chatroomId]) aren't keyed by groupId, so the group-prefix purge above
+		// can't reach them. We can't enumerate this group's topic/chatroom ids
+		// from here, so drop those caches wholesale — a rare, destructive action
+		// where a few extra refetches for other groups are acceptable.
+		queryClient.removeQueries({ queryKey: ['topic'] });
+		queryClient.removeQueries({ queryKey: ['messages'] });
 	}
 
 	// --- Delete group (owner only) ---
