@@ -1,0 +1,359 @@
+"""Unit tests for Web Push (VAPID): NotificationService.send_push and
+app.services.push_dispatch.dispatch_push / schedule_push_dispatch.
+
+pywebpush performs a real HTTP call, so `webpush` is monkeypatched at the
+module boundary (`app.services.notification_service.webpush`) in every test
+that exercises the enabled path. There is no API test harness for this repo
+yet, so everything here is unit-level: fake repo/session objects stand in
+for the DB, per the milestone's testing convention. This file is
+self-contained and does not depend on any other test module or fixture.
+"""
+
+import asyncio
+import json
+from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import Any
+
+from pywebpush import WebPushException
+
+from app.services import notification_service as notification_service_module
+from app.services import push_dispatch as push_dispatch_module
+from app.services.notification_service import NotificationService
+
+PAYLOAD = {"title": "그룹 새 잼얘", "body": "오늘 뭐 먹지", "url": "/groups/g1/topics/t1/chat"}
+
+
+# ── Fakes ────────────────────────────────────────────────────────────────────
+
+
+class FakeAsyncSession:
+    """Stands in for AsyncSession: only commit() is exercised by send_push."""
+
+    def __init__(self) -> None:
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1
+
+
+@dataclass
+class FakeSub:
+    id: str
+    user_id: str
+    endpoint: str
+    p256dh: str
+    auth: str
+
+
+class FakePushRepo:
+    def __init__(self, subs: list[FakeSub]) -> None:
+        self._subs = subs
+        self.deleted: list[FakeSub] = []
+
+    async def list_by_user(self, user_id: str) -> list[FakeSub]:
+        return [s for s in self._subs if s.user_id == user_id]
+
+    async def delete(self, sub: FakeSub) -> None:
+        self.deleted.append(sub)
+        self._subs = [s for s in self._subs if s is not sub]
+
+
+def _settings(*, vapid_enabled: bool) -> SimpleNamespace:
+    return SimpleNamespace(
+        vapid_enabled=vapid_enabled,
+        vapid_private_key="fake-private-key",
+        vapid_public_key="fake-public-key",
+        vapid_claim_email="admin@example.com",
+    )
+
+
+def _make_service(
+    db: FakeAsyncSession, subs: list[FakeSub]
+) -> tuple[NotificationService, FakePushRepo]:
+    svc = NotificationService(db)
+    push_repo = FakePushRepo(subs)
+    svc._push_repo = push_repo  # bypass the real DB-backed repo
+    return svc, push_repo
+
+
+# ── (a) enabled path: send to all subscriptions with correct args ──────────
+
+
+class TestSendPushEnabled:
+    async def test_sends_to_all_subscriptions_with_correct_args(self, monkeypatch) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def fake_webpush(**kwargs: Any) -> str:
+            calls.append(kwargs)
+            return "ok"
+
+        monkeypatch.setattr(notification_service_module, "webpush", fake_webpush)
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+
+        subs = [
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/1", p256dh="p1", auth="a1"
+            ),
+            FakeSub(
+                id="s2", user_id="u1", endpoint="https://push.example/2", p256dh="p2", auth="a2"
+            ),
+        ]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert len(calls) == 2
+        for call, sub in zip(calls, subs, strict=True):
+            assert call["subscription_info"] == {
+                "endpoint": sub.endpoint,
+                "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+            }
+            assert call["data"] == json.dumps(PAYLOAD)
+            assert call["vapid_private_key"] == "fake-private-key"
+            assert call["vapid_claims"] == {"sub": "mailto:admin@example.com"}
+        assert push_repo.deleted == []
+        assert db.commits == 0
+
+    async def test_no_subscriptions_is_a_no_op(self, monkeypatch) -> None:
+        calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(notification_service_module, "webpush", lambda **kw: calls.append(kw))
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        db = FakeAsyncSession()
+        svc, _ = _make_service(db, subs=[])
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert calls == []
+
+
+# ── (b) WebPushException 404/410 prunes only that subscription ─────────────
+
+
+class TestSendPushPrunesExpired:
+    async def test_410_prunes_only_that_subscription_others_still_sent(self, monkeypatch) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def fake_webpush(**kwargs: Any) -> str:
+            calls.append(kwargs)
+            if kwargs["subscription_info"]["endpoint"] == "https://push.example/2":
+                raise WebPushException("gone", response=SimpleNamespace(status_code=410))
+            return "ok"
+
+        monkeypatch.setattr(notification_service_module, "webpush", fake_webpush)
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+
+        subs = [
+            FakeSub(
+                id="s1", user_id="u1", endpoint="https://push.example/1", p256dh="p1", auth="a1"
+            ),
+            FakeSub(
+                id="s2", user_id="u1", endpoint="https://push.example/2", p256dh="p2", auth="a2"
+            ),
+            FakeSub(
+                id="s3", user_id="u1", endpoint="https://push.example/3", p256dh="p3", auth="a3"
+            ),
+        ]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)
+
+        # all three attempted despite the middle one raising
+        assert len(calls) == 3
+        assert [s.id for s in push_repo.deleted] == ["s2"]
+        assert db.commits == 1
+
+    async def test_404_also_prunes(self, monkeypatch) -> None:
+        def fake_webpush(**kwargs: Any) -> str:
+            raise WebPushException("not found", response=SimpleNamespace(status_code=404))
+
+        monkeypatch.setattr(notification_service_module, "webpush", fake_webpush)
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert [s.id for s in push_repo.deleted] == ["s1"]
+        assert db.commits == 1
+
+    async def test_other_status_logs_and_does_not_prune(self, monkeypatch) -> None:
+        def fake_webpush(**kwargs: Any) -> str:
+            raise WebPushException("server error", response=SimpleNamespace(status_code=500))
+
+        monkeypatch.setattr(notification_service_module, "webpush", fake_webpush)
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)  # must not raise
+
+        assert push_repo.deleted == []
+        assert db.commits == 0
+
+    async def test_unexpected_exception_logs_and_continues(self, monkeypatch) -> None:
+        calls: list[str] = []
+
+        def fake_webpush(**kwargs: Any) -> str:
+            endpoint = kwargs["subscription_info"]["endpoint"]
+            calls.append(endpoint)
+            if endpoint == "e1":
+                raise RuntimeError("network blip")
+            return "ok"
+
+        monkeypatch.setattr(notification_service_module, "webpush", fake_webpush)
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        subs = [
+            FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1"),
+            FakeSub(id="s2", user_id="u1", endpoint="e2", p256dh="p2", auth="a2"),
+        ]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)  # must not raise
+
+        assert calls == ["e1", "e2"]
+        assert push_repo.deleted == []
+
+
+# ── (c) disabled → no webpush calls (silent no-op) ──────────────────────────
+
+
+class TestSendPushDisabled:
+    async def test_no_webpush_calls_when_vapid_disabled(self, monkeypatch) -> None:
+        calls: list[dict[str, Any]] = []
+        monkeypatch.setattr(notification_service_module, "webpush", lambda **kw: calls.append(kw))
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=False)
+        )
+
+        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs)
+
+        list_by_user_called = False
+        original_list_by_user = push_repo.list_by_user
+
+        async def spy_list_by_user(*args: Any, **kwargs: Any) -> list[FakeSub]:
+            nonlocal list_by_user_called
+            list_by_user_called = True
+            return await original_list_by_user(*args, **kwargs)
+
+        push_repo.list_by_user = spy_list_by_user  # type: ignore[method-assign]
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert calls == []
+        assert list_by_user_called is False, "disabled path must not touch the repo"
+
+
+# ── (e) payload contract: exactly {title, body, url} ────────────────────────
+
+
+class TestPayloadContract:
+    async def test_payload_serializes_exactly_title_body_url(self, monkeypatch) -> None:
+        captured: dict[str, Any] = {}
+
+        def fake_webpush(**kwargs: Any) -> str:
+            captured["data"] = kwargs["data"]
+            return "ok"
+
+        monkeypatch.setattr(notification_service_module, "webpush", fake_webpush)
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        subs = [FakeSub(id="s1", user_id="u1", endpoint="e1", p256dh="p1", auth="a1")]
+        db = FakeAsyncSession()
+        svc, _ = _make_service(db, subs)
+
+        payload = {"title": "제목", "body": "내용", "url": "/groups/g/topics/t/chat"}
+        await svc.send_push("u1", payload)
+
+        decoded = json.loads(captured["data"])
+        assert set(decoded.keys()) == {"title", "body", "url"}
+        assert decoded == payload
+
+
+# ── (d) dispatch_push swallows every exception ──────────────────────────────
+
+
+class _FakeSessionCtx:
+    """Minimal async-context-manager stand-in for an AsyncSession."""
+
+    async def __aenter__(self) -> "_FakeSessionCtx":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+class TestDispatchPush:
+    async def test_swallows_send_push_exceptions_and_processes_all_users(self, monkeypatch) -> None:
+        monkeypatch.setattr(push_dispatch_module, "_get_session_factory", lambda: _FakeSessionCtx)
+
+        called: list[str] = []
+
+        class FakeNotificationService:
+            def __init__(self, db: Any) -> None:
+                self.db = db
+
+            async def send_push(self, user_id: str, payload: dict[str, Any]) -> None:
+                called.append(user_id)
+                raise RuntimeError("boom")
+
+        monkeypatch.setattr(push_dispatch_module, "NotificationService", FakeNotificationService)
+
+        # Must not raise, and must still attempt every user despite each failing.
+        await push_dispatch_module.dispatch_push(["u1", "u2"], PAYLOAD)
+
+        assert called == ["u1", "u2"]
+
+    async def test_swallows_session_factory_errors(self, monkeypatch) -> None:
+        def boom() -> Any:
+            raise RuntimeError("no db configured")
+
+        monkeypatch.setattr(push_dispatch_module, "_get_session_factory", boom)
+
+        await push_dispatch_module.dispatch_push(["u1"], PAYLOAD)  # must not raise
+
+    async def test_schedule_push_dispatch_runs_task_and_cleans_up(self, monkeypatch) -> None:
+        called: list[tuple[list[str], dict[str, Any]]] = []
+
+        async def fake_dispatch(user_ids: list[str], payload: dict[str, Any]) -> None:
+            called.append((user_ids, payload))
+
+        monkeypatch.setattr(push_dispatch_module, "dispatch_push", fake_dispatch)
+
+        push_dispatch_module.schedule_push_dispatch(["u1"], PAYLOAD)
+        # Let the scheduled task run to completion.
+        for _ in range(3):
+            await asyncio.sleep(0)
+
+        assert called == [(["u1"], PAYLOAD)]
+        assert push_dispatch_module._background_tasks == set()
+
+    def test_schedule_push_dispatch_is_a_no_op_for_empty_user_ids(self, monkeypatch) -> None:
+        created: list[Any] = []
+        monkeypatch.setattr(
+            push_dispatch_module.asyncio, "create_task", lambda coro: created.append(coro)
+        )
+
+        push_dispatch_module.schedule_push_dispatch([], PAYLOAD)
+
+        assert created == []

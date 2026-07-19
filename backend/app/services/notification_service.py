@@ -1,12 +1,17 @@
 """NotificationService — in-app notifications and push subscriptions.
 
-Real Web Push is sent only when VAPID keys are provisioned.
-# TODO(oma-deferred): integrate vapid when key is provisioned
+Real Web Push is sent only when VAPID keys are provisioned (settings.vapid_enabled).
+Without keys, send_push is a silent no-op so the demo runs without VAPID
+infrastructure — see the env-conditional branch in send_push below.
 """
 
+import asyncio
+import json
+import logging
 from datetime import datetime
 from typing import Any
 
+from pywebpush import webpush
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -17,6 +22,8 @@ from app.repositories.notification_repository import (
     NotificationRepository,
     PushSubscriptionRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class NotificationService:
@@ -178,10 +185,56 @@ class NotificationService:
         await self._db.commit()
 
     async def send_push(self, user_id: str, payload: dict[str, Any]) -> None:
+        """Send a Web Push notification to every device the user subscribed from.
+
+        ``payload`` must match the service worker's push contract:
+        ``{"title": str, "body": str, "url": str}``.
+
+        Real delivery only runs when VAPID keys are provisioned
+        (settings.vapid_enabled); without keys this is a silent no-op so the
+        demo/dev environment works without push infrastructure provisioned.
+        pywebpush performs a synchronous HTTP call (via `requests`), so each
+        send is offloaded to a worker thread with `asyncio.to_thread` to avoid
+        blocking the event loop. A 404/410 response means the push service
+        revoked the subscription (uninstalled app, expired endpoint, etc.); it
+        is pruned so future sends don't keep hitting a dead endpoint. Any
+        other failure is logged and does not stop delivery to the user's
+        remaining devices.
+        """
         settings = get_settings()
-        if settings.vapid_enabled:
-            # TODO(oma-deferred): integrate vapid when key is provisioned
-            # Real path: fetch user's push subscriptions, send via pywebpush
-            raise NotImplementedError("VAPID push real path not implemented")
-        # Fallback: no-op for demo
-        pass
+        if not settings.vapid_enabled:
+            # No VAPID keys configured: fallback no-op for demo/dev.
+            return
+
+        subs = await self._push_repo.list_by_user(user_id)
+        data = json.dumps(payload)
+        for sub in subs:
+            subscription_info = {
+                "endpoint": sub.endpoint,
+                "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+            }
+            # pywebpush mutates vapid_claims in place (adds aud/exp), so each
+            # subscription needs its own fresh dict.
+            vapid_claims: dict[str, str | int] = {"sub": f"mailto:{settings.vapid_claim_email}"}
+            try:
+                await asyncio.to_thread(
+                    webpush,
+                    subscription_info=subscription_info,
+                    data=data,
+                    vapid_private_key=settings.vapid_private_key,
+                    vapid_claims=vapid_claims,
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad sub must not break the batch
+                # WebPushException carries a response with the push service's
+                # status; any other exception (e.g. network error) has none.
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                if status_code in (404, 410):
+                    await self._push_repo.delete(sub)
+                    await self._db.commit()
+                else:
+                    logger.warning(
+                        "push send failed for subscription %s (user %s): %s",
+                        sub.id,
+                        user_id,
+                        exc,
+                    )

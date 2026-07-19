@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
 from app.services.notification_service import NotificationService
 
@@ -13,6 +14,21 @@ class PushSubscribeBody(BaseModel):
     endpoint: str
     p256dh: str
     auth: str
+
+
+class VapidPublicKeyOut(BaseModel):
+    public_key: str
+
+
+@router.get("/vapid-public-key", response_model=VapidPublicKeyOut)
+async def get_vapid_public_key() -> VapidPublicKeyOut:
+    """Public VAPID key for the frontend's PushManager.subscribe applicationServerKey.
+
+    Returns an empty string when VAPID isn't provisioned so the frontend can
+    hide the push opt-in toggle instead of erroring.
+    """
+    settings = get_settings()
+    return VapidPublicKeyOut(public_key=settings.vapid_public_key)
 
 
 @router.post("/subscribe", status_code=204)

@@ -12,6 +12,7 @@ from app.schemas.topic import TopicCreate, TopicDatesOut, TopicOut, TopicPage, T
 from app.services.chat_service import ChatService
 from app.services.group_service import GroupService
 from app.services.notification_service import NotificationService
+from app.services.push_dispatch import schedule_push_dispatch
 from app.services.topic_service import TopicService
 
 router = APIRouter(prefix="/groups/{group_id}/topics", tags=["topics"])
@@ -65,8 +66,10 @@ async def create_topic(
 
     notif_svc = NotificationService(db)
     group = await group_svc.get_group_or_404(group_id)
+    recipient_ids: list[str] = []
     for member in await group_svc.list_members(group_id):
         if member.user_id != current_user.id:
+            recipient_ids.append(member.user_id)
             await notif_svc.create_notification(
                 user_id=member.user_id,
                 type="new_topic",
@@ -79,6 +82,16 @@ async def create_topic(
                 },
                 dedup_key=f"new_topic:{topic.id}",
             )
+
+    # Web Push (M1): fire-and-forget, never blocks the response.
+    schedule_push_dispatch(
+        recipient_ids,
+        {
+            "title": f"{group.name} 새 주제",
+            "body": topic.title,
+            "url": chat_path,
+        },
+    )
 
     # Mark the author's own topic chatroom as read at creation so the author's
     # own new topic is not shown as unread.

@@ -67,7 +67,8 @@ class Settings(BaseSettings):
     minio_bucket: str = "jamye"
 
     # ── VAPID (Web Push) ──────────────────────────────────────────────────────
-    # TODO(oma-deferred): integrate vapid when key is provisioned
+    # Real Web Push turns on as soon as both keys are set (see vapid_enabled
+    # below); see backend/.env.example for how to generate a keypair.
     vapid_private_key: str = ""
     vapid_public_key: str = ""
     vapid_claim_email: str = "admin@example.com"
