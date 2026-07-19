@@ -1,9 +1,13 @@
 """GroupService — group and membership business logic."""
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import ws_hub
 from app.core.exceptions import (
     AlreadyMemberError,
+    ConflictError,
     ForbiddenError,
     GroupFullError,
     NotFoundError,
@@ -17,6 +21,8 @@ from app.repositories.group_repository import (
 )
 from app.repositories.user_repository import UserRepository
 from app.schemas.group import GroupMemberOut
+
+logger = logging.getLogger(__name__)
 
 
 class GroupService:
@@ -53,7 +59,27 @@ class GroupService:
             raise NotFoundError("Group", group_id)
         return group
 
+    async def lock_group_or_404(self, group_id: str) -> Group:
+        """Row-lock a live group (SELECT ... FOR UPDATE) or 404.
+
+        Group-scoped write paths (e.g. topic creation, which commits and
+        broadcasts content) call this so they serialize with a concurrent
+        soft-delete: if the delete commits first, this returns 404 instead of
+        letting the writer create content in a now-deleted group; if the writer
+        holds the lock first, the delete waits until the writer commits.
+        """
+        group = await self._group_repo.get_by_id_for_update(group_id)
+        if group is None:
+            raise NotFoundError("Group", group_id)
+        return group
+
     async def require_membership(self, group_id: str, user_id: str) -> Membership:
+        """Verify the group is alive (not soft-deleted) and the user belongs to
+        it. Checking existence first, before membership, closes the gap where a
+        soft-deleted group's memberships row is untouched: without this, every
+        membership-gated path (member list, topics, chatrooms, invites,
+        require_owner) would keep working against a "deleted" group."""
+        await self.get_group_or_404(group_id)
         membership = await self._membership_repo.get(group_id, user_id)
         if membership is None:
             raise ForbiddenError("You are not a member of this group")
@@ -89,6 +115,140 @@ class GroupService:
         # Owner first, then members in join order.
         out.sort(key=lambda x: (x.role != "owner", x.joined_at))
         return out
+
+    async def update_group_name(self, group_id: str, actor_id: str, name: str) -> Group:
+        # Row-lock the group so a rename serializes with a concurrent ownership
+        # transfer (same race as delete: a former owner must not rename after
+        # ownership moved).
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
+        await self.require_owner(group_id, actor_id)
+        group = await self._group_repo.update_name(group_id, name)
+        if group is None:
+            raise NotFoundError("Group", group_id)
+        await self._db.commit()
+        await self._db.refresh(group)
+        return group
+
+    async def soft_delete_group(self, group_id: str, actor_id: str) -> None:
+        # Row-lock the group so this serializes with a concurrent ownership
+        # transfer: without the lock the owner check can pass, then soft_delete
+        # waits on the transfer's lock and commits anyway — letting a former
+        # owner delete the group right after ownership moved.
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
+        await self.require_owner(group_id, actor_id)
+        await self._group_repo.soft_delete(group_id)
+        await self._db.commit()
+        # Group is now inaccessible; drop every member's live socket so no
+        # broadcast committed just before deletion keeps fanning out.
+        await self._evict_all_from_group_chatrooms(group_id)
+
+    async def remove_member(self, group_id: str, actor_id: str, target_user_id: str) -> None:
+        """Owner-only removal of another member. Owner removing self is not
+        allowed here — ownership must be transferred first (leave semantics)."""
+        # Row-lock the group so this serializes with transfer_ownership: without
+        # it a concurrent A->B transfer could commit between the owner check and
+        # the target delete, leaving groups.owner_id pointing at a membership
+        # this request just deleted (owner_id with no owner membership).
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
+        await self.require_owner(group_id, actor_id)
+        target_membership = await self._membership_repo.get(group_id, target_user_id)
+        if target_membership is None:
+            raise NotFoundError("Member", target_user_id)
+        if target_user_id == actor_id:
+            raise ConflictError("owner must transfer ownership before leaving")
+        # Re-check under the lock: a transfer may have just promoted the target.
+        if target_membership.role == "owner":
+            raise ConflictError("cannot remove the group owner")
+        await self._membership_repo.delete(target_membership)
+        await self._db.commit()
+        await self._evict_from_group_chatrooms(group_id, target_user_id)
+
+    async def leave_group(self, group_id: str, actor_id: str) -> None:
+        # Row-lock the group so this serializes with a concurrent transfer that
+        # could otherwise promote this member to owner between the role check
+        # and the delete, orphaning groups.owner_id.
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
+        membership = await self.require_membership(group_id, actor_id)
+        if membership.role == "owner":
+            raise ConflictError("owner must transfer ownership before leaving")
+        await self._membership_repo.delete(membership)
+        await self._db.commit()
+        await self._evict_from_group_chatrooms(group_id, actor_id)
+
+    async def _evict_from_group_chatrooms(self, group_id: str, user_id: str) -> None:
+        """Best-effort: disconnect the user's live WebSocket(s) from every
+        chatroom in this group (main + topic chatrooms) so a removed/leaving
+        member stops receiving broadcasts for a group they no longer belong
+        to. Never raises — WS cleanup must not fail the HTTP request that
+        already committed the membership change."""
+        try:
+            chatrooms = await self._chatroom_repo.list_by_group(group_id)
+            chatroom_ids = [c.id for c in chatrooms]
+            if chatroom_ids:
+                await ws_hub.evict_user(chatroom_ids, user_id)
+        except Exception:
+            logger.exception(
+                "Failed to evict user %s from group %s chatrooms after membership change",
+                user_id,
+                group_id,
+            )
+
+    async def _evict_all_from_group_chatrooms(self, group_id: str) -> None:
+        """Best-effort: disconnect *every* member's live socket from this
+        group's chatrooms after the group is deleted, so an in-flight broadcast
+        can't fan out to a chatroom that just became inaccessible. Never
+        raises — WS cleanup must not fail the already-committed delete."""
+        try:
+            chatrooms = await self._chatroom_repo.list_by_group(group_id)
+            chatroom_ids = [c.id for c in chatrooms]
+            if chatroom_ids:
+                await ws_hub.evict_room(chatroom_ids)
+        except Exception:
+            logger.exception(
+                "Failed to evict sockets from group %s chatrooms after delete", group_id
+            )
+
+    async def transfer_ownership(self, group_id: str, actor_id: str, target_user_id: str) -> Group:
+        # Row-lock the group so two concurrent transfers serialize: without it
+        # both could read the same owner and each promote a different target,
+        # leaving multiple 'owner' memberships while owner_id points to one.
+        group = await self._group_repo.get_by_id_for_update(group_id)
+        if group is None:
+            raise NotFoundError("Group", group_id)
+        actor_membership = await self.require_owner(group_id, actor_id)
+        target_membership = await self._membership_repo.get(group_id, target_user_id)
+        if target_membership is None:
+            raise NotFoundError("Member", target_user_id)
+        if target_membership.role == "owner":
+            raise ConflictError("target user is already the owner")
+        group.owner_id = target_user_id
+        self._db.add(group)
+        await self._membership_repo.update_role(target_membership, "owner")
+        await self._membership_repo.update_role(actor_membership, "member")
+        await self._db.commit()
+        await self._db.refresh(group)
+        return group
+
+    async def set_member_role(
+        self, group_id: str, actor_id: str, target_user_id: str, role: str
+    ) -> None:
+        """Owner-only role change. "owner" transfers ownership (see
+        transfer_ownership); "member" on an existing non-owner member is a
+        no-op; "member" on the current owner is rejected — transfer first."""
+        if role == "owner":
+            await self.transfer_ownership(group_id, actor_id, target_user_id)
+            return
+        await self.require_owner(group_id, actor_id)
+        target_membership = await self._membership_repo.get(group_id, target_user_id)
+        if target_membership is None:
+            raise NotFoundError("Member", target_user_id)
+        if target_membership.role == "owner":
+            raise ConflictError("cannot demote the current owner; transfer ownership instead")
+        # Already "member" — no-op.
 
     async def join_via_invite(self, group_id: str, user_id: str) -> Membership:
         """Add a user to a group. Caller validates the invite and commits, so

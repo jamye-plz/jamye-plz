@@ -34,6 +34,10 @@ async def create_topic(
 ):
     group_svc = GroupService(db)
     await group_svc.require_membership(group_id, current_user.id)
+    # Row-lock the group so creating (and broadcasting) a topic serializes with
+    # a concurrent soft-delete — otherwise an in-flight create could commit
+    # content into a group that was just deleted.
+    await group_svc.lock_group_or_404(group_id)
     topic_svc = TopicService(db)
     topic = await topic_svc.create_topic(
         group_id=group_id, author_id=current_user.id, title=body.title

@@ -8,7 +8,11 @@ from app.core.exceptions import ForbiddenError, MessageIdempotencyError, NotFoun
 from app.models.chatroom import Chatroom
 from app.models.message import Message
 from app.repositories.chatroom_read_repository import ChatroomReadRepository
-from app.repositories.group_repository import ChatroomRepository, MembershipRepository
+from app.repositories.group_repository import (
+    ChatroomRepository,
+    GroupRepository,
+    MembershipRepository,
+)
 from app.repositories.message_repository import MessageRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import MessageOut
@@ -20,6 +24,7 @@ class ChatService:
         self._chatroom_repo = ChatroomRepository(db)
         self._message_repo = MessageRepository(db)
         self._membership_repo = MembershipRepository(db)
+        self._group_repo = GroupRepository(db)
         self._user_repo = UserRepository(db)
         self._chatroom_read_repo = ChatroomReadRepository(db)
 
@@ -31,13 +36,7 @@ class ChatService:
 
     async def list_group_chatrooms(self, group_id: str) -> list[Chatroom]:
         """Return all chatrooms for a group (main + topic chatrooms)."""
-        from sqlalchemy import select
-        from app.models.chatroom import Chatroom as ChatroomModel
-
-        result = await self._db.execute(
-            select(ChatroomModel).where(ChatroomModel.group_id == group_id)
-        )
-        return list(result.scalars().all())
+        return await self._chatroom_repo.list_by_group(group_id)
 
     async def get_chatroom_in_group_or_404(self, chatroom_id: str, group_id: str) -> Chatroom:
         """Load chatroom and verify it belongs to the given group (prevents IDOR)."""
@@ -47,7 +46,14 @@ class ChatService:
         return chatroom
 
     async def require_member_access(self, chatroom_id: str, user_id: str) -> Chatroom:
+        """Load the chatroom, verify its group is still alive (not soft-deleted)
+        and that the user is a member. The WS join/send_message paths bypass
+        GroupService, so the not-deleted check is enforced here via the same
+        filtered GroupRepository.get_by_id used by GroupService."""
         chatroom = await self.get_chatroom_or_404(chatroom_id)
+        group = await self._group_repo.get_by_id(chatroom.group_id)
+        if group is None:
+            raise NotFoundError("Group", chatroom.group_id)
         membership = await self._membership_repo.get(chatroom.group_id, user_id)
         if membership is None:
             raise ForbiddenError("You are not a member of this group")
@@ -186,7 +192,6 @@ class ChatService:
         notifications for all members except the sender, stamping each with the
         message's timestamp. No-op if chatroom is not a topic chatroom.
         """
-        from app.repositories.group_repository import GroupRepository, MembershipRepository
         from app.repositories.topic_repository import TopicRepository
         from app.services.notification_service import NotificationService
 

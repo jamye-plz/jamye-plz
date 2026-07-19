@@ -1,12 +1,22 @@
 """Group and membership schemas."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class GroupCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+
+
+class GroupUpdate(BaseModel):
+    # Matches GroupCreate.name constraints (min_length=1, max_length=128).
+    name: str = Field(min_length=1, max_length=128)
+
+
+class MemberRoleUpdate(BaseModel):
+    role: Literal["owner", "member"]
 
 
 class GroupOut(BaseModel):
