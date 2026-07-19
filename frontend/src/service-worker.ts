@@ -69,6 +69,15 @@ function base64urlToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 	return out;
 }
 
+function sameKey(a: ArrayBuffer | null | undefined, b: BufferSource): boolean {
+	if (!a) return false;
+	const ua = new Uint8Array(a);
+	const ub = ArrayBuffer.isView(b)
+		? new Uint8Array(b.buffer, b.byteOffset, b.byteLength)
+		: new Uint8Array(b);
+	return ua.length === ub.length && ua.every((byte, i) => byte === ub[i]);
+}
+
 // The browser can invalidate/rotate a push subscription at any time (key
 // rotation, expiry). Re-subscribe with the CURRENT server VAPID key — fetched
 // fresh, not `oldSubscription`'s key, which may be stale after a server-side
@@ -90,10 +99,24 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 				// keep the old key as a best-effort fallback
 			}
 			if (!applicationServerKey) return;
-			const sub = await self.registration.pushManager.subscribe({
-				userVisibleOnly: true,
-				applicationServerKey
-			});
+			// The browser may have already refreshed the subscription with the OLD
+			// key (event.newSubscription / an existing registration sub). The Push
+			// API rejects subscribe() when a subscription already exists with
+			// different options, so a rotated key would make the call throw. Reuse
+			// the existing sub when it already matches the current key; otherwise
+			// unsubscribe it first to free the slot for the new key.
+			const existing =
+				event.newSubscription ?? (await self.registration.pushManager.getSubscription());
+			let sub: PushSubscription;
+			if (existing && sameKey(existing.options.applicationServerKey, applicationServerKey)) {
+				sub = existing;
+			} else {
+				if (existing) await existing.unsubscribe();
+				sub = await self.registration.pushManager.subscribe({
+					userVisibleOnly: true,
+					applicationServerKey
+				});
+			}
 			const keys = sub.toJSON().keys as { p256dh: string; auth: string };
 			// If the backend didn't store the new endpoint — whether it responded
 			// 401/5xx (`fetch` resolves) OR the request rejected outright
