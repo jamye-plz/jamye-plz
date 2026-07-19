@@ -124,17 +124,31 @@ class GroupService:
     async def remove_member(self, group_id: str, actor_id: str, target_user_id: str) -> None:
         """Owner-only removal of another member. Owner removing self is not
         allowed here — ownership must be transferred first (leave semantics)."""
+        # Row-lock the group so this serializes with transfer_ownership: without
+        # it a concurrent A->B transfer could commit between the owner check and
+        # the target delete, leaving groups.owner_id pointing at a membership
+        # this request just deleted (owner_id with no owner membership).
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
         await self.require_owner(group_id, actor_id)
         target_membership = await self._membership_repo.get(group_id, target_user_id)
         if target_membership is None:
             raise NotFoundError("Member", target_user_id)
         if target_user_id == actor_id:
             raise ConflictError("owner must transfer ownership before leaving")
+        # Re-check under the lock: a transfer may have just promoted the target.
+        if target_membership.role == "owner":
+            raise ConflictError("cannot remove the group owner")
         await self._membership_repo.delete(target_membership)
         await self._db.commit()
         await self._evict_from_group_chatrooms(group_id, target_user_id)
 
     async def leave_group(self, group_id: str, actor_id: str) -> None:
+        # Row-lock the group so this serializes with a concurrent transfer that
+        # could otherwise promote this member to owner between the role check
+        # and the delete, orphaning groups.owner_id.
+        if await self._group_repo.get_by_id_for_update(group_id) is None:
+            raise NotFoundError("Group", group_id)
         membership = await self.require_membership(group_id, actor_id)
         if membership.role == "owner":
             raise ConflictError("owner must transfer ownership before leaving")
