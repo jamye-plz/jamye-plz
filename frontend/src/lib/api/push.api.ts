@@ -76,13 +76,21 @@ export async function reclaimPushForCurrentUser(): Promise<void> {
 	try {
 		const reg = await getActiveRegistration();
 		if (!reg) return;
-		if (!(await reg.pushManager.getSubscription())) return; // nothing to reclaim
+		const existing = await reg.pushManager.getSubscription();
+		if (!existing) return; // nothing to reclaim
 		try {
 			// The key fetch is INSIDE this handler: a transient 5xx/network failure
 			// here is itself a failed reclaim and must trigger the same teardown,
 			// otherwise a previous account's row stays bound to this browser.
 			const { public_key } = await getVapidPublicKey();
-			if (!public_key) return; // push disabled server-side — nothing to reclaim
+			if (!public_key) {
+				// VAPID temporarily disabled/half-configured: we can't recreate
+				// under a key, but re-post the existing subscription so its backend
+				// row is reassigned to the CURRENT user (no key needed). Otherwise a
+				// previous account's row would deliver here once keys are restored.
+				await reconcilePush(existing);
+				return;
+			}
 			// Reassign to the current user, recreating the subscription if it was
 			// signed under a rotated VAPID key (reconcileOrRecreate compares
 			// applicationServerKey to the current public key).
