@@ -20,6 +20,25 @@ export function reconcilePush(sub: PushSubscription): Promise<void> {
 	return subscribePush({ endpoint: sub.endpoint, p256dh: keys.p256dh, auth: keys.auth });
 }
 
+/**
+ * Detach this browser's push subscription on logout so the next account to use
+ * the browser doesn't inherit the previous user's active subscription row (the
+ * server keys delivery by user_id, so a leftover row would keep sending the old
+ * owner's pushes to whoever is now on this device). Best-effort: never throws.
+ */
+export async function detachPushOnLogout(): Promise<void> {
+	try {
+		if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+		const reg = await navigator.serviceWorker.ready;
+		const sub = await reg.pushManager.getSubscription();
+		if (!sub) return;
+		await unsubscribePush(sub.endpoint);
+		await sub.unsubscribe();
+	} catch {
+		// Logout must proceed regardless of push cleanup failures.
+	}
+}
+
 /** Fetch the server's VAPID public key. Empty string means push is disabled. */
 export function getVapidPublicKey(): Promise<{ public_key: string }> {
 	return apiGet<{ public_key: string }>('/push/vapid-public-key');

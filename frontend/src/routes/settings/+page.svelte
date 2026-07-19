@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
 	import {
+		detachPushOnLogout,
 		getVapidPublicKey,
 		reconcilePush,
 		requestAndSubscribe,
@@ -124,6 +125,9 @@
 	let loggingOut = $state(false);
 	async function doLogout() {
 		loggingOut = true;
+		// Detach this browser's push subscription first (while the session cookie
+		// is still valid) so the next account here doesn't inherit it.
+		await detachPushOnLogout();
 		try {
 			await logout();
 		} catch {
