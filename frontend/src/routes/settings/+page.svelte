@@ -103,9 +103,14 @@
 				const reg = await navigator.serviceWorker.ready;
 				const sub = await reg.pushManager.getSubscription();
 				// Remove only THIS device's row so the user's other devices keep
-				// receiving pushes.
-				await unsubscribePush(sub?.endpoint);
-				await sub?.unsubscribe();
+				// receiving pushes. If the local subscription is already gone
+				// (revoked/expired), skip the server call — passing no endpoint
+				// would hit the delete-all fallback and wrongly disable the
+				// user's other devices.
+				if (sub) {
+					await unsubscribePush(sub.endpoint);
+					await sub.unsubscribe();
+				}
 				pushSubscribed = false;
 			}
 		} catch {
