@@ -1,11 +1,13 @@
 """TopicService — topic CRUD and tag/media management."""
 
+import uuid
 from datetime import timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import storage
 from app.core.config import get_settings
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.core.timeutil import today_str, topic_is_unread
 from app.models.topic import Topic
 from app.models.topic_media import TopicMedia
@@ -36,16 +38,18 @@ class TopicService:
 
     async def to_topic_out(self, topic: Topic, unread: bool = False) -> TopicOut:
         """Assemble the full topic detail (author, tags, media) for the API."""
-        settings = get_settings()
         author = await self._user_repo.get_by_id(topic.author_id)
         tags = await self._tag_repo.list_by_topic(topic.id)
         media_items = await self._media_repo.list_by_topic(topic.id)
         chatroom = await self._chatroom_repo.get_by_topic(topic.id)
+        # Short-TTL presigned GET (policy B): membership is already enforced
+        # by the caller (group/topic routers), so a fresh signed URL per
+        # request is safe. Falls back to a plain URL when MinIO is disabled.
         media_out = [
             TopicMediaOut(
                 id=m.id,
                 object_key=m.object_key,
-                url=f"{settings.minio_endpoint}/{settings.minio_bucket}/{m.object_key}",
+                url=storage.presign_get(m.object_key),
                 width=m.width,
                 height=m.height,
                 content_type=m.type,
@@ -188,6 +192,29 @@ class TopicService:
     async def list_tags(self, topic_id: str) -> list[TopicTag]:
         return await self._tag_repo.list_by_topic(topic_id)
 
+    @staticmethod
+    def validate_object_key_for_topic(topic_id: str, object_key: str) -> None:
+        """Reject object keys that were not minted for this topic (BOLA guard).
+
+        presign_upload always mints keys shaped `topics/{topic_id}/{uuid4}`.
+        Without this check, a member of group B could "confirm" an
+        object_key they merely observed (e.g. from group A's presign
+        response or a previous confirm), registering someone else's private
+        object as media on their own topic and thereby granting their
+        topic's members — via to_topic_out's presigned GET — read access to
+        an object they were never authorized to see.
+        """
+        prefix = f"topics/{topic_id}/"
+        if not object_key.startswith(prefix):
+            raise ValidationError("object_key does not belong to this topic")
+        suffix = object_key[len(prefix) :]
+        if not suffix or "/" in suffix:
+            raise ValidationError("object_key must be a single path segment under this topic")
+        try:
+            uuid.UUID(suffix)
+        except ValueError as exc:
+            raise ValidationError("object_key suffix must be a valid UUID") from exc
+
     async def confirm_media(
         self,
         topic_id: str,
@@ -197,6 +224,7 @@ class TopicService:
         height: int | None = None,
         byte_size: int | None = None,
     ) -> TopicMedia:
+        self.validate_object_key_for_topic(topic_id, object_key)
         media = await self._media_repo.create(
             topic_id=topic_id,
             type=content_type,

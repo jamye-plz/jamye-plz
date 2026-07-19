@@ -2,7 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.storage import IMAGE_MIME_TYPES, MAX_IMAGE_BYTES
 
 
 # ── Topic ──────────────────────────────────────────────────────────────────────
@@ -64,9 +66,32 @@ class TopicDatesOut(BaseModel):
 # ── Media ─────────────────────────────────────────────────────────────────────
 
 
+def _check_image_content_type(v: str) -> str:
+    if v not in IMAGE_MIME_TYPES:
+        allowed = ", ".join(sorted(IMAGE_MIME_TYPES))
+        raise ValueError(f"content_type must be one of: {allowed}")
+    return v
+
+
+def _check_image_byte_size(v: int) -> int:
+    if v > MAX_IMAGE_BYTES:
+        raise ValueError(f"byte_size must not exceed {MAX_IMAGE_BYTES} bytes")
+    return v
+
+
 class MediaPresignRequest(BaseModel):
     content_type: str = Field(min_length=1, max_length=64)
     byte_size: int = Field(ge=1)
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, v: str) -> str:
+        return _check_image_content_type(v)
+
+    @field_validator("byte_size")
+    @classmethod
+    def validate_byte_size(cls, v: int) -> int:
+        return _check_image_byte_size(v)
 
 
 class MediaPresignOut(BaseModel):
@@ -81,6 +106,18 @@ class MediaConfirmRequest(BaseModel):
     width: int | None = Field(None, ge=1)
     height: int | None = Field(None, ge=1)
     byte_size: int | None = Field(None, ge=1)
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, v: str) -> str:
+        return _check_image_content_type(v)
+
+    @field_validator("byte_size")
+    @classmethod
+    def validate_byte_size(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        return _check_image_byte_size(v)
 
 
 class MediaOut(BaseModel):
