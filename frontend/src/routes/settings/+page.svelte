@@ -104,7 +104,16 @@
 				// would hit the delete-all fallback and wrongly disable the
 				// user's other devices.
 				if (sub) {
-					await unsubscribePush(sub.endpoint);
+					// Independent steps: if the server DELETE fails (transient
+					// 5xx/network) we must STILL unsubscribe the browser, otherwise
+					// notifications keep arriving even though the user disabled them.
+					// The now-orphaned backend row is pruned on its next send (the
+					// dead endpoint returns 404/410).
+					try {
+						await unsubscribePush(sub.endpoint);
+					} catch {
+						// fall through — still tear down the browser subscription
+					}
 					await sub.unsubscribe();
 				}
 				pushSubscribed = false;
