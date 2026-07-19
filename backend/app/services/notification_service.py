@@ -259,7 +259,11 @@ class NotificationService:
             # No VAPID keys configured: fallback no-op for demo/dev.
             return
 
-        subs = await self._push_repo.list_by_user(user_id)
+        # Bound the send fan-out to the most-recent N even if the stored row
+        # count exceeds the cap (rows that predate the registration-time cap, or
+        # were inserted directly): otherwise a user with hundreds of slow
+        # endpoints would spend timeout*rows before later recipients.
+        subs = await self._push_repo.list_by_user(user_id, limit=MAX_PUSH_SUBSCRIPTIONS_PER_USER)
         # Snapshot plain values (incl. the id) while the session is live, then
         # release the read connection. We must NOT carry ORM instances past the
         # rollback below: rollback expires them, so a later attribute access

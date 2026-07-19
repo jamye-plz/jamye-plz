@@ -250,8 +250,14 @@ class PushSubscriptionRepository:
         """
         await self._db.execute(sa_delete(PushSubscription).where(PushSubscription.id == sub_id))
 
-    async def list_by_user(self, user_id: str) -> list[PushSubscription]:
-        result = await self._db.execute(
-            select(PushSubscription).where(PushSubscription.user_id == user_id)
-        )
+    async def list_by_user(self, user_id: str, limit: int | None = None) -> list[PushSubscription]:
+        """A user's push subscriptions. With `limit`, only the most-recent N
+        (used by send_push to bound fan-out even for rows that predate the
+        registration-time cap or were inserted directly)."""
+        stmt = select(PushSubscription).where(PushSubscription.user_id == user_id)
+        if limit is not None:
+            stmt = stmt.order_by(
+                PushSubscription.created_at.desc(), PushSubscription.id.desc()
+            ).limit(limit)
+        result = await self._db.execute(stmt)
         return list(result.scalars().all())

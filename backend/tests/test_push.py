@@ -58,8 +58,11 @@ class FakePushRepo:
         self.locked: list[str] = []
         self.calls: list[str] = []
 
-    async def list_by_user(self, user_id: str) -> list[FakeSub]:
-        return [s for s in self._subs if s.user_id == user_id]
+    async def list_by_user(self, user_id: str, limit: int | None = None) -> list[FakeSub]:
+        rows = [s for s in self._subs if s.user_id == user_id]
+        if limit is not None:
+            rows = rows[-limit:]  # "most recent" = last inserted in the fake
+        return rows
 
     async def delete(self, sub: FakeSub) -> None:
         self.deleted.append(sub)
@@ -607,3 +610,37 @@ class TestSubscriptionCap:
         # Advisory lock must be taken BEFORE the prune so the cap is atomic.
         assert push_repo.calls.index("lock") < push_repo.calls.index("prune")
         assert db.commits == 1
+
+
+# ── send fan-out is bounded even when stored rows exceed the cap ──────────────
+
+
+class TestSendFanOutCap:
+    async def test_send_push_only_targets_capped_recent_subscriptions(self, monkeypatch) -> None:
+        sent: list[str] = []
+        monkeypatch.setattr(
+            notification_service_module,
+            "webpush",
+            lambda **kw: sent.append(kw["subscription_info"]["endpoint"]),
+        )
+        monkeypatch.setattr(
+            notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
+        )
+        cap = notification_service_module.MAX_PUSH_SUBSCRIPTIONS_PER_USER
+        # More stored rows than the cap (e.g. predating it / inserted directly).
+        subs = [
+            FakeSub(
+                id=f"s{i}",
+                user_id="u1",
+                endpoint=f"https://push.example/{i}",
+                p256dh="p",
+                auth="a",
+            )
+            for i in range(cap + 5)
+        ]
+        db = FakeAsyncSession()
+        svc, _ = _make_service(db, subs)
+
+        await svc.send_push("u1", PAYLOAD)
+
+        assert len(sent) == cap
