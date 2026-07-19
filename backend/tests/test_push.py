@@ -357,3 +357,50 @@ class TestDispatchPush:
         push_dispatch_module.schedule_push_dispatch([], PAYLOAD)
 
         assert created == []
+
+
+# ── Endpoint SSRF validation (PushSubscribeBody) ─────────────────────────────
+
+
+class TestEndpointSsrfValidation:
+    def test_accepts_public_https_push_endpoint(self) -> None:
+        from app.routers.push import PushSubscribeBody
+
+        body = PushSubscribeBody(
+            endpoint="https://fcm.googleapis.com/fcm/send/abc123",
+            p256dh="p",
+            auth="a",
+        )
+        assert body.endpoint.startswith("https://")
+
+    def test_rejects_non_https(self) -> None:
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        with pytest.raises(ValueError):
+            PushSubscribeBody(endpoint="http://push.example/x", p256dh="p", auth="a")
+
+    def test_rejects_localhost(self) -> None:
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        with pytest.raises(ValueError):
+            PushSubscribeBody(endpoint="https://localhost/x", p256dh="p", auth="a")
+
+    def test_rejects_private_ip_literal(self) -> None:
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        with pytest.raises(ValueError):
+            PushSubscribeBody(endpoint="https://169.254.169.254/latest", p256dh="p", auth="a")
+
+    def test_rejects_loopback_ip_literal(self) -> None:
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        with pytest.raises(ValueError):
+            PushSubscribeBody(endpoint="https://127.0.0.1:9000/x", p256dh="p", auth="a")

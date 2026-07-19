@@ -173,6 +173,11 @@ class PushSubscriptionRepository:
     async def upsert(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> PushSubscription:
         existing = await self.get_by_endpoint(endpoint)
         if existing:
+            # A browser push subscription is device-scoped and unique by
+            # endpoint. Whoever currently controls this browser owns the row —
+            # reassign user_id so a second account logging into the same
+            # browser can't inherit (or be shadowed by) the previous user's row.
+            existing.user_id = user_id
             existing.p256dh = p256dh
             existing.auth = auth
             self._db.add(existing)

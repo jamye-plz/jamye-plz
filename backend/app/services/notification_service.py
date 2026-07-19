@@ -184,6 +184,19 @@ class NotificationService:
         await self._push_repo.delete(sub)
         await self._db.commit()
 
+    async def delete_push_subscription_if_present(self, endpoint: str, user_id: str) -> None:
+        """Idempotently remove one device's subscription on client unsubscribe.
+
+        Unlike ``delete_push_subscription`` this does not 404 when the row is
+        already gone (the client is merely toggling notifications off), and it
+        only deletes a row that belongs to the caller — never another user's.
+        """
+        sub = await self._push_repo.get_by_endpoint(endpoint)
+        if sub is None or sub.user_id != user_id:
+            return
+        await self._push_repo.delete(sub)
+        await self._db.commit()
+
     async def send_push(self, user_id: str, payload: dict[str, Any]) -> None:
         """Send a Web Push notification to every device the user subscribed from.
 
