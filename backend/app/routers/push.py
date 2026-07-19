@@ -61,11 +61,15 @@ class VapidPublicKeyOut(BaseModel):
 async def get_vapid_public_key() -> VapidPublicKeyOut:
     """Public VAPID key for the frontend's PushManager.subscribe applicationServerKey.
 
-    Returns an empty string when VAPID isn't provisioned so the frontend can
-    hide the push opt-in toggle instead of erroring.
+    Returns an empty string unless VAPID is *fully* provisioned
+    (settings.vapid_enabled requires both keys). A half-configured pair — only
+    the public key set — would otherwise show the push toggle and let users
+    subscribe even though send_push can never deliver (it no-ops without the
+    private key). The empty string makes the frontend hide the toggle instead.
     """
     settings = get_settings()
-    return VapidPublicKeyOut(public_key=settings.vapid_public_key)
+    key = settings.vapid_public_key if settings.vapid_enabled else ""
+    return VapidPublicKeyOut(public_key=key)
 
 
 @router.post("/subscribe", status_code=204)

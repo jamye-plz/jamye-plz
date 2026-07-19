@@ -409,3 +409,31 @@ class TestEndpointSsrfValidation:
 
         with pytest.raises(ValueError):
             PushSubscribeBody(endpoint="https://127.0.0.1:9000/x", p256dh="p", auth="a")
+
+
+# ── vapid-public-key endpoint gates on full provisioning ─────────────────────
+
+
+class TestVapidPublicKeyEndpoint:
+    async def test_returns_key_when_fully_enabled(self, monkeypatch) -> None:
+        from app.routers import push as push_module
+
+        monkeypatch.setattr(
+            push_module,
+            "get_settings",
+            lambda: SimpleNamespace(vapid_public_key="pub", vapid_enabled=True),
+        )
+        out = await push_module.get_vapid_public_key()
+        assert out.public_key == "pub"
+
+    async def test_returns_empty_when_half_configured(self, monkeypatch) -> None:
+        from app.routers import push as push_module
+
+        # public key set but private missing -> vapid_enabled False -> hide toggle
+        monkeypatch.setattr(
+            push_module,
+            "get_settings",
+            lambda: SimpleNamespace(vapid_public_key="pub", vapid_enabled=False),
+        )
+        out = await push_module.get_vapid_public_key()
+        assert out.public_key == ""
