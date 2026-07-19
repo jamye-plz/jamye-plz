@@ -59,6 +59,20 @@ class GroupService:
             raise NotFoundError("Group", group_id)
         return group
 
+    async def lock_group_or_404(self, group_id: str) -> Group:
+        """Row-lock a live group (SELECT ... FOR UPDATE) or 404.
+
+        Group-scoped write paths (e.g. topic creation, which commits and
+        broadcasts content) call this so they serialize with a concurrent
+        soft-delete: if the delete commits first, this returns 404 instead of
+        letting the writer create content in a now-deleted group; if the writer
+        holds the lock first, the delete waits until the writer commits.
+        """
+        group = await self._group_repo.get_by_id_for_update(group_id)
+        if group is None:
+            raise NotFoundError("Group", group_id)
+        return group
+
     async def require_membership(self, group_id: str, user_id: str) -> Membership:
         """Verify the group is alive (not soft-deleted) and the user belongs to
         it. Checking existence first, before membership, closes the gap where a
