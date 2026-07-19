@@ -4,6 +4,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import PushReconciler from '$lib/components/PushReconciler.svelte';
 
 	let { children } = $props();
 
@@ -120,5 +121,6 @@
 {/if}
 
 <QueryClientProvider client={queryClient}>
+	<PushReconciler />
 	{@render children()}
 </QueryClientProvider>

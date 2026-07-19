@@ -65,6 +65,25 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
 }
 
 /**
+ * Re-claim any existing browser push subscription for the CURRENT user.
+ * Called on every authenticated app load (not just from Settings) so that when
+ * a different account signs in on this browser — via a 401 re-login or the
+ * OAuth flow that never touches Settings — the backend subscription row is
+ * reassigned to them (upsert reassigns user_id), instead of the previous
+ * user's pushes continuing to display here. Best-effort: never throws.
+ */
+export async function reclaimPushForCurrentUser(): Promise<void> {
+	try {
+		const reg = await getActiveRegistration();
+		if (!reg) return;
+		const sub = await reg.pushManager.getSubscription();
+		if (sub) await reconcilePush(sub);
+	} catch {
+		// Best-effort — a failed reclaim just leaves the row as-is until Settings.
+	}
+}
+
+/**
  * Detach this browser's push subscription on logout so the next account to use
  * the browser doesn't inherit the previous user's active subscription row (the
  * server keys delivery by user_id, so a leftover row would keep sending the old
