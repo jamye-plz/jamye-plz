@@ -95,18 +95,21 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 				applicationServerKey
 			});
 			const keys = sub.toJSON().keys as { p256dh: string; auth: string };
-			const res = await fetch('/api/push/subscribe', {
+			// If the backend didn't store the new endpoint — whether it responded
+			// 401/5xx (`fetch` resolves) OR the request rejected outright
+			// (offline/network/CORS) — tear the just-created local subscription
+			// back down instead of leaving a live browser subscription with no
+			// matching row (which would silently receive nothing). The global
+			// reconciler recreates it cleanly the next time the app is opened.
+			const registered = await fetch('/api/push/subscribe', {
 				method: 'POST',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ endpoint: sub.endpoint, p256dh: keys.p256dh, auth: keys.auth })
-			});
-			// `fetch` resolves even on 401/5xx: if the backend didn't store the new
-			// endpoint, tear the just-created local subscription back down instead
-			// of leaving a live browser subscription with no matching row (which
-			// would silently receive nothing). The global reconciler recreates it
-			// cleanly the next time the app is opened.
-			if (!res.ok) await sub.unsubscribe();
+			})
+				.then((res) => res.ok)
+				.catch(() => false);
+			if (!registered) await sub.unsubscribe();
 		})()
 	);
 });
