@@ -55,6 +55,8 @@ class FakePushRepo:
         self._subs = subs
         self.deleted: list[FakeSub] = []
         self.prune_calls: list[tuple[str, int]] = []
+        self.locked: list[str] = []
+        self.calls: list[str] = []
 
     async def list_by_user(self, user_id: str) -> list[FakeSub]:
         return [s for s in self._subs if s.user_id == user_id]
@@ -77,9 +79,14 @@ class FakePushRepo:
         return sub
 
     async def prune_to_limit(self, user_id: str, limit: int) -> None:
+        self.calls.append("prune")
         self.prune_calls.append((user_id, limit))
         kept = [s for s in self._subs if s.user_id == user_id][-limit:]
         self._subs = [s for s in self._subs if s.user_id != user_id or s in kept]
+
+    async def lock_user_subscriptions(self, user_id: str) -> None:
+        self.calls.append("lock")
+        self.locked.append(user_id)
 
 
 def _settings(*, vapid_enabled: bool) -> SimpleNamespace:
@@ -596,4 +603,7 @@ class TestSubscriptionCap:
         assert push_repo.prune_calls == [
             ("u1", notification_service_module.MAX_PUSH_SUBSCRIPTIONS_PER_USER)
         ]
+        assert push_repo.locked == ["u1"]
+        # Advisory lock must be taken BEFORE the prune so the cap is atomic.
+        assert push_repo.calls.index("lock") < push_repo.calls.index("prune")
         assert db.commits == 1

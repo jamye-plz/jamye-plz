@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -219,6 +219,21 @@ class PushSubscriptionRepository:
                 PushSubscription.user_id == user_id,
                 PushSubscription.id.not_in(keep),
             )
+        )
+
+    async def lock_user_subscriptions(self, user_id: str) -> None:
+        """Transaction-scoped advisory lock serializing a user's subscription
+        writes.
+
+        The per-user cap is enforced as upsert-then-prune across two statements;
+        without this, concurrent POSTs for distinct endpoints each see the same
+        old rows, prune the same oldest one, and commit — leaving more than the
+        cap and re-opening the fan-out DoS. The lock queues same-user requests
+        so upsert+prune run atomically; it auto-releases at commit/rollback.
+        """
+        await self._db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"push_sub:{user_id}"},
         )
 
     async def delete(self, sub: PushSubscription) -> None:

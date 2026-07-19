@@ -189,6 +189,11 @@ class NotificationService:
     async def upsert_push_subscription(
         self, user_id: str, endpoint: str, p256dh: str, auth: str
     ) -> PushSubscription:
+        # Serialize this user's concurrent registrations so the upsert + cap
+        # prune below are atomic: without the lock, parallel POSTs for distinct
+        # endpoints each see the same old rows, prune the same oldest one, and
+        # commit — leaving more than the cap and re-opening the fan-out DoS.
+        await self._push_repo.lock_user_subscriptions(user_id)
         sub = await self._push_repo.upsert(
             user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth
         )
