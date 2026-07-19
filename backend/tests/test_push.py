@@ -478,6 +478,16 @@ class TestEndpointSsrfValidation:
         with pytest.raises(ValueError):
             PushSubscribeBody(endpoint="https://localhost/x", p256dh="p", auth="a")
 
+    def test_rejects_loopback_host_aliases(self) -> None:
+        """ip6-localhost / ip6-loopback resolve to ::1 via the default /etc/hosts."""
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        for host in ("ip6-localhost", "ip6-loopback", "localhost.localdomain", "IP6-LOCALHOST"):
+            with pytest.raises(ValueError):
+                PushSubscribeBody(endpoint=f"https://{host}:8443/x", p256dh="p", auth="a")
+
     def test_rejects_private_ip_literal(self) -> None:
         import pytest
 

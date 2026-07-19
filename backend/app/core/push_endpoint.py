@@ -33,22 +33,40 @@ def _as_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address |
     return ipaddress.ip_address(packed)
 
 
+# Non-numeric hostnames that resolve to loopback on a default Linux host
+# (/etc/hosts). A literal-IP guard alone misses these because they're names,
+# not IPs, so an endpoint like https://ip6-localhost/… would otherwise be
+# treated as a public host and handed to pywebpush.
+_LOCAL_HOST_ALIASES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "localhost6",
+        "localhost6.localdomain6",
+        "ip6-localhost",
+        "ip6-loopback",
+    }
+)
+
+
 def is_safe_push_endpoint(endpoint: str) -> bool:
     """Whether ``endpoint`` is a public https URL safe to send a push to.
 
-    Requires https and, for literal-IP hosts, that the address is globally
-    routable — ``is_global`` rejects loopback/private/link-local/reserved AND
-    the shared CGNAT range 100.64.0.0/10 (Tailscale et al.) that none of the
-    narrower flags catch, plus multicast/unspecified. Numeric aliases (``127.1``,
-    ``2130706433``, ``0x7f000001``) are normalized first. (DNS-rebinding of a
-    real hostname is out of scope for the homelab threat model; real push
-    services are public https.)
+    Requires https, rejects known loopback host aliases, and for literal-IP
+    hosts requires a globally-routable address — ``is_global`` rejects
+    loopback/private/link-local/reserved AND the shared CGNAT range
+    100.64.0.0/10 (Tailscale et al.), plus multicast/unspecified. Numeric
+    aliases (``127.1``, ``2130706433``, ``0x7f000001``) are normalized first,
+    and the standard non-numeric loopback names (``localhost``,
+    ``ip6-localhost``/``ip6-loopback`` from the default Linux /etc/hosts) are
+    rejected by name. (DNS-rebinding of an arbitrary public hostname is out of
+    scope for the homelab threat model; real push services are public https.)
     """
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.hostname:
         return False
-    host = parsed.hostname
-    if host == "localhost":
+    host = parsed.hostname.lower()
+    if host in _LOCAL_HOST_ALIASES:
         return False
     ip = _as_ip_literal(host)
     if ip is not None and not ip.is_global:
