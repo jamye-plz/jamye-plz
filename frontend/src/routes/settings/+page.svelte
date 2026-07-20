@@ -107,13 +107,14 @@
 					// Independent steps: if the server DELETE fails (transient
 					// 5xx/network) we must STILL unsubscribe the browser, otherwise
 					// notifications keep arriving even though the user disabled them.
-					// The now-orphaned backend row is pruned on its next send (the
-					// dead endpoint returns 404/410).
-					try {
-						await unsubscribePush(sub.endpoint);
-					} catch {
-						// fall through — still tear down the browser subscription
-					}
+					// A stalled server DELETE (backend deploy/network hang) must not block
+					// the browser unsubscribe or the toggle flip, so bound it with a short
+					// timeout; failures are best-effort (the orphaned row is pruned on its
+					// next send — dead endpoint → 404/410).
+					await Promise.race([
+						unsubscribePush(sub.endpoint).catch(() => {}),
+						new Promise((resolve) => setTimeout(resolve, 3000))
+					]);
 					await sub.unsubscribe();
 				}
 				pushSubscribed = false;
