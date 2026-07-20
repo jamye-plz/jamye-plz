@@ -23,6 +23,12 @@ from app.services.notification_service import NotificationService
 
 PAYLOAD = {"title": "그룹 새 잼얘", "body": "오늘 뭐 먹지", "url": "/groups/g1/topics/t1/chat"}
 
+# Well-formed Web Push keys: p256dh = base64url of 65 bytes, auth = of 16 bytes.
+VALID_P256DH = (
+    "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+)
+VALID_AUTH = "AAAAAAAAAAAAAAAAAAAAAA"
+
 
 # ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -295,7 +301,13 @@ class TestSendPushPrunesExpired:
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
         )
         subs = [
-            FakeSub(id="bad", user_id="u1", endpoint="http://127.0.0.1/x", p256dh="p", auth="a"),
+            FakeSub(
+                id="bad",
+                user_id="u1",
+                endpoint="http://127.0.0.1/x",
+                p256dh=VALID_P256DH,
+                auth=VALID_AUTH,
+            ),
             FakeSub(
                 id="ok",
                 user_id="u1",
@@ -457,8 +469,8 @@ class TestEndpointSsrfValidation:
 
         body = PushSubscribeBody(
             endpoint="https://fcm.googleapis.com/fcm/send/abc123",
-            p256dh="p",
-            auth="a",
+            p256dh=VALID_P256DH,
+            auth=VALID_AUTH,
         )
         assert body.endpoint.startswith("https://")
 
@@ -468,7 +480,9 @@ class TestEndpointSsrfValidation:
         from app.routers.push import PushSubscribeBody
 
         with pytest.raises(ValueError):
-            PushSubscribeBody(endpoint="http://push.example/x", p256dh="p", auth="a")
+            PushSubscribeBody(
+                endpoint="http://push.example/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+            )
 
     def test_rejects_localhost(self) -> None:
         import pytest
@@ -476,7 +490,7 @@ class TestEndpointSsrfValidation:
         from app.routers.push import PushSubscribeBody
 
         with pytest.raises(ValueError):
-            PushSubscribeBody(endpoint="https://localhost/x", p256dh="p", auth="a")
+            PushSubscribeBody(endpoint="https://localhost/x", p256dh=VALID_P256DH, auth=VALID_AUTH)
 
     def test_rejects_loopback_host_aliases(self) -> None:
         """ip6-localhost / ip6-loopback resolve to ::1 via the default /etc/hosts."""
@@ -486,7 +500,9 @@ class TestEndpointSsrfValidation:
 
         for host in ("ip6-localhost", "ip6-loopback", "localhost.localdomain", "IP6-LOCALHOST"):
             with pytest.raises(ValueError):
-                PushSubscribeBody(endpoint=f"https://{host}:8443/x", p256dh="p", auth="a")
+                PushSubscribeBody(
+                    endpoint=f"https://{host}:8443/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+                )
 
     def test_rejects_multicast_literals(self) -> None:
         """Python 3.12+ marks multicast as is_global; reject it explicitly."""
@@ -496,7 +512,9 @@ class TestEndpointSsrfValidation:
 
         for host in ("224.0.0.1", "[ff02::1]"):
             with pytest.raises(ValueError):
-                PushSubscribeBody(endpoint=f"https://{host}/x", p256dh="p", auth="a")
+                PushSubscribeBody(
+                    endpoint=f"https://{host}/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+                )
 
     def test_rejects_private_ip_literal(self) -> None:
         import pytest
@@ -504,7 +522,9 @@ class TestEndpointSsrfValidation:
         from app.routers.push import PushSubscribeBody
 
         with pytest.raises(ValueError):
-            PushSubscribeBody(endpoint="https://169.254.169.254/latest", p256dh="p", auth="a")
+            PushSubscribeBody(
+                endpoint="https://169.254.169.254/latest", p256dh=VALID_P256DH, auth=VALID_AUTH
+            )
 
     def test_rejects_loopback_ip_literal(self) -> None:
         import pytest
@@ -512,7 +532,9 @@ class TestEndpointSsrfValidation:
         from app.routers.push import PushSubscribeBody
 
         with pytest.raises(ValueError):
-            PushSubscribeBody(endpoint="https://127.0.0.1:9000/x", p256dh="p", auth="a")
+            PushSubscribeBody(
+                endpoint="https://127.0.0.1:9000/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+            )
 
     def test_rejects_numeric_alias_hosts(self) -> None:
         """127.1 / decimal / hex forms the OS resolver maps to loopback/metadata."""
@@ -522,12 +544,16 @@ class TestEndpointSsrfValidation:
 
         for host in ("127.1", "2130706433", "0x7f000001", "0xa9fea9fe"):
             with pytest.raises(ValueError):
-                PushSubscribeBody(endpoint=f"https://{host}/x", p256dh="p", auth="a")
+                PushSubscribeBody(
+                    endpoint=f"https://{host}/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+                )
 
     def test_accepts_public_ip_literal(self) -> None:
         from app.routers.push import PushSubscribeBody
 
-        body = PushSubscribeBody(endpoint="https://93.184.216.34/x", p256dh="p", auth="a")
+        body = PushSubscribeBody(
+            endpoint="https://93.184.216.34/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+        )
         assert body.endpoint.startswith("https://")
 
     def test_rejects_cgnat_shared_range(self) -> None:
@@ -537,7 +563,44 @@ class TestEndpointSsrfValidation:
         from app.routers.push import PushSubscribeBody
 
         with pytest.raises(ValueError):
-            PushSubscribeBody(endpoint="https://100.64.0.1/x", p256dh="p", auth="a")
+            PushSubscribeBody(endpoint="https://100.64.0.1/x", p256dh=VALID_P256DH, auth=VALID_AUTH)
+
+
+class TestSubscriptionKeyValidation:
+    def test_accepts_well_formed_keys(self) -> None:
+        from app.routers.push import PushSubscribeBody
+
+        body = PushSubscribeBody(
+            endpoint="https://fcm.googleapis.com/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+        )
+        assert body.p256dh == VALID_P256DH
+
+    def test_rejects_non_base64url_or_wrong_size_p256dh(self) -> None:
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        for bad in (
+            "p",
+            "not*base64url",
+            "A" * 200,
+            VALID_AUTH,
+        ):  # too short / bad / long / wrong size
+            with pytest.raises(ValueError):
+                PushSubscribeBody(
+                    endpoint="https://fcm.googleapis.com/x", p256dh=bad, auth=VALID_AUTH
+                )
+
+    def test_rejects_non_base64url_or_wrong_size_auth(self) -> None:
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        for bad in ("a", "not*base64url", "A" * 100, VALID_P256DH):
+            with pytest.raises(ValueError):
+                PushSubscribeBody(
+                    endpoint="https://fcm.googleapis.com/x", p256dh=VALID_P256DH, auth=bad
+                )
 
 
 # ── vapid-public-key endpoint gates on full provisioning ─────────────────────
@@ -600,7 +663,13 @@ class TestNoRedirectSession:
             notification_service_module, "get_settings", lambda: _settings(vapid_enabled=True)
         )
         subs = [
-            FakeSub(id="s1", user_id="u1", endpoint="https://push.example/1", p256dh="p", auth="a")
+            FakeSub(
+                id="s1",
+                user_id="u1",
+                endpoint="https://push.example/1",
+                p256dh=VALID_P256DH,
+                auth=VALID_AUTH,
+            )
         ]
         db = FakeAsyncSession()
         svc, _ = _make_service(db, subs)
@@ -620,7 +689,7 @@ class TestSubscriptionCap:
         svc, push_repo = _make_service(db, subs=[])
 
         await svc.upsert_push_subscription(
-            user_id="u1", endpoint="https://push.example/new", p256dh="p", auth="a"
+            user_id="u1", endpoint="https://push.example/new", p256dh=VALID_P256DH, auth=VALID_AUTH
         )
 
         assert push_repo.prune_calls == [

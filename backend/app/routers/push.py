@@ -1,7 +1,10 @@
 """Push subscription router — Web Push VAPID management."""
 
+import base64
+import binascii
+
 from fastapi import APIRouter
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
@@ -10,17 +13,48 @@ from app.services.notification_service import NotificationService
 
 router = APIRouter(prefix="/push", tags=["push"])
 
+# Web Push key sizes (RFC 8291 / 8292): p256dh is an uncompressed P-256 public
+# key (65 bytes), auth is 16 random bytes. Validating these at subscribe time
+# stops a client from storing malformed/oversized keys that would make pywebpush
+# raise on EVERY send (no HTTP response → the row is logged, never pruned, and
+# retried indefinitely).
+_P256DH_BYTES = 65
+_AUTH_BYTES = 16
+
+
+def _b64url_decoded_len(value: str) -> int | None:
+    """Decoded byte length of a base64url string (padding optional), or None
+    if it isn't valid base64url."""
+    try:
+        return len(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+    except (binascii.Error, ValueError):
+        return None
+
 
 class PushSubscribeBody(BaseModel):
     endpoint: str
-    p256dh: str
-    auth: str
+    p256dh: str = Field(max_length=128)
+    auth: str = Field(max_length=64)
 
     @field_validator("endpoint")
     @classmethod
     def validate_endpoint(cls, v: str) -> str:
         if not is_safe_push_endpoint(v):
             raise ValueError("push endpoint must be a public https URL")
+        return v
+
+    @field_validator("p256dh")
+    @classmethod
+    def validate_p256dh(cls, v: str) -> str:
+        if _b64url_decoded_len(v) != _P256DH_BYTES:
+            raise ValueError("p256dh must be a base64url-encoded 65-byte P-256 key")
+        return v
+
+    @field_validator("auth")
+    @classmethod
+    def validate_auth(cls, v: str) -> str:
+        if _b64url_decoded_len(v) != _AUTH_BYTES:
+            raise ValueError("auth must be a base64url-encoded 16-byte secret")
         return v
 
 
