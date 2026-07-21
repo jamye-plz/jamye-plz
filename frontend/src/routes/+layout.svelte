@@ -8,9 +8,11 @@
 
 	let { children } = $props();
 
-	// Register the PWA service worker (production build only; dev runs SW-free).
+	// Register the PWA service worker in production builds. Dev is SW-free by
+	// default, but `VITE_DEV_SW=true bun run dev` opts in so push/PWA can be
+	// tested against the dev server (which already proxies /api + WS).
 	onMount(() => {
-		if (import.meta.env.PROD) {
+		if (import.meta.env.PROD || import.meta.env.VITE_DEV_SW === 'true') {
 			import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }));
 		}
 	});
