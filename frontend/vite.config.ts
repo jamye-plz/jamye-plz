@@ -45,9 +45,12 @@ export default defineConfig({
 				// per build busts the cached shell on each deploy.
 				additionalManifestEntries: [{ url: '/index.html', revision: `build-${Date.now()}` }]
 			},
-			// Keep the dev server free of the SW; test PWA via `bun run preview`.
+			// Dev is SW-free by default; opt in with `VITE_DEV_SW=true bun run dev`
+			// to register the SW against the dev server (which proxies /api + WS)
+			// so push/PWA can be tested end-to-end locally.
 			devOptions: {
-				enabled: false
+				enabled: process.env.VITE_DEV_SW === 'true',
+				type: 'module'
 			}
 		})
 	],

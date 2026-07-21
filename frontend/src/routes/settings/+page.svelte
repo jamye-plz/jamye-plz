@@ -1,9 +1,17 @@
 <script lang="ts">
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import { onMount } from 'svelte';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { getMe, patchMe, logout } from '$lib/api/auth.api';
+	import {
+		detachPushOnLogout,
+		getVapidPublicKey,
+		reconcileOrRecreate,
+		requestAndSubscribe,
+		unsubscribePush
+	} from '$lib/api/push.api';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
 
@@ -36,9 +44,95 @@
 		save.mutate(name);
 	}
 
+	// Push notifications: hidden until we know the server has VAPID keys
+	// configured *and* this browser supports the Push API.
+	let pushSectionVisible = $state(false);
+	let pushSubscribed = $state(false);
+	let pushBusy = $state(false);
+	let pushHint = $state('');
+	let vapidPublicKey: string | null = null;
+
+	onMount(() => {
+		if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+		(async () => {
+			try {
+				const { public_key } = await getVapidPublicKey();
+				if (!public_key) return; // push disabled server-side (no VAPID keys)
+				vapidPublicKey = public_key;
+				// An existing browser subscription may belong to a different user
+				// (a prior /subscribe POST failed, or another account used this
+				// browser) or be signed under a rotated VAPID key. reconcileOrRecreate
+				// reattaches it to the current user, or drops+recreates it under the
+				// current key, before we claim the toggle is on. On failure we must
+				// NOT show "on" (no row for this user → delivery targets the stale
+				// owner or no one) — reflect off + a hint so the user can retry.
+				try {
+					pushSubscribed = await reconcileOrRecreate(vapidPublicKey);
+				} catch {
+					pushSubscribed = false;
+					pushHint = '알림 상태를 확인하지 못했어요. 다시 켜서 등록해 주세요.';
+				}
+				pushSectionVisible = true;
+			} catch {
+				// Keep the toggle hidden if the check fails (offline, no SW, etc.)
+			}
+		})();
+	});
+
+	async function onTogglePush(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const turnOn = input.checked;
+		pushBusy = true;
+		pushHint = '';
+		try {
+			if (turnOn) {
+				const sub = await requestAndSubscribe(vapidPublicKey!);
+				if (!sub) {
+					input.checked = false;
+					pushHint = '브라우저 알림 권한이 차단되어 있어요';
+					return;
+				}
+				pushSubscribed = true;
+			} else {
+				// getRegistration (not `.ready`, which never settles without a
+				// registered SW) so this can't hang.
+				const reg = await navigator.serviceWorker.getRegistration();
+				const sub = reg ? await reg.pushManager.getSubscription() : null;
+				// Remove only THIS device's row so the user's other devices keep
+				// receiving pushes. If the local subscription is already gone
+				// (revoked/expired), skip the server call — passing no endpoint
+				// would hit the delete-all fallback and wrongly disable the
+				// user's other devices.
+				if (sub) {
+					// Independent steps: if the server DELETE fails (transient
+					// 5xx/network) we must STILL unsubscribe the browser, otherwise
+					// notifications keep arriving even though the user disabled them.
+					// A stalled server DELETE (backend deploy/network hang) must not block
+					// the browser unsubscribe or the toggle flip, so bound it with a short
+					// timeout; failures are best-effort (the orphaned row is pruned on its
+					// next send — dead endpoint → 404/410).
+					await Promise.race([
+						unsubscribePush(sub.endpoint).catch(() => {}),
+						new Promise((resolve) => setTimeout(resolve, 3000))
+					]);
+					await sub.unsubscribe();
+				}
+				pushSubscribed = false;
+			}
+		} catch {
+			input.checked = !turnOn;
+			pushHint = '알림 설정을 변경하지 못했어요. 잠시 후 다시 시도해 주세요.';
+		} finally {
+			pushBusy = false;
+		}
+	}
+
 	let loggingOut = $state(false);
 	async function doLogout() {
 		loggingOut = true;
+		// Detach this browser's push subscription first (while the session cookie
+		// is still valid) so the next account here doesn't inherit it.
+		await detachPushOnLogout();
 		try {
 			await logout();
 		} catch {
@@ -123,6 +217,32 @@
 				{/if}
 				<p class="text-xs text-base-content/50">프로필 사진 변경은 곧 지원될 예정이에요.</p>
 			</form>
+
+			{#if pushSectionVisible}
+				<section class="space-y-2 border-t border-base-300 pt-4">
+					<div class="flex items-center justify-between gap-3">
+						<div class="min-w-0">
+							<label for="push-toggle" class="block text-sm font-medium text-base-content">
+								푸시 알림
+							</label>
+							<p class="text-xs text-base-content/50">새 게시글과 채팅 알림을 받아요.</p>
+						</div>
+						<input
+							id="push-toggle"
+							type="checkbox"
+							role="switch"
+							class="toggle shrink-0 toggle-primary"
+							checked={pushSubscribed}
+							disabled={pushBusy}
+							aria-label="푸시 알림"
+							onchange={onTogglePush}
+						/>
+					</div>
+					{#if pushHint}
+						<p class="text-xs text-error" role="alert">{pushHint}</p>
+					{/if}
+				</section>
+			{/if}
 
 			<div class="border-t border-base-300 pt-4">
 				<button

@@ -1,31 +1,181 @@
-import { apiPost, apiDelete } from './client';
+import { apiGet, apiPost, apiDelete } from './client';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
 
 export function subscribePush(payload: PushSubscriptionPayload): Promise<void> {
 	return apiPost<void>('/push/subscribe', payload);
 }
 
-export function unsubscribePush(): Promise<void> {
-	return apiDelete<void>('/push/subscribe');
+/**
+ * Unsubscribe on the server. Pass an `endpoint` to remove just this device's
+ * subscription (so other devices keep receiving pushes); omit it to remove all
+ * of the current user's subscriptions.
+ */
+export function unsubscribePush(endpoint?: string): Promise<void> {
+	return apiDelete<void>('/push/subscribe', endpoint ? { endpoint } : undefined);
 }
 
 /**
- * Helper: request push permission and register subscription.
- * Returns the PushSubscription or null if denied/unsupported.
- * TODO(oma-deferred): wire VAPID public key from env when backend is provisioned.
+ * The active SW registration, or null when there is none. Uses
+ * `getRegistration()` (which resolves to undefined without a registration)
+ * rather than `navigator.serviceWorker.ready` — `ready` never settles when no
+ * SW is registered (e.g. dev, where PWA dev mode is off), which would hang any
+ * `await` on it.
+ */
+async function getActiveRegistration(): Promise<ServiceWorkerRegistration | null> {
+	if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+	return (await navigator.serviceWorker.getRegistration()) ?? null;
+}
+
+/** Whether an existing subscription was created under the given VAPID key. */
+function subscriptionUsesKey(sub: PushSubscription, vapidPublicKey: string): boolean {
+	const current = sub.options.applicationServerKey;
+	if (!current) return false;
+	const a = new Uint8Array(current as ArrayBuffer);
+	const b = urlBase64ToUint8Array(vapidPublicKey);
+	if (a.length !== b.length) return false;
+	return a.every((byte, i) => byte === b[i]);
+}
+
+/** Re-register an already-present browser subscription for the current user. */
+export function reconcilePush(sub: PushSubscription): Promise<void> {
+	const keys = sub.toJSON().keys as { p256dh: string; auth: string };
+	return subscribePush({ endpoint: sub.endpoint, p256dh: keys.p256dh, auth: keys.auth });
+}
+
+/**
+ * Reconcile the current browser subscription for the active user, returning
+ * whether push ends up enabled. If the browser holds a subscription created
+ * under a *different* VAPID key (key rotation), it is dropped and recreated
+ * with the current key — otherwise the backend (signing with the new private
+ * key) would produce sends the push service rejects while the UI shows "on".
+ */
+export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boolean> {
+	const reg = await getActiveRegistration();
+	if (!reg) return false;
+	const existing = await reg.pushManager.getSubscription();
+	if (!existing) return false;
+	if (subscriptionUsesKey(existing, vapidPublicKey)) {
+		await reconcilePush(existing);
+		return true;
+	}
+	// Stale key — recreate under the current one.
+	await existing.unsubscribe();
+	const fresh = await requestAndSubscribe(vapidPublicKey);
+	return fresh !== null;
+}
+
+/**
+ * Re-claim any existing browser push subscription for the CURRENT user.
+ * Called on every authenticated app load (not just from Settings) so that when
+ * a different account signs in on this browser — via a 401 re-login or the
+ * OAuth flow that never touches Settings — the backend subscription row is
+ * reassigned to them (upsert reassigns user_id), instead of the previous
+ * user's pushes continuing to display here. Best-effort: never throws.
+ */
+export async function reclaimPushForCurrentUser(): Promise<void> {
+	try {
+		const reg = await getActiveRegistration();
+		if (!reg) return;
+		const existing = await reg.pushManager.getSubscription();
+		if (!existing) return; // nothing to reclaim
+		try {
+			// The key fetch is INSIDE this handler: a transient 5xx/network failure
+			// here is itself a failed reclaim and must trigger the same teardown,
+			// otherwise a previous account's row stays bound to this browser.
+			const { public_key } = await getVapidPublicKey();
+			if (!public_key) {
+				// VAPID temporarily disabled/half-configured: we can't recreate
+				// under a key, but re-post the existing subscription so its backend
+				// row is reassigned to the CURRENT user (no key needed). Otherwise a
+				// previous account's row would deliver here once keys are restored.
+				await reconcilePush(existing);
+				return;
+			}
+			// Reassign to the current user, recreating the subscription if it was
+			// signed under a rotated VAPID key (reconcileOrRecreate compares
+			// applicationServerKey to the current public key).
+			await reconcileOrRecreate(public_key);
+		} catch {
+			// Reclaim failed (key fetch or reconcile: transient 401/5xx/network):
+			// tear the local subscription down so a PREVIOUS account's still-active
+			// backend row can't keep delivering that user's pushes to whoever is
+			// signed in here now. Better no push than cross-account push.
+			await detachPushOnLogout();
+		}
+	} catch {
+		// Best-effort — never throws.
+	}
+}
+
+/**
+ * Detach this browser's push subscription on logout so the next account to use
+ * the browser doesn't inherit the previous user's active subscription row (the
+ * server keys delivery by user_id, so a leftover row would keep sending the old
+ * owner's pushes to whoever is now on this device). Best-effort: never throws,
+ * and never hangs when no SW is registered.
+ */
+export async function detachPushOnLogout(): Promise<void> {
+	try {
+		const reg = await getActiveRegistration();
+		if (!reg) return;
+		const sub = await reg.pushManager.getSubscription();
+		if (!sub) return;
+		// Server delete and browser unsubscribe are independent: if the server
+		// call fails (transient 5xx/network) OR stalls (backend deploy/network
+		// hang), we must STILL drop the live browser subscription and let logout
+		// proceed — otherwise the logout button stays disabled and this device
+		// keeps showing the previous account's pushes. Bound the server delete
+		// with a short timeout; it is best-effort (a leftover row is pruned on
+		// its next send once the browser subscription is gone).
+		await Promise.race([
+			unsubscribePush(sub.endpoint).catch(() => {}),
+			new Promise<void>((resolve) => setTimeout(resolve, 3000))
+		]);
+		await sub.unsubscribe();
+	} catch {
+		// Logout must proceed regardless of push cleanup failures.
+	}
+}
+
+/** Fetch the server's VAPID public key. Empty string means push is disabled. */
+export function getVapidPublicKey(): Promise<{ public_key: string }> {
+	return apiGet<{ public_key: string }>('/push/vapid-public-key');
+}
+
+/**
+ * Convert a base64url-encoded VAPID public key (backend/spec format) into the
+ * Uint8Array that `PushManager.subscribe`'s `applicationServerKey` expects.
+ * Passing the raw base64url string works in Chrome but throws in Safari, so
+ * this conversion is mandatory for cross-browser support.
+ */
+export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+	const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+	const base64Safe = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+	const rawData = atob(base64Safe);
+	const outputArray = new Uint8Array(new ArrayBuffer(rawData.length));
+	for (let i = 0; i < rawData.length; i++) {
+		outputArray[i] = rawData.charCodeAt(i);
+	}
+	return outputArray;
+}
+
+/**
+ * Request push permission and register a subscription with the given VAPID
+ * public key (base64url-encoded). Returns the PushSubscription, or null if
+ * the browser denies permission or lacks Push API support.
  */
 export async function requestAndSubscribe(
 	vapidPublicKey: string
 ): Promise<PushSubscription | null> {
-	if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+	const reg = await getActiveRegistration();
+	if (!reg) return null;
 
 	const permission = await Notification.requestPermission();
 	if (permission !== 'granted') return null;
 
-	const reg = await navigator.serviceWorker.ready;
 	const sub = await reg.pushManager.subscribe({
 		userVisibleOnly: true,
-		applicationServerKey: vapidPublicKey
+		applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
 	});
 
 	const raw = sub.toJSON();
