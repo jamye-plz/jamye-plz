@@ -14,6 +14,24 @@ import socket
 from urllib.parse import urlparse
 
 
+def _normalize_host(host: str) -> str | None:
+    """IDNA-normalize a hostname to the ASCII form the resolver will use, or
+    None if it can't be normalized.
+
+    ``urlparse`` keeps non-ASCII characters verbatim, but the resolver applies
+    IDNA — U+3002 (。), U+FF0E (．) and U+FF61 (｡) all normalize to "." — so
+    ``https://127。0。0。1/x`` resolves to loopback while sailing past a literal-IP
+    check performed on the raw string. Normalizing first means the guards below
+    inspect exactly what Requests will connect to.
+    """
+    if host.isascii():
+        return host
+    try:
+        return host.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+
+
 def _as_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Return the IP a literal host denotes, or None for a genuine hostname.
 
@@ -56,16 +74,22 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     hosts requires a globally-routable address — ``is_global`` rejects
     loopback/private/link-local/reserved AND the shared CGNAT range
     100.64.0.0/10 (Tailscale et al.), plus multicast/unspecified. Numeric
-    aliases (``127.1``, ``2130706433``, ``0x7f000001``) are normalized first,
-    and the standard non-numeric loopback names (``localhost``,
-    ``ip6-localhost``/``ip6-loopback`` from the default Linux /etc/hosts) are
-    rejected by name. (DNS-rebinding of an arbitrary public hostname is out of
-    scope for the homelab threat model; real push services are public https.)
+    aliases (``127.1``, ``2130706433``, ``0x7f000001``) and IDNA forms
+    (``127。0。0。1``) are normalized first, and the standard non-numeric loopback
+    names (``localhost``, ``ip6-localhost``/``ip6-loopback`` from the default
+    Linux /etc/hosts) are rejected by name. (DNS-rebinding of an arbitrary
+    public hostname is out of scope for the homelab threat model; real push
+    services are public https.)
     """
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.hostname:
         return False
-    host = parsed.hostname.lower()
+    # Normalize to the resolver's view BEFORE any guard, so Unicode dot
+    # look-alikes can't smuggle a loopback literal past the checks below.
+    normalized = _normalize_host(parsed.hostname)
+    if normalized is None:
+        return False
+    host = normalized.lower()
     if host in _LOCAL_HOST_ALIASES:
         return False
     ip = _as_ip_literal(host)

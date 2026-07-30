@@ -552,6 +552,19 @@ class TestEndpointSsrfValidation:
                     endpoint=f"https://{host}:8443/x", p256dh=VALID_P256DH, auth=VALID_AUTH
                 )
 
+    def test_rejects_unicode_dot_lookalike_loopback(self) -> None:
+        """U+3002 / U+FF0E / U+FF61 all IDNA-normalize to '.', so the resolver
+        reaches 127.0.0.1 even though the raw string isn't a literal IP."""
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        for host in ("127。0。0。1", "127．0．0．1", "127｡0｡0｡1"):
+            with pytest.raises(ValueError):
+                PushSubscribeBody(
+                    endpoint=f"https://{host}/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+                )
+
     def test_rejects_multicast_literals(self) -> None:
         """Python 3.12+ marks multicast as is_global; reject it explicitly."""
         import pytest
