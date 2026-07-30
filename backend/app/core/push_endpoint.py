@@ -51,11 +51,16 @@ def _as_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address |
     return ipaddress.ip_address(packed)
 
 
-# Non-numeric hostnames that resolve to loopback on a default Linux host
-# (/etc/hosts). A literal-IP guard alone misses these because they're names,
-# not IPs, so an endpoint like https://ip6-localhost/… would otherwise be
-# treated as a public host and handed to pywebpush.
-_LOCAL_HOST_ALIASES = frozenset(
+# Non-numeric hostnames that a default Linux /etc/hosts maps to non-global
+# addresses. A literal-IP guard alone misses these because they're names, not
+# IPs, so an endpoint like https://ip6-allnodes/… would otherwise be treated as
+# a public host and handed to pywebpush.
+#   ::1     localhost ip6-localhost ip6-loopback
+#   fe00::0 ip6-localnet        (reserved)
+#   ff00::0 ip6-mcastprefix     (multicast)
+#   ff02::1 ip6-allnodes        (multicast)
+#   ff02::2 ip6-allrouters      (multicast)
+_NON_GLOBAL_HOST_ALIASES = frozenset(
     {
         "localhost",
         "localhost.localdomain",
@@ -63,6 +68,10 @@ _LOCAL_HOST_ALIASES = frozenset(
         "localhost6.localdomain6",
         "ip6-localhost",
         "ip6-loopback",
+        "ip6-localnet",
+        "ip6-mcastprefix",
+        "ip6-allnodes",
+        "ip6-allrouters",
     }
 )
 
@@ -75,11 +84,11 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     loopback/private/link-local/reserved AND the shared CGNAT range
     100.64.0.0/10 (Tailscale et al.), plus multicast/unspecified. Numeric
     aliases (``127.1``, ``2130706433``, ``0x7f000001``) and IDNA forms
-    (``127。0。0。1``) are normalized first, and the standard non-numeric loopback
-    names (``localhost``, ``ip6-localhost``/``ip6-loopback`` from the default
-    Linux /etc/hosts) are rejected by name. (DNS-rebinding of an arbitrary
-    public hostname is out of scope for the homelab threat model; real push
-    services are public https.)
+    (``127。0。0。1``) are normalized first, and the non-numeric names a default
+    Linux /etc/hosts maps to non-global addresses (``localhost``,
+    ``ip6-localhost``, ``ip6-allnodes``, …) are rejected by name. (DNS-rebinding
+    of an arbitrary public hostname is out of scope for the homelab threat
+    model; real push services are public https.)
     """
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.hostname:
@@ -90,12 +99,14 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     if normalized is None:
         return False
     host = normalized.lower()
-    if host in _LOCAL_HOST_ALIASES:
+    if host in _NON_GLOBAL_HOST_ALIASES:
         return False
     ip = _as_ip_literal(host)
-    # Reject multicast/unspecified explicitly: Python 3.12+ reports
-    # is_global == True for multicast literals (224.0.0.1, ff02::1), so the
-    # is_global check alone would let them through.
-    if ip is not None and (not ip.is_global or ip.is_multicast or ip.is_unspecified):
+    # is_global alone is not enough: Python reports is_global == True for
+    # multicast literals (224.0.0.1, ff02::1) and for reserved IPv6 such as
+    # fe00::0, so those flags are checked explicitly too.
+    if ip is not None and (
+        not ip.is_global or ip.is_multicast or ip.is_unspecified or ip.is_reserved
+    ):
         return False
     return True

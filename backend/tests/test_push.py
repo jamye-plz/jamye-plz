@@ -546,7 +546,17 @@ class TestEndpointSsrfValidation:
 
         from app.routers.push import PushSubscribeBody
 
-        for host in ("ip6-localhost", "ip6-loopback", "localhost.localdomain", "IP6-LOCALHOST"):
+        for host in (
+            "ip6-localhost",
+            "ip6-loopback",
+            "localhost.localdomain",
+            "IP6-LOCALHOST",
+            # /etc/hosts also maps these to reserved/multicast IPv6.
+            "ip6-localnet",
+            "ip6-mcastprefix",
+            "ip6-allnodes",
+            "ip6-allrouters",
+        ):
             with pytest.raises(ValueError):
                 PushSubscribeBody(
                     endpoint=f"https://{host}:8443/x", p256dh=VALID_P256DH, auth=VALID_AUTH
@@ -571,7 +581,7 @@ class TestEndpointSsrfValidation:
 
         from app.routers.push import PushSubscribeBody
 
-        for host in ("224.0.0.1", "[ff02::1]"):
+        for host in ("224.0.0.1", "[ff02::1]", "[ff00::0]", "[fe00::0]"):
             with pytest.raises(ValueError):
                 PushSubscribeBody(
                     endpoint=f"https://{host}/x", p256dh=VALID_P256DH, auth=VALID_AUTH
