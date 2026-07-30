@@ -6,14 +6,17 @@ and the WebSocket /api/ws endpoint.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.core import ws_hub
+from app.core import storage, ws_hub
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.routers import (
@@ -35,11 +38,25 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if settings.minio_enabled:
+        try:
+            await asyncio.to_thread(storage.ensure_bucket)
+        except Exception:
+            # Warn-only: a MinIO hiccup (e.g. homelab restart ordering) must
+            # not prevent the API from serving traffic.
+            logger.warning("Failed to ensure MinIO bucket exists at startup", exc_info=True)
+    yield
+
+
 app = FastAPI(
     title="jamye-plz API",
     version="0.1.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 
 # ── CORS ─────────────────────────────────────────────────────────────────────

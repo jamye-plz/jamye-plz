@@ -1,14 +1,16 @@
 """Media router — presign and confirm media uploads.
 
-Real presign URLs are generated only when MinIO/S3 keys are provisioned.
-# TODO(oma-deferred): integrate minio when key is provisioned
+Real presigned PUT URLs are generated only when MinIO/S3 keys are
+provisioned (settings.minio_enabled); otherwise storage.presign_put returns
+a deterministic local fallback URL so the demo works without an object
+store. See app.core.storage for the env-conditional implementation.
 """
 
 import uuid
 
 from fastapi import APIRouter
 
-from app.core.config import get_settings
+from app.core import storage
 from app.core.deps import CurrentUser, DbSession
 from app.schemas.topic import MediaConfirmRequest, MediaOut, MediaPresignOut, MediaPresignRequest
 from app.services.group_service import GroupService
@@ -31,18 +33,12 @@ async def presign_upload(
     topic = await topic_svc.get_topic_in_group_or_404(topic_id, group_id)
     await topic_svc.assert_author_or_owner(topic, current_user.id)
 
-    settings = get_settings()
     object_key = f"topics/{topic_id}/{uuid.uuid4()}"
-
-    if settings.minio_enabled:
-        # TODO(oma-deferred): integrate minio when key is provisioned
-        raise NotImplementedError("MinIO presign real path not implemented")
-
-    # Fallback: return a stub upload URL for demo
+    upload_url, expires_in = storage.presign_put(object_key, body.content_type, body.byte_size)
     return MediaPresignOut(
         object_key=object_key,
-        upload_url=f"http://localhost:9000/{settings.minio_bucket}/{object_key}",
-        expires_in=3600,
+        upload_url=upload_url,
+        expires_in=expires_in,
     )
 
 
