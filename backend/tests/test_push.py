@@ -464,6 +464,49 @@ class TestDispatchPush:
 
         assert created == []
 
+    def test_schedule_sheds_event_when_in_flight_cap_reached(self, monkeypatch) -> None:
+        """A burst must not grow the task set without bound."""
+        created: list[Any] = []
+        monkeypatch.setattr(
+            push_dispatch_module.asyncio, "create_task", lambda coro: created.append(coro)
+        )
+        # Simulate a saturated dispatcher (dummy members; never awaited).
+        saturated = {object() for _ in range(push_dispatch_module._MAX_INFLIGHT_DISPATCHES)}
+        monkeypatch.setattr(push_dispatch_module, "_background_tasks", saturated)
+
+        push_dispatch_module.schedule_push_dispatch(["u1"], PAYLOAD)
+
+        assert created == []  # event shed, no new task
+
+    async def test_dispatch_bounds_concurrent_network_sends(self, monkeypatch) -> None:
+        """At most _MAX_CONCURRENT_DISPATCHES run their sends at once."""
+        monkeypatch.setattr(push_dispatch_module, "_get_session_factory", lambda: _FakeSessionCtx)
+        # Fresh semaphore so this test is independent of other tests' usage.
+        limit = push_dispatch_module._MAX_CONCURRENT_DISPATCHES
+        monkeypatch.setattr(push_dispatch_module, "_dispatch_semaphore", asyncio.Semaphore(limit))
+
+        active = 0
+        peak = 0
+
+        class FakeNotificationService:
+            def __init__(self, _db: Any) -> None:
+                pass
+
+            async def send_push(self, user_id: str, payload: dict[str, Any]) -> None:
+                nonlocal active, peak
+                active += 1
+                peak = max(peak, active)
+                await asyncio.sleep(0)  # yield so overlap is observable
+                active -= 1
+
+        monkeypatch.setattr(push_dispatch_module, "NotificationService", FakeNotificationService)
+
+        await asyncio.gather(
+            *(push_dispatch_module.dispatch_push([f"u{i}"], PAYLOAD) for i in range(limit * 3))
+        )
+
+        assert peak <= limit
+
 
 # ── Endpoint SSRF validation (PushSubscribeBody) ─────────────────────────────
 

@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 # they complete. Each task removes itself once done.
 _background_tasks: set[asyncio.Task[None]] = set()
 
+# Bound the dispatch fan-out. One event can occupy
+# recipients × subscriptions × PUSH_REQUEST_TIMEOUT_SECONDS, so creating an
+# unrestricted task per event (e.g. a burst of chat messages) would grow this
+# set and the default to_thread executor queue without limit — consuming memory
+# and delaying later pushes. The semaphore caps how many dispatches do network
+# I/O at once; the in-flight cap sheds new events once too many are queued.
+# Shedding is acceptable because push is best-effort: the in-app notification is
+# already persisted, and chat_unread coalesces on its dedup key, so the next
+# message re-triggers delivery.
+_MAX_INFLIGHT_DISPATCHES = 64
+_MAX_CONCURRENT_DISPATCHES = 4
+_dispatch_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_DISPATCHES)
+
 
 async def dispatch_push(user_ids: list[str], payload: dict[str, Any]) -> None:
     """Send ``payload`` as a Web Push to each user in ``user_ids``.
@@ -38,14 +51,17 @@ async def dispatch_push(user_ids: list[str], payload: dict[str, Any]) -> None:
     absorbed by ``NotificationService.send_push``) is caught and logged here.
     """
     try:
-        session_factory = _get_session_factory()
-        async with session_factory() as db:
-            svc = NotificationService(db)
-            for user_id in user_ids:
-                try:
-                    await svc.send_push(user_id, payload)
-                except Exception:
-                    logger.warning("push dispatch failed for user %s", user_id, exc_info=True)
+        # Only a bounded number of dispatches hit the network (and the
+        # to_thread executor) at once; the rest wait their turn here.
+        async with _dispatch_semaphore:
+            session_factory = _get_session_factory()
+            async with session_factory() as db:
+                svc = NotificationService(db)
+                for user_id in user_ids:
+                    try:
+                        await svc.send_push(user_id, payload)
+                    except Exception:
+                        logger.warning("push dispatch failed for user %s", user_id, exc_info=True)
     except Exception:
         logger.warning("push dispatch failed to start", exc_info=True)
 
@@ -53,10 +69,19 @@ async def dispatch_push(user_ids: list[str], payload: dict[str, Any]) -> None:
 def schedule_push_dispatch(user_ids: list[str], payload: dict[str, Any]) -> None:
     """Schedule ``dispatch_push`` without blocking the caller.
 
-    No-op when ``user_ids`` is empty. Must not be awaited by callers — it
-    returns as soon as the task is scheduled.
+    No-op when ``user_ids`` is empty, and sheds the event (with a warning) when
+    too many dispatches are already in flight, so a burst of messages can't grow
+    the task set without bound. Must not be awaited by callers — it returns as
+    soon as the task is scheduled.
     """
     if not user_ids:
+        return
+    if len(_background_tasks) >= _MAX_INFLIGHT_DISPATCHES:
+        logger.warning(
+            "push dispatch saturated (%d in flight); dropping event for %d recipient(s)",
+            len(_background_tasks),
+            len(user_ids),
+        )
         return
     task = asyncio.create_task(dispatch_push(user_ids, payload))
     _background_tasks.add(task)
