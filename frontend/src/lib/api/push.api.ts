@@ -180,11 +180,25 @@ export async function requestAndSubscribe(
 
 	const raw = sub.toJSON();
 	const keys = raw.keys as { p256dh: string; auth: string };
-	await subscribePush({
-		endpoint: sub.endpoint,
-		p256dh: keys.p256dh,
-		auth: keys.auth
-	});
+	try {
+		await subscribePush({
+			endpoint: sub.endpoint,
+			p256dh: keys.p256dh,
+			auth: keys.auth
+		});
+	} catch (err) {
+		// Registration failed (rejected, or the server committed but the response
+		// was lost). Roll the local subscription back so we never leave a live
+		// browser subscription the UI reports as off — which would keep
+		// delivering, or be silently reclaimed later. Both steps best-effort;
+		// rethrow so the caller still surfaces the failure.
+		await Promise.race([
+			unsubscribePush(sub.endpoint).catch(() => {}),
+			new Promise<void>((resolve) => setTimeout(resolve, 3000))
+		]);
+		await sub.unsubscribe().catch(() => {});
+		throw err;
+	}
 
 	return sub;
 }
