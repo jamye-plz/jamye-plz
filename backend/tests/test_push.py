@@ -23,11 +23,16 @@ from app.services.notification_service import NotificationService
 
 PAYLOAD = {"title": "그룹 새 잼얘", "body": "오늘 뭐 먹지", "url": "/groups/g1/topics/t1/chat"}
 
-# Well-formed Web Push keys: p256dh = base64url of 65 bytes, auth = of 16 bytes.
+# Well-formed Web Push keys: p256dh is a real uncompressed P-256 point (65
+# bytes, must parse on the curve — not just any 65-byte blob), auth is 16 bytes.
 VALID_P256DH = (
-    "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "BCLlr3Rm1-kFsGIY8fcpZyDMutT3su7dfGDDevY1vbY-f8kGkzT05mCY_kg-HptHgLlr0z5zW1p-1EPY8jkroLE"
 )
 VALID_AUTH = "AAAAAAAAAAAAAAAAAAAAAA"
+# 0x04 + 64 zero bytes: correct length, but not a point on the curve.
+FAKE_P256DH = (
+    "BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+)
 
 
 # ── Fakes ────────────────────────────────────────────────────────────────────
@@ -574,6 +579,17 @@ class TestSubscriptionKeyValidation:
             endpoint="https://fcm.googleapis.com/x", p256dh=VALID_P256DH, auth=VALID_AUTH
         )
         assert body.p256dh == VALID_P256DH
+
+    def test_rejects_65_byte_blob_that_is_not_a_curve_point(self) -> None:
+        """Correct length but not on P-256 — pywebpush would fail locally forever."""
+        import pytest
+
+        from app.routers.push import PushSubscribeBody
+
+        with pytest.raises(ValueError):
+            PushSubscribeBody(
+                endpoint="https://fcm.googleapis.com/x", p256dh=FAKE_P256DH, auth=VALID_AUTH
+            )
 
     def test_rejects_non_base64url_or_wrong_size_p256dh(self) -> None:
         import pytest

@@ -3,6 +3,7 @@
 import base64
 import binascii
 
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import APIRouter
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,11 +23,17 @@ _P256DH_BYTES = 65
 _AUTH_BYTES = 16
 
 
-def _b64url_decoded_len(value: str) -> int | None:
-    """Decoded byte length of a base64url string (padding optional), or None
-    if it isn't valid base64url."""
+def _b64url_decode(value: str) -> bytes | None:
+    """Strictly decode a base64url string (padding optional), or None if it
+    isn't valid base64url.
+
+    Uses ``b64decode(validate=True)`` rather than ``urlsafe_b64decode``, which
+    silently discards characters outside the alphabet — so "not*base64url"
+    would otherwise decode instead of being rejected.
+    """
     try:
-        return len(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+        normalized = value.replace("-", "+").replace("_", "/")
+        return base64.b64decode(normalized + "=" * (-len(value) % 4), validate=True)
     except (binascii.Error, ValueError):
         return None
 
@@ -46,14 +53,24 @@ class PushSubscribeBody(BaseModel):
     @field_validator("p256dh")
     @classmethod
     def validate_p256dh(cls, v: str) -> str:
-        if _b64url_decoded_len(v) != _P256DH_BYTES:
+        raw = _b64url_decode(v)
+        if raw is None or len(raw) != _P256DH_BYTES:
             raise ValueError("p256dh must be a base64url-encoded 65-byte P-256 key")
+        # Length alone isn't enough: any 65-byte blob (e.g. 0x04 + 64 zero
+        # bytes) would pass but is not a curve point, and pywebpush would then
+        # fail locally on EVERY send with no HTTP response — so the row is
+        # never pruned and is retried forever. Parse the uncompressed point.
+        try:
+            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), raw)
+        except ValueError as exc:
+            raise ValueError("p256dh is not a valid P-256 public key") from exc
         return v
 
     @field_validator("auth")
     @classmethod
     def validate_auth(cls, v: str) -> str:
-        if _b64url_decoded_len(v) != _AUTH_BYTES:
+        raw = _b64url_decode(v)
+        if raw is None or len(raw) != _AUTH_BYTES:
             raise ValueError("auth must be a base64url-encoded 16-byte secret")
         return v
 
