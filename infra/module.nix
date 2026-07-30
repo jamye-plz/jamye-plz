@@ -11,7 +11,16 @@
 #     enable = true;
 #     listenPort = 8080;                       # ingress → http://<host>.tailnet:8080
 #     environmentFile = config.sops.templates."jamye.env".path;  # secrets
+#     storage.publicUrl = "https://minio.example.com";           # ingress → :9000
+#     storage.rootCredentialsFile = config.sops.secrets."jamye-plz/minio_root".path;
 #   };
+#
+# The module provisions the full stack: PostgreSQL (peer auth), MinIO (media
+# objects, private bucket), alembic migrations, the uvicorn backend and a local
+# Caddy serving the SPA. The ingress node publishes two hostnames — the app on
+# listenPort and the S3 endpoint on storage.port (a separate subdomain, since
+# presigned URLs are SigV4-signed over the host+path and cannot be re-rooted
+# under a path prefix).
 { self }:
 { config, lib, pkgs, ... }:
 let
@@ -34,10 +43,17 @@ let
   # peer-auth DSN, which has no password). For an external DB whose DSN carries
   # credentials, set databaseUrl = null and put DATABASE_URL in environmentFile
   # so the secret never enters the world-readable Nix store / binary caches.
+  # MINIO_ENDPOINT/MINIO_BUCKET are non-secret deploy config, so they are
+  # exported here like DATABASE_URL. The credentials (MINIO_ACCESS_KEY/
+  # MINIO_SECRET_KEY) are NOT — they stay in environmentFile so they never
+  # enter the world-readable Nix store.
   exports =
     "export APP_ENV=production\n"
     + lib.optionalString (cfg.databaseUrl != null)
-      "export DATABASE_URL=${lib.escapeShellArg cfg.databaseUrl}\n";
+      "export DATABASE_URL=${lib.escapeShellArg cfg.databaseUrl}\n"
+    + lib.optionalString (cfg.storage.publicUrl != null)
+      "export MINIO_ENDPOINT=${lib.escapeShellArg cfg.storage.publicUrl}\n"
+    + "export MINIO_BUCKET=${lib.escapeShellArg cfg.storage.bucket}\n";
   startBackend = pkgs.writeShellScript "jamye-plz-backend-start" ''
     ${exports}
     exec ${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}
@@ -123,6 +139,56 @@ in
         default = "jamye";
       };
     };
+
+    storage = {
+      createLocally = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Provision a local MinIO for media objects (topic images). The S3 API
+          listens on `port` so the ingress node can publish it under
+          `publicUrl` over the tailnet; the console stays on loopback.
+        '';
+      };
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 9000;
+        description = "Plain-HTTP S3 API port, reverse-proxied by the ingress node (tailnet only).";
+      };
+      consolePort = lib.mkOption {
+        type = lib.types.port;
+        default = 9001;
+        description = "MinIO web console port. Bound to loopback — never published by the ingress node.";
+      };
+      rootCredentialsFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        example = ''config.sops.secrets."jamye-plz/minio_root".path'';
+        description = ''
+          EnvironmentFile (systemd format) with MINIO_ROOT_USER and
+          MINIO_ROOT_PASSWORD for the local MinIO. Required when
+          `createLocally` is true — MinIO would otherwise boot with the
+          well-known minioadmin/minioadmin defaults.
+        '';
+      };
+      publicUrl = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "https://minio.example.com";
+        description = ''
+          Browser-reachable base URL of the S3 endpoint, exported as
+          MINIO_ENDPOINT. It is embedded verbatim in every presigned URL, so it
+          must be the public ingress address (https) — not a loopback or
+          container-internal host. Leave null to supply MINIO_ENDPOINT through
+          environmentFile instead.
+        '';
+      };
+      bucket = lib.mkOption {
+        type = lib.types.str;
+        default = "jamye";
+        description = "Bucket holding media objects. Created on first start when `createLocally` is true.";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -165,6 +231,23 @@ in
         assertion = cfg.database.createLocally || cfg.databaseUrl != defaultDatabaseUrl;
         message = "services.jamye-plz: with database.createLocally = false, set databaseUrl to the external DSN (or null + DATABASE_URL via environmentFile); the default Unix-socket DSN targets a local cluster that is not provisioned.";
       }
+      {
+        # Without a credentials file MinIO boots with the documented
+        # minioadmin/minioadmin defaults — on a host whose S3 port is reachable
+        # from the ingress node that is an open object store.
+        assertion = !cfg.storage.createLocally || cfg.storage.rootCredentialsFile != null;
+        message = "services.jamye-plz.storage.rootCredentialsFile must be set when storage.createLocally = true: MinIO would otherwise start with the default minioadmin credentials.";
+      }
+      {
+        # The backend runs APP_ENV=production, where core/config.py rejects a
+        # non-https or localhost MINIO_ENDPOINT (it is embedded in presigned
+        # URLs handed to browsers). Fail at build time instead of at startup.
+        assertion =
+          cfg.storage.publicUrl == null
+          || (lib.hasPrefix "https://" cfg.storage.publicUrl
+          && builtins.match ".*(localhost|127\\.0\\.0\\.1).*" cfg.storage.publicUrl == null);
+        message = "services.jamye-plz.storage.publicUrl must be a browser-reachable https:// URL (not localhost): it is embedded verbatim in presigned URLs, and the backend refuses to start otherwise in production.";
+      }
     ];
 
     # ── Service user ────────────────────────────────────────────────────────
@@ -199,6 +282,55 @@ in
       ];
     };
 
+    # ── MinIO (local object storage for media) ──────────────────────────────
+    # The S3 API binds all interfaces so the ingress node reaches it over the
+    # tailnet (same trust model as listenPort); the console is loopback-only so
+    # it is never publishable. The bucket itself stays PRIVATE — reads go
+    # through short-TTL presigned GETs the backend issues after a membership
+    # check (see docs/architecture/api-contract.md).
+    services.minio = lib.mkIf cfg.storage.createLocally {
+      enable = true;
+      listenAddress = ":${toString cfg.storage.port}";
+      consoleAddress = "127.0.0.1:${toString cfg.storage.consolePort}";
+      rootCredentialsFile = cfg.storage.rootCredentialsFile;
+    };
+
+    # Create the media bucket once MinIO is up. The backend also calls
+    # ensure_bucket() at startup, but that goes through MINIO_ENDPOINT — the
+    # PUBLIC ingress URL — which would hairpin out through Cloudflare and back.
+    # Doing it here over loopback keeps first boot self-contained (and the
+    # backend's own attempt is warn-only, so it stays harmless).
+    systemd.services.jamye-plz-minio-bucket = lib.mkIf cfg.storage.createLocally {
+      description = "jamye-plz: ensure the MinIO media bucket exists";
+      after = [ "minio.service" ];
+      requires = [ "minio.service" ];
+      before = [ "jamye-plz-backend.service" ];
+      wantedBy = [ "multi-user.target" ];
+      path = [ pkgs.minio-client ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        # MINIO_ROOT_USER / MINIO_ROOT_PASSWORD for the mc alias below.
+        EnvironmentFile = cfg.storage.rootCredentialsFile;
+        DynamicUser = true;
+        StateDirectory = "jamye-plz-mc";
+        Environment = "MC_CONFIG_DIR=/var/lib/jamye-plz-mc";
+      };
+      script = ''
+        set -eu
+        # MinIO accepts connections slightly after the unit is active.
+        for _ in $(seq 1 30); do
+          if mc alias set local "http://127.0.0.1:${toString cfg.storage.port}" \
+               "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; then
+            exec mc mb --ignore-existing ${lib.escapeShellArg "local/${cfg.storage.bucket}"}
+          fi
+          sleep 1
+        done
+        echo "MinIO did not become ready in time" >&2
+        exit 1
+      '';
+    };
+
     # ── Migrations (alembic upgrade head), before the backend starts ────────
     systemd.services.jamye-plz-migrate = {
       description = "jamye-plz database migrations (alembic upgrade head)";
@@ -220,9 +352,11 @@ in
     systemd.services.jamye-plz-backend = {
       description = "jamye-plz FastAPI backend (uvicorn)";
       after = [ "network.target" "jamye-plz-migrate.service" ]
-        ++ lib.optional cfg.database.createLocally "postgresql.service";
+        ++ lib.optional cfg.database.createLocally "postgresql.service"
+        ++ lib.optional cfg.storage.createLocally "jamye-plz-minio-bucket.service";
       requires = [ "jamye-plz-migrate.service" ]
-        ++ lib.optional cfg.database.createLocally "postgresql.service";
+        ++ lib.optional cfg.database.createLocally "postgresql.service"
+        ++ lib.optional cfg.storage.createLocally "jamye-plz-minio-bucket.service";
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         User = cfg.user;
