@@ -8,6 +8,7 @@
 	import {
 		detachPushOnLogout,
 		getVapidPublicKey,
+		NoServiceWorkerError,
 		reconcileOrRecreate,
 		requestAndSubscribe,
 		unsubscribePush
@@ -119,9 +120,14 @@
 				}
 				pushSubscribed = false;
 			}
-		} catch {
+		} catch (err) {
 			input.checked = !turnOn;
-			pushHint = '알림 설정을 변경하지 못했어요. 잠시 후 다시 시도해 주세요.';
+			// A missing service worker is not a permission problem — saying "blocked"
+			// here sends the user to browser settings that are already correct.
+			pushHint =
+				err instanceof NoServiceWorkerError
+					? '앱 업데이트가 필요해요. 앱을 완전히 껐다가 다시 열어 주세요.'
+					: '알림 설정을 변경하지 못했어요. 잠시 후 다시 시도해 주세요.';
 		} finally {
 			pushBusy = false;
 		}

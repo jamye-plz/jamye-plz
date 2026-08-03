@@ -43,7 +43,18 @@ export default defineConfig({
 				// adapter-static writes the SPA fallback (index.html) after Vite PWA's
 				// scan, so precache it explicitly (fetched at SW install). New revision
 				// per build busts the cached shell on each deploy.
-				additionalManifestEntries: [{ url: '/index.html', revision: `build-${Date.now()}` }]
+				additionalManifestEntries: [{ url: '/index.html', revision: `build-${Date.now()}` }],
+				// `manifest.webmanifest` would otherwise be precached TWICE with two
+				// different revisions: vite-plugin-pwa appends an entry hashed from the
+				// in-memory manifest object, and @vite-pwa/sveltekit's glob patterns also
+				// pick up the emitted file (hashed from its on-disk bytes, which differ).
+				// Workbox's `addToCacheList` throws `add-to-cache-list-conflicting-entries`
+				// for a repeated URL with a mismatched cache key, and that throw runs at
+				// top-level SW evaluation — so registration fails outright and the app
+				// ends up with NO service worker (no offline shell, and push subscribe
+				// impossible because there is no registration to subscribe against).
+				// Ignoring the globbed copy leaves the plugin's own entry as the only one.
+				globIgnores: ['**/*.webmanifest']
 			},
 			// Dev is SW-free by default; opt in with `VITE_DEV_SW=true bun run dev`
 			// to register the SW against the dev server (which proxies /api + WS)

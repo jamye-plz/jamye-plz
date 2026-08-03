@@ -1,6 +1,17 @@
 import { apiGet, apiPost, apiDelete } from './client';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
 
+/**
+ * No service worker is registered, so there is nothing to subscribe against.
+ * Signals a broken/absent SW — NOT a denied notification permission.
+ */
+export class NoServiceWorkerError extends Error {
+	constructor() {
+		super('No service worker registration');
+		this.name = 'NoServiceWorkerError';
+	}
+}
+
 export function subscribePush(payload: PushSubscriptionPayload): Promise<void> {
 	return apiPost<void>('/push/subscribe', payload);
 }
@@ -167,11 +178,21 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 export async function requestAndSubscribe(
 	vapidPublicKey: string
 ): Promise<PushSubscription | null> {
-	const reg = await getActiveRegistration();
-	if (!reg) return null;
-
+	// Ask for permission BEFORE any other await. iOS Safari (home-screen PWA)
+	// only honours `requestPermission()` while the tap's transient activation is
+	// still live; awaiting anything first can drop it, and the call then resolves
+	// 'denied' without ever showing the prompt. Already-granted permission
+	// resolves immediately, so the non-gesture callers (reconcile paths, which
+	// only run when a subscription — hence a grant — already exists) are safe.
 	const permission = await Notification.requestPermission();
 	if (permission !== 'granted') return null;
+
+	const reg = await getActiveRegistration();
+	// Distinct from a permission refusal: the browser is willing, but the app has
+	// no service worker to attach the subscription to. Callers must not report
+	// this as "notifications are blocked" — that sends the user to browser
+	// settings that are already correct.
+	if (!reg) throw new NoServiceWorkerError();
 
 	const sub = await reg.pushManager.subscribe({
 		userVisibleOnly: true,
