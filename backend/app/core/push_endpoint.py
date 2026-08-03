@@ -32,6 +32,44 @@ def _normalize_host(host: str) -> str | None:
         return None
 
 
+def _is_non_global(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Whether an address must never be connected to.
+
+    ``is_global`` alone is not enough: Python reports is_global == True for
+    multicast literals (224.0.0.1, ff02::1) and for reserved IPv6 such as
+    fe00::0, so those flags are checked explicitly too.
+    """
+    return not ip.is_global or ip.is_multicast or ip.is_unspecified or ip.is_reserved
+
+
+def _resolves_to_global(host: str) -> bool:
+    """Whether every A/AAAA record for ``host`` is globally routable.
+
+    A hostname needs no numeric trickery to reach the internal network — an
+    attacker can simply publish ``evil.example A 127.0.0.1`` and register it as
+    their push endpoint. Resolving here rejects that at subscribe time.
+    Unresolvable names are refused too (a real push service always resolves).
+
+    This does NOT close DNS rebinding (a record that flips to a private address
+    after this check): defeating that needs the resolved address pinned into
+    the socket, which is out of scope for the homelab threat model.
+    """
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if _is_non_global(ip):
+            return False
+    return True
+
+
 def _as_ip_literal(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     """Return the IP a literal host denotes, or None for a genuine hostname.
 
@@ -76,7 +114,7 @@ _NON_GLOBAL_HOST_ALIASES = frozenset(
 )
 
 
-def is_safe_push_endpoint(endpoint: str) -> bool:
+def is_safe_push_endpoint(endpoint: str, *, resolve: bool = False) -> bool:
     """Whether ``endpoint`` is a public https URL safe to send a push to.
 
     Requires https, rejects known loopback host aliases, and for literal-IP
@@ -86,9 +124,15 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     aliases (``127.1``, ``2130706433``, ``0x7f000001``) and IDNA forms
     (``127。0。0。1``) are normalized first, and the non-numeric names a default
     Linux /etc/hosts maps to non-global addresses (``localhost``,
-    ``ip6-localhost``, ``ip6-allnodes``, …) are rejected by name. (DNS-rebinding
-    of an arbitrary public hostname is out of scope for the homelab threat
-    model; real push services are public https.)
+    ``ip6-localhost``, ``ip6-allnodes``, …) are rejected by name.
+
+    With ``resolve=True`` a genuine hostname is additionally resolved and
+    refused when any A/AAAA record is non-global — this is what stops
+    ``evil.example A 127.0.0.1``. It costs a DNS lookup, so callers pass it at
+    subscribe time (once per registration) and leave it off on the send path,
+    which runs on the event loop for every notification. (DNS rebinding after
+    the check remains out of scope for the homelab threat model; blocking it
+    requires pinning the resolved address into the socket.)
     """
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.hostname:
@@ -102,11 +146,7 @@ def is_safe_push_endpoint(endpoint: str) -> bool:
     if host in _NON_GLOBAL_HOST_ALIASES:
         return False
     ip = _as_ip_literal(host)
-    # is_global alone is not enough: Python reports is_global == True for
-    # multicast literals (224.0.0.1, ff02::1) and for reserved IPv6 such as
-    # fe00::0, so those flags are checked explicitly too.
-    if ip is not None and (
-        not ip.is_global or ip.is_multicast or ip.is_unspecified or ip.is_reserved
-    ):
-        return False
-    return True
+    if ip is not None:
+        return not _is_non_global(ip)
+    # A genuine hostname: optionally verify what it actually resolves to.
+    return not resolve or _resolves_to_global(host)

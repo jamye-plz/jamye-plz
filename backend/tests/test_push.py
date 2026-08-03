@@ -815,3 +815,84 @@ class TestSendFanOutCap:
         await svc.send_push("u1", PAYLOAD)
 
         assert len(sent) == cap
+
+
+# ── hostname resolution guard (subscribe-time SSRF) ──────────────────────────
+
+
+class TestResolvedAddressGuard:
+    """A hostname needs no numeric trickery: evil.example A 127.0.0.1 suffices."""
+
+    @staticmethod
+    def _fake_getaddrinfo(addr: str):
+        def _inner(host, port, *args, **kwargs):  # noqa: ANN001, ANN202
+            return [(2, 1, 6, "", (addr, port))]
+
+        return _inner
+
+    def test_rejects_hostname_resolving_to_loopback(self, monkeypatch) -> None:
+        import pytest
+
+        from app.core import push_endpoint
+        from app.routers.push import PushSubscribeBody
+
+        monkeypatch.setattr(
+            push_endpoint.socket, "getaddrinfo", self._fake_getaddrinfo("127.0.0.1")
+        )
+        with pytest.raises(ValueError):
+            PushSubscribeBody(
+                endpoint="https://evil.example/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+            )
+
+    def test_rejects_hostname_resolving_to_private_range(self, monkeypatch) -> None:
+        import pytest
+
+        from app.core import push_endpoint
+        from app.routers.push import PushSubscribeBody
+
+        monkeypatch.setattr(
+            push_endpoint.socket, "getaddrinfo", self._fake_getaddrinfo("169.254.169.254")
+        )
+        with pytest.raises(ValueError):
+            PushSubscribeBody(
+                endpoint="https://metadata.example/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+            )
+
+    def test_rejects_unresolvable_hostname(self, monkeypatch) -> None:
+        import pytest
+
+        from app.core import push_endpoint
+        from app.routers.push import PushSubscribeBody
+
+        def boom(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            raise OSError("NXDOMAIN")
+
+        monkeypatch.setattr(push_endpoint.socket, "getaddrinfo", boom)
+        with pytest.raises(ValueError):
+            PushSubscribeBody(
+                endpoint="https://nope.example/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+            )
+
+    def test_accepts_hostname_resolving_to_public_address(self, monkeypatch) -> None:
+        from app.core import push_endpoint
+        from app.routers.push import PushSubscribeBody
+
+        monkeypatch.setattr(
+            push_endpoint.socket, "getaddrinfo", self._fake_getaddrinfo("142.250.196.142")
+        )
+        body = PushSubscribeBody(
+            endpoint="https://fcm.googleapis.com/fcm/send/abc",
+            p256dh=VALID_P256DH,
+            auth=VALID_AUTH,
+        )
+        assert body.endpoint.startswith("https://")
+
+    def test_send_path_does_not_resolve(self, monkeypatch) -> None:
+        """send_push must stay off the resolver (it runs on the event loop)."""
+        from app.core.push_endpoint import is_safe_push_endpoint
+
+        def boom(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            raise AssertionError("send path must not call getaddrinfo")
+
+        monkeypatch.setattr("app.core.push_endpoint.socket.getaddrinfo", boom)
+        assert is_safe_push_endpoint("https://fcm.googleapis.com/x") is True

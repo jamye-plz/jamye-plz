@@ -46,7 +46,11 @@ class PushSubscribeBody(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def validate_endpoint(cls, v: str) -> str:
-        if not is_safe_push_endpoint(v):
+        # resolve=True here (once per registration): a hostname whose A/AAAA
+        # record points at a private/loopback address is an SSRF vector even
+        # without numeric or IDNA trickery. The send path re-checks without
+        # resolving, since that runs on the event loop for every notification.
+        if not is_safe_push_endpoint(v, resolve=True):
             raise ValueError("push endpoint must be a public https URL")
         return v
 
