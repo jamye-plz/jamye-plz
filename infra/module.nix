@@ -306,27 +306,65 @@ in
       requires = [ "minio.service" ];
       before = [ "jamye-plz-backend.service" ];
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.minio-client ];
+      path = [ pkgs.curl pkgs.minio-client ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
         # MINIO_ROOT_USER / MINIO_ROOT_PASSWORD for the mc alias below.
         EnvironmentFile = cfg.storage.rootCredentialsFile;
         DynamicUser = true;
-        StateDirectory = "jamye-plz-mc";
-        Environment = "MC_CONFIG_DIR=/var/lib/jamye-plz-mc";
+        # mc writes a config file that embeds the root credentials. Keep it in
+        # tmpfs for the lifetime of the unit rather than a StateDirectory: with
+        # DynamicUser the latter is created under /var/lib/private (root-owned,
+        # 0700) and reached through a symlink, which the dynamic UID cannot
+        # reliably traverse — and it would leave credentials on disk between
+        # runs for no benefit, since the alias is re-created every start.
+        RuntimeDirectory = "jamye-plz-mc";
+        RuntimeDirectoryMode = "0700";
+        Environment = "MC_CONFIG_DIR=/run/jamye-plz-mc";
+        # Slightly above the in-script deadline so systemd reports the script's
+        # own diagnostics instead of killing it mid-retry.
+        TimeoutStartSec = "150s";
       };
       script = ''
-        set -eu
-        # MinIO accepts connections slightly after the unit is active.
-        for _ in $(seq 1 30); do
-          if mc alias set local "http://127.0.0.1:${toString cfg.storage.port}" \
-               "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; then
-            exec mc mb --ignore-existing ${lib.escapeShellArg "local/${cfg.storage.bucket}"}
+        set -euo pipefail
+
+        endpoint="http://127.0.0.1:${toString cfg.storage.port}"
+        bucket=${lib.escapeShellArg cfg.storage.bucket}
+        deadline=$((SECONDS + 120))
+        attempts=0
+        last_error=""
+
+        # One complete provisioning pass. Every step is retried as a unit:
+        # minio.service is Type=simple, so it goes active before the S3 port
+        # accepts connections, and a successful alias followed by a transient
+        # `mb` failure must not leave the bucket unverified.
+        # `|| return 1` on every step is load-bearing: bash disables errexit
+        # inside a function invoked from a condition context (the `if` below),
+        # so `set -e` alone would let a failed health check fall through to the
+        # next command and report success.
+        provision() {
+          curl -fsS --max-time 5 "$endpoint/minio/health/ready" >/dev/null || return 1
+          mc --quiet alias set local "$endpoint" \
+            "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null || return 1
+          mc --quiet mb --ignore-existing "local/$bucket" >/dev/null || return 1
+          mc --quiet stat "local/$bucket" >/dev/null || return 1
+        }
+
+        while [ "$SECONDS" -lt "$deadline" ]; do
+          attempts=$((attempts + 1))
+          if last_error=$(provision 2>&1); then
+            echo "MinIO bucket '$bucket' ready after $attempts attempt(s)."
+            exit 0
           fi
           sleep 1
         done
-        echo "MinIO did not become ready in time" >&2
+
+        # Surface the real curl/mc diagnostics: a bare timeout message is what
+        # made the previous failure mode unactionable. Neither tool echoes the
+        # credentials, and they are passed as arguments, never printed here.
+        echo "Timed out provisioning MinIO bucket '$bucket' at $endpoint after $attempts attempt(s)." >&2
+        echo "Last error: ''${last_error:-<no output captured>}" >&2
         exit 1
       '';
     };
