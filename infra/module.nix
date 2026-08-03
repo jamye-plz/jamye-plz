@@ -21,15 +21,17 @@
 # listenPort and the S3 endpoint on storage.port (a separate subdomain, since
 # presigned URLs are SigV4-signed over the host+path and cannot be re-rooted
 # under a path prefix).
-{ self }:
-{ config, lib, pkgs, ... }:
+{ self }: { config
+          , lib
+          , pkgs
+          , ...
+          }:
 let
   cfg = config.services.jamye-plz;
   pkg = self.packages.${pkgs.system};
 
   # No-password connection: Unix-socket peer auth (OS user → DB role of same name).
-  defaultDatabaseUrl =
-    "postgresql+asyncpg://${cfg.database.user}@/${cfg.database.name}?host=/run/postgresql";
+  defaultDatabaseUrl = "postgresql+asyncpg://${cfg.database.user}@/${cfg.database.name}?host=/run/postgresql";
 
   # APP_ENV (and the non-secret default DATABASE_URL) are exported inside the
   # ExecStart wrappers rather than via Environment=, because systemd's
@@ -214,7 +216,8 @@ in
         # password (userinfo `user:pass@`). Credentialed DSNs belong in
         # environmentFile (set databaseUrl = null).
         assertion =
-          cfg.databaseUrl == null
+          cfg.databaseUrl
+          == null
           || builtins.match ".*://[^/@]*:[^/@]*@.*" cfg.databaseUrl == null;
         message = "services.jamye-plz.databaseUrl must not contain a password (it is written to the world-readable Nix store). Set databaseUrl = null and pass a credentialed DATABASE_URL via environmentFile.";
       }
@@ -243,7 +246,8 @@ in
         # non-https or localhost MINIO_ENDPOINT (it is embedded in presigned
         # URLs handed to browsers). Fail at build time instead of at startup.
         assertion =
-          cfg.storage.publicUrl == null
+          cfg.storage.publicUrl
+          == null
           || (lib.hasPrefix "https://" cfg.storage.publicUrl
           && builtins.match ".*(localhost|127\\.0\\.0\\.1).*" cfg.storage.publicUrl == null);
         message = "services.jamye-plz.storage.publicUrl must be a browser-reachable https:// URL (not localhost): it is embedded verbatim in presigned URLs, and the backend refuses to start otherwise in production.";
@@ -306,7 +310,7 @@ in
       requires = [ "minio.service" ];
       before = [ "jamye-plz-backend.service" ];
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.curl pkgs.minio-client ];
+      path = [ pkgs.curl pkgs.minio-client pkgs.getent ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -389,10 +393,12 @@ in
     # ── Backend (uvicorn) ───────────────────────────────────────────────────
     systemd.services.jamye-plz-backend = {
       description = "jamye-plz FastAPI backend (uvicorn)";
-      after = [ "network.target" "jamye-plz-migrate.service" ]
+      after =
+        [ "network.target" "jamye-plz-migrate.service" ]
         ++ lib.optional cfg.database.createLocally "postgresql.service"
         ++ lib.optional cfg.storage.createLocally "jamye-plz-minio-bucket.service";
-      requires = [ "jamye-plz-migrate.service" ]
+      requires =
+        [ "jamye-plz-migrate.service" ]
         ++ lib.optional cfg.database.createLocally "postgresql.service"
         ++ lib.optional cfg.storage.createLocally "jamye-plz-minio-bucket.service";
       wantedBy = [ "multi-user.target" ];
