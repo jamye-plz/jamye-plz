@@ -15,6 +15,7 @@
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import MessageCircle from '@lucide/svelte/icons/message-circle';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
+	import Settings from '@lucide/svelte/icons/settings';
 
 	const groupId = $derived(page.params.id ?? '');
 	const queryClient = useQueryClient();
@@ -140,6 +141,13 @@
 					aria-label="초대"
 				>
 					<UserPlus class="h-5 w-5" />
+				</a>
+				<a
+					href={resolve(`/groups/${groupId}/settings`)}
+					class="btn btn-square btn-ghost btn-sm"
+					aria-label="그룹 설정"
+				>
+					<Settings class="h-5 w-5" />
 				</a>
 			</div>
 		</div>

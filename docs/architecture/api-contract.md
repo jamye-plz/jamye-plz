@@ -39,6 +39,18 @@
 | GET | `/api/groups/{id}` | 그룹 상세. 비멤버는 403 | 필요 (멤버) |
 | POST | `/api/groups/{id}/invites` | 초대코드/링크 생성 (만료·사용횟수) | 필요 (owner) |
 | POST | `/api/invites/{code}/join` | 초대코드로 그룹 참여. 만료/초과 시 거부 | 필요 |
+| PATCH | `/api/groups/{id}` | 그룹 이름 수정 (1~128자) | 필요 (owner) |
+| DELETE | `/api/groups/{id}` | 그룹 soft-delete (`deleted_at` 세팅) | 필요 (owner) |
+| DELETE | `/api/groups/{id}/members/{user_id}` | 멤버 제거(owner가 타인 대상) 또는 본인 탈퇴(`user_id`=본인) | 필요 (owner 또는 본인) |
+| PATCH | `/api/groups/{id}/members/{user_id}` | 역할 변경 — `role:"owner"`는 소유권 이양(역할 맞교환). owner 강등은 불가(409), member 대상 `role:"member"`는 no-op | 필요 (owner) |
+
+> **오너 관리 시맨틱**: 그룹 이름 수정·삭제·멤버 제거·소유권 이양은 모두 owner만 가능하고, 비owner가 호출하면
+> 403이다. soft-delete된 그룹(`deleted_at` not null)은 멤버 목록·주제·채팅·초대 등 멤버십을 요구하는 **모든**
+> 경로(WebSocket 포함)에서 존재하지 않는 것처럼 404로 취급된다. 멤버 제거·본인 탈퇴가 성공하면 대상의 살아있는
+> WebSocket 연결이 즉시 축출된다(close code `4001`). owner는 소유권을 먼저 이양하지 않고는 자신을 제거하거나
+> 탈퇴할 수 없다(409). 소유권 이양(`PATCH .../members/{user_id}` with `role:"owner"`)은 actor·target의 역할을
+> 맞바꾸며, 이미 owner인 대상을 다시 이양 대상으로 지정하거나 현재 owner를 `role:"member"`로 낮추려 하면 409,
+> 이미 member인 대상에게 `role:"member"`를 보내면 no-op(204)로 조용히 성공한다.
 
 ### topics · media · tags — 잼얘 시드·enrich
 

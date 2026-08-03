@@ -45,10 +45,19 @@ async def redeem_invite(code: str, current_user: CurrentUser, db: DbSession):
     # so check membership BEFORE validate() (which would 410 a used/expired code).
     invite = await invite_svc.get_invite_or_404(code)
     group_id = invite.group_id
+    # Soft-deleted groups must look gone to invites too (404) — including the
+    # existing-member fast path below, which otherwise answers joined:false
+    # and redirects the SPA into a group that no longer exists.
+    await group_svc.get_group_or_404(group_id)
     if await group_svc.is_member(group_id, current_user.id):
         return {"group_id": group_id, "joined": False}
-    # New member: validate() row-locks the invite + checks expiry/exhaustion,
-    # then join + consume run under that lock, and the single commit is atomic.
+    # New member: row-lock the group so the join/consume serializes with a
+    # concurrent soft-delete — otherwise the delete could commit between the
+    # liveness check and this commit, burning an invite use and joining a group
+    # that immediately 404s. Held (with the invite row lock below) through the
+    # single commit. validate() row-locks the invite + checks expiry/exhaustion,
+    # then join + consume run under both locks, and the single commit is atomic.
+    await group_svc.lock_group_or_404(group_id)
     try:
         locked = await invite_svc.validate(code)
     except (InviteExhaustedError, InviteExpiredError):

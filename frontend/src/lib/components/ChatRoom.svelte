@@ -36,6 +36,10 @@
 
 	const queryClient = useQueryClient();
 
+	// Matches ws_hub.EVICTED_CLOSE_CODE on the backend: the server closes a
+	// socket with this code when the user is removed from / the group is deleted.
+	const EVICTED_CLOSE_CODE = 4001;
+
 	// backHref is a caller-provided absolute app route (may carry a ?date query).
 	// resolve()'s typed-routes signature only accepts statically-known route
 	// literals, not a runtime string, so navigate directly.
@@ -351,8 +355,26 @@
 			}
 		};
 
-		socket.onclose = () => {
+		socket.onclose = (event) => {
 			connected = false;
+			// 4001 = the server evicted us because we were removed from (or the
+			// owner deleted) this group. Drop the now-inaccessible group's caches
+			// and leave the group so we don't keep rendering stale chat/topics.
+			if (event.code === EVICTED_CLOSE_CODE) {
+				for (const key of [
+					['group', groupId],
+					['members', groupId],
+					['topics', groupId],
+					['topic-dates', groupId]
+				]) {
+					queryClient.removeQueries({ queryKey: key });
+				}
+				queryClient.removeQueries({ queryKey: ['topic'] });
+				queryClient.removeQueries({ queryKey: ['messages'] });
+				queryClient.invalidateQueries({ queryKey: ['groups'] });
+				// eslint-disable-next-line svelte/no-navigation-without-resolve -- static route literal
+				goto('/groups');
+			}
 		};
 
 		ws = socket;
