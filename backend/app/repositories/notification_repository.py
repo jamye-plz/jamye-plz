@@ -4,7 +4,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, func, select, text, update
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -171,26 +172,92 @@ class PushSubscriptionRepository:
         return result.scalar_one_or_none()
 
     async def upsert(self, user_id: str, endpoint: str, p256dh: str, auth: str) -> PushSubscription:
-        existing = await self.get_by_endpoint(endpoint)
-        if existing:
-            existing.p256dh = p256dh
-            existing.auth = auth
-            self._db.add(existing)
-            await self._db.flush()
-            await self._db.refresh(existing)
-            return existing
-        sub = PushSubscription(user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth)
-        self._db.add(sub)
-        await self._db.flush()
-        await self._db.refresh(sub)
-        return sub
+        # Atomic INSERT ... ON CONFLICT (endpoint) DO UPDATE. A browser push
+        # subscription is device-scoped and unique by endpoint; whoever
+        # currently controls this browser owns the row, so on conflict we
+        # reassign user_id (a second account on the same browser must not
+        # inherit or be shadowed by the previous user's row). Doing this as a
+        # single statement — rather than SELECT-then-INSERT — means two
+        # concurrent POSTs for the same endpoint (e.g. the global reclaim racing
+        # Settings' own reconcile) can't both miss the row and 500 on the unique
+        # constraint; one updates, the other conflict-updates.
+        insert_stmt = pg_insert(PushSubscription).values(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            endpoint=endpoint,
+            p256dh=p256dh,
+            auth=auth,
+        )
+        stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[PushSubscription.endpoint],
+            # Bump created_at on re-register so this device counts as most-recent
+            # for the per-user cap prune (prune_to_limit) — a device that just
+            # re-subscribed must never be the one pruned.
+            set_={"user_id": user_id, "p256dh": p256dh, "auth": auth, "created_at": func.now()},
+        ).returning(PushSubscription)
+        result = await self._db.execute(stmt)
+        return result.scalar_one()
+
+    async def prune_to_limit(self, user_id: str, limit: int) -> None:
+        """Keep only the `limit` most-recently-registered subscriptions for a
+        user, deleting the rest.
+
+        Bounds per-user push fan-out: without a cap an account could register
+        hundreds of (slow) endpoints and make every group notification spend up
+        to timeout*N on it, starving other recipients. Real users have a handful
+        of devices.
+        """
+        keep = (
+            select(PushSubscription.id)
+            .where(PushSubscription.user_id == user_id)
+            .order_by(PushSubscription.created_at.desc(), PushSubscription.id.desc())
+            .limit(limit)
+            .scalar_subquery()
+        )
+        await self._db.execute(
+            sa_delete(PushSubscription).where(
+                PushSubscription.user_id == user_id,
+                PushSubscription.id.not_in(keep),
+            )
+        )
+
+    async def lock_user_subscriptions(self, user_id: str) -> None:
+        """Transaction-scoped advisory lock serializing a user's subscription
+        writes.
+
+        The per-user cap is enforced as upsert-then-prune across two statements;
+        without this, concurrent POSTs for distinct endpoints each see the same
+        old rows, prune the same oldest one, and commit — leaving more than the
+        cap and re-opening the fan-out DoS. The lock queues same-user requests
+        so upsert+prune run atomically; it auto-releases at commit/rollback.
+        """
+        await self._db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"push_sub:{user_id}"},
+        )
 
     async def delete(self, sub: PushSubscription) -> None:
         await self._db.delete(sub)
         await self._db.flush()
 
-    async def list_by_user(self, user_id: str) -> list[PushSubscription]:
-        result = await self._db.execute(
-            select(PushSubscription).where(PushSubscription.user_id == user_id)
-        )
+    async def delete_by_id(self, sub_id: str) -> None:
+        """Delete by primary key without needing a live ORM instance.
+
+        Lets callers prune a subscription after they've released the read
+        transaction (e.g. send_push snapshots ids, does network I/O, then
+        prunes) — carrying an ORM instance across a rollback would expire it
+        and trigger MissingGreenlet on attribute access.
+        """
+        await self._db.execute(sa_delete(PushSubscription).where(PushSubscription.id == sub_id))
+
+    async def list_by_user(self, user_id: str, limit: int | None = None) -> list[PushSubscription]:
+        """A user's push subscriptions. With `limit`, only the most-recent N
+        (used by send_push to bound fan-out even for rows that predate the
+        registration-time cap or were inserted directly)."""
+        stmt = select(PushSubscription).where(PushSubscription.user_id == user_id)
+        if limit is not None:
+            stmt = stmt.order_by(
+                PushSubscription.created_at.desc(), PushSubscription.id.desc()
+            ).limit(limit)
+        result = await self._db.execute(stmt)
         return list(result.scalars().all())

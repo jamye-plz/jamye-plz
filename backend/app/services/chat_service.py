@@ -189,6 +189,7 @@ class ChatService:
         from app.repositories.group_repository import GroupRepository, MembershipRepository
         from app.repositories.topic_repository import TopicRepository
         from app.services.notification_service import NotificationService
+        from app.services.push_dispatch import schedule_push_dispatch
 
         chatroom = await self.get_chatroom_or_404(chatroom_id)
         if chatroom.type != "topic" or not chatroom.topic_id:
@@ -217,4 +218,15 @@ class ChatService:
             exclude_user_id=sender_id,
             member_user_ids=member_user_ids,
             message_at=message_at,
+        )
+
+        # Web Push (M1): fire-and-forget, never blocks the message-send flow.
+        recipient_ids = [uid for uid in member_user_ids if uid != sender_id]
+        schedule_push_dispatch(
+            recipient_ids,
+            {
+                "title": group.name,
+                "body": f"{topic.title}에 대해 안 읽은 채팅이 있어요",
+                "url": f"/groups/{chatroom.group_id}/topics/{topic.id}/chat",
+            },
         )

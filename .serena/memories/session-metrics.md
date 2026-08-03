@@ -59,3 +59,38 @@ Composite N/A (테스트/린트 부재) → binary checklist fallback.
 - **Fix Applied**: primary surface용 prose semantic variant와 AA 대비용 semantic background mix를 적용하고 light/dark Lighthouse 및 computed-style 검증을 추가했다.
 - **Prevention**: theme migration QA에 `colored surface × rich text × light/dark` 매트릭스와 실제 contrast audit를 필수 항목으로 둔다.
 - **CD Impact**: correct 2회, 총 +50.
+
+---
+
+# Session Metrics — oma-00mrraurqqfch0nkha (ultrawork v2 M0 object storage, 2026-07-19)
+
+## Evaluator Accuracy Events
+- good_catch: 1 (VERIFY QA — confirm object_key BOLA(HIGH), impl self-check 미탐 → 서비스 레이어 가드 + 회귀테스트 5건으로 수정)
+- false_positive: 0 (QA finding 6건 전부 impl이 수용, 이의 제기 없음)
+- missed_stub: 0 (런타임 스텁 없음 — presign 실경로/deferred fallback 모두 테스트로 검증)
+- Rolling 3-session EA: 3건 / 3세션 < 30 → QA tuning 불필요
+
+## Quality Score Progression
+Composite N/A → binary checklist fallback (backend 게이트 기준).
+- IMPL baseline: pytest 21 passed / ruff 0 / format 0 / pyright 0
+- Post-VERIFY(2차): pytest 33 passed (회귀테스트 +12) / 나머지 동일
+- Post-REFINE: 변경 0건, 게이트 동일
+- Post-SHIP: 동일 + storage.py per-file coverage 100% (43/43 stmts)
+
+## Experiment Ledger Summary
+- Total experiments: 1 (M0 스토리지 enabler 구현) / Keep rate: 100% / Net delta: +12 tests
+
+## Notable
+- 서브에이전트 예산 한도로 backend 1회·docs 1회 중단 → SendMessage 재개로 완주 (이전 세션 교훈 재확인).
+- QA 2차에서 프론트 fetch의 Content-Length forbidden-header 특성까지 검증 — M3 주의사항: presign byte_size는 실제 File.size와 일치 필수.
+
+## M1 (Web Push) 추가 — 동일 세션
+- EA: good_catch 0 (VERIFY 1차 PASS, CRITICAL/HIGH/MEDIUM 0), false_positive 0, missed_stub 0. REFINE에서 용어 불일치("새 잼얘") 1건 포착·수정
+- Quality: IMPL baseline pytest 22/ruff/pyright 0 + frontend 4게이트 clean → SHIP까지 동일 유지. push_dispatch.py 커버리지 100%, send_push 미커버 0줄
+- LOW backlog 4건(발송 gather 병렬화, prod VAPID 경고, 해지 실패 토글 drift, oldSubscription null)
+- 중단/재개: backend 2회, frontend 1회, qa 2회, refine 1회 — 마지막 게이트는 오케스트레이터 인라인 마무리 패턴이 효율적이었음
+
+## M2 (그룹 관리) 추가 — 동일 세션
+- EA: good_catch 2 (VERIFY 1차 — soft-delete 반경 누수 HIGH, WS 축출 부재 HIGH; 둘 다 impl self-check 미탐 → root-cause 수정+회귀테스트 13건), false_positive 0, missed_stub 0. SHIP에서 MEDIUM 1(성공경로 테스트 공백) → 오케스트레이터 인라인 보완(테스트 2건, 47 passed)
+- Quality: 최종 pytest 47/ruff/format/pyright 0 + frontend 4게이트 clean. group_service 72%→(성공경로 보완), ws_hub 88%(M2 변경분 100%)
+- 특징: QA가 제안한 remediation 스니펫이 실제 픽스처와 거의 일치 — 인라인 적용에 유효
