@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import X from '@lucide/svelte/icons/x';
 	import Download from '@lucide/svelte/icons/download';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
@@ -17,7 +18,10 @@
 
 	const { groupId, chatroomId, items, startIndex = 0, onclose }: Props = $props();
 
-	let index = $state(startIndex);
+	// Capture the opening index once and then own it: the viewer is mounted
+	// fresh per open, and paging must not be yanked back if the prop re-renders.
+	// untrack() states that intent, instead of leaving it as a warning.
+	let index = $state(untrack(() => startIndex));
 	const current = $derived(items[index]);
 	const hasPrev = $derived(index > 0);
 	const hasNext = $derived(index < items.length - 1);
@@ -54,6 +58,8 @@
 		}
 	}
 
+	let dialogEl = $state<HTMLElement | null>(null);
+
 	// Lock background scroll while open, and restore it on teardown.
 	$effect(() => {
 		const previous = document.body.style.overflow;
@@ -61,6 +67,12 @@
 		return () => {
 			document.body.style.overflow = previous;
 		};
+	});
+
+	// Move focus into the dialog on open so a screen-reader/keyboard user lands
+	// inside it, and so focus is not left on the thumbnail behind the overlay.
+	$effect(() => {
+		dialogEl?.focus();
 	});
 </script>
 
@@ -71,10 +83,12 @@
   on the picture itself (or a drag while zoomed) from dismissing.
 -->
 <div
-	class="fixed inset-0 z-50 flex flex-col bg-black/95"
+	bind:this={dialogEl}
+	class="fixed inset-0 z-50 flex flex-col bg-black/95 focus:outline-none"
 	role="dialog"
 	aria-modal="true"
 	aria-label="첨부 파일 보기"
+	tabindex="-1"
 	ontouchstart={onTouchStart}
 	ontouchend={onTouchEnd}
 >
@@ -87,13 +101,25 @@
 		<span class="text-xs opacity-70">
 			{#if items.length > 1}{index + 1} / {items.length}{/if}
 		</span>
+		<!--
+			A backend endpoint, not an app route, so resolve() cannot express it
+			(it only takes app route literals) — same reason the OAuth links on
+			/login carry this disable. `data-sveltekit-reload` states the intent
+			explicitly: hand this click to the browser rather than the client
+			router. The backend answers with a redirect to a
+			Content-Disposition: attachment URL, so the file is saved and the
+			page never actually navigates away.
+		-->
+		<!-- eslint-disable svelte/no-navigation-without-resolve -- backend API endpoint, not an app route; see above -->
 		<a
 			href={chatMediaDownloadUrl(groupId, chatroomId, current.id)}
+			data-sveltekit-reload
 			class="btn btn-square btn-ghost btn-sm"
 			aria-label="다운로드"
 		>
 			<Download class="h-5 w-5" />
 		</a>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</div>
 
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -122,7 +148,9 @@
 	</div>
 
 	{#if items.length > 1}
-		<div class="flex shrink-0 items-center justify-center gap-6 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white">
+		<div
+			class="flex shrink-0 items-center justify-center gap-6 pb-[calc(1rem+env(safe-area-inset-bottom))] text-white"
+		>
 			<button
 				onclick={prev}
 				disabled={!hasPrev}

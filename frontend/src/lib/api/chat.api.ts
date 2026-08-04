@@ -26,11 +26,7 @@ export function presignChatMedia(
  * ignored cross-origin, so forcing the save has to happen in the signature.
  * Auth rides the httpOnly cookie, and the server re-checks membership per click.
  */
-export function chatMediaDownloadUrl(
-	groupId: string,
-	chatroomId: string,
-	mediaId: string
-): string {
+export function chatMediaDownloadUrl(groupId: string, chatroomId: string, mediaId: string): string {
 	return `/api/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/download`;
 }
 
