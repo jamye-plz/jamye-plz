@@ -5,9 +5,10 @@
 #   nodeModules : fixed-output (FOD) bun install — the ONLY network step.
 #   <result>    : offline `bun run build` → $out = the static site (build/).
 #
-# BOOTSTRAP (one-time, on a Linux builder / alfheim):
-#   The FOD hash below is `lib.fakeHash`. Run `nix build .#frontend` once; Nix
-#   prints the real `got: sha256-...` — paste it into `nodeModulesHash`.
+# REGENERATING THE FOD HASH (on a Linux builder / alfheim), needed on every
+# bun.lock change and for every new target arch:
+#   Set the `nodeModulesHashes` entry to `lib.fakeHash`, run `nix build
+#   .#frontend`, and paste the printed `got: sha256-...` back in.
 { pkgs
 , lib
 ,
@@ -29,13 +30,12 @@ let
   # Add an entry after building on a new arch (set to lib.fakeHash, build, paste
   # the `got:`). Unlisted systems fail fast with a clear message.
   #
-  # STALE as of the M3 chat-media work: `heic-to` (browser HEIC→JPEG decoder for
-  # iPhone photos) was added to bun.lock, so the previous hash
-  # (sha256-z5VIg5qiuGeu3xxX891TXr/yeFfIHhfAdTSH6FehsTw=) no longer matches.
-  # Rebuild on a Linux builder / alfheim and paste the printed `got:` hash:
-  #     nix build .#frontend
+  # ANY bun.lock change invalidates these — adding/removing/bumping a dependency
+  # means regenerating the hash on a Linux builder (set the entry to
+  # lib.fakeHash, `nix build .#frontend`, paste the printed `got:`). Last
+  # regenerated for `heic-to` (browser HEIC→JPEG decoder for iPhone photos).
   nodeModulesHashes = {
-    aarch64-linux = lib.fakeHash;
+    aarch64-linux = "sha256-s2M+aQAprvhdQqElhzTh7Fl/u9ryOOaR9CAMR5bafO4=";
   };
   nodeModulesHash =
     nodeModulesHashes.${pkgs.system}
