@@ -63,21 +63,9 @@ export function putTags(groupId: string, topicId: string, tags: TopicTag[]): Pro
 	return apiPut<Topic>(`/groups/${groupId}/topics/${topicId}/tags`, { tags });
 }
 
-/** Direct PUT to presigned MinIO URL (no /api prefix, no credentials header) */
-export async function uploadToPresignedUrl(
-	uploadUrl: string,
-	file: Blob,
-	contentType: string
-): Promise<void> {
-	const res = await fetch(uploadUrl, {
-		method: 'PUT',
-		body: file,
-		headers: { 'Content-Type': contentType }
-	});
-	if (!res.ok) {
-		throw new Error(`MinIO upload failed: ${res.status}`);
-	}
-}
+// Direct PUT to a presigned MinIO URL. Implementation moved to ./upload so
+// chat media (M3) shares one copy; re-exported here for existing callers.
+export { uploadToPresignedUrl } from './upload';
 
 // Re-export apiFetch for multipart — not used directly in this module but available
 export { apiFetch };

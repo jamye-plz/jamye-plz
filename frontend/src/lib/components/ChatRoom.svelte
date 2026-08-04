@@ -5,11 +5,17 @@
 	import { listMessages, markChatroomRead } from '$lib/api/chat.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
-	import type { ChatMessage, WsClientMessage, WsServerMessage } from '$lib/types/chat.types';
+	import type {
+		ChatMediaInput,
+		ChatMessage,
+		WsClientMessage,
+		WsServerMessage
+	} from '$lib/types/chat.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
-	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import ChatComposer from '$lib/components/ChatComposer.svelte';
+	import MessageMedia from '$lib/components/MessageMedia.svelte';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -141,11 +147,9 @@
 	// Hide the list until the first page is pinned to the bottom, so entering a
 	// room never flashes at the oldest message before jumping to the newest.
 	let initialReady = $state(false);
-	let inputText = $state('');
 	let ws = $state<WebSocket | null>(null);
 	let connected = $state(false);
 	let messagesEl = $state<HTMLElement | null>(null);
-	let inputEl = $state<HTMLTextAreaElement | null>(null);
 	let rootEl = $state<HTMLElement | null>(null);
 	// True while the on-screen keyboard is open — drops the composer's home-indicator
 	// bottom inset so the input sits flush on the keyboard (no gap) while it's up.
@@ -159,16 +163,6 @@
 		if (chatroomId !== bodyOpenRoom) {
 			bodyOpenRoom = chatroomId;
 			bodyOpen = false;
-		}
-	});
-
-	// Auto-grow the composer with its content (up to ~6 lines, then it scrolls).
-	$effect(() => {
-		// eslint-disable-next-line @typescript-eslint/no-unused-expressions -- reactive dep: re-run effect when inputText changes
-		inputText; // track changes (incl. reset after send)
-		if (inputEl) {
-			inputEl.style.height = 'auto';
-			inputEl.style.height = `${Math.min(inputEl.scrollHeight, 160)}px`;
 		}
 	});
 
@@ -322,6 +316,7 @@
 						body: data.body,
 						type: data.msg_type,
 						created_at: data.created_at,
+						media: data.media ?? [],
 						client_msg_id: data.client_msg_id ?? undefined
 					};
 					const idx = data.client_msg_id
@@ -438,16 +433,18 @@
 		}
 	}
 
-	function sendMessage() {
-		const body = inputText.trim();
-		if (!body || !ws || ws.readyState !== WebSocket.OPEN || !chatroomId) return;
+	function sendMessage(body: string, media: ChatMediaInput[] = []) {
+		// A media-only message is valid, so body alone no longer gates the send.
+		if ((!body && media.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || !chatroomId)
+			return;
 
 		const clientMsgId = crypto.randomUUID();
 		const msg: WsClientMessage = {
 			type: 'send_message',
 			chatroom_id: chatroomId,
 			body,
-			client_msg_id: clientMsgId
+			client_msg_id: clientMsgId,
+			...(media.length > 0 ? { media } : {})
 		};
 		ws.send(JSON.stringify(msg));
 
@@ -460,23 +457,45 @@
 				body,
 				type: 'text',
 				created_at: new Date().toISOString(),
+				// The objects are already uploaded, but only the server can issue
+				// read URLs — so show a correctly-sized skeleton until the ack
+				// swaps this row for the real, signed media.
+				media: [],
+				pendingMedia: media.map((m) => ({
+					content_type: m.content_type,
+					width: m.width,
+					height: m.height
+				})),
 				client_msg_id: clientMsgId,
 				pending: true
 			}
 		];
-		inputText = '';
 		scrollToBottom();
 	}
 
-	function handleKeydown(e: KeyboardEvent) {
-		// Ignore Enter while an IME composition is active (Korean/Japanese/Chinese):
-		// that Enter commits the composition, and sending on it duplicates the last
-		// syllable (e.g. "안녕" sent, then the committed "녕" sent again). The next,
-		// non-composing Enter is the real send.
-		if (e.isComposing || e.keyCode === 229) return;
-		if (e.key === 'Enter' && !e.shiftKey) {
-			e.preventDefault();
-			sendMessage();
+	/**
+	 * Reissue expired presigned media URLs. They are signed for 10 minutes while
+	 * a chat window stays open far longer, so images/videos in scrollback WILL
+	 * start 403ing mid-session. Refetching history returns freshly signed URLs.
+	 */
+	let refreshingMedia = false;
+	let lastMediaRefreshAt = Number.NEGATIVE_INFINITY;
+	async function refreshMediaUrls() {
+		if (refreshingMedia || !chatroomId) return;
+		// Cooldown, not a one-shot: URLs expire every 10 minutes so a long
+		// session needs to refresh repeatedly, but an object that is genuinely
+		// gone must not turn "image failed" into a refetch loop.
+		if (performance.now() - lastMediaRefreshAt < 30_000) return;
+		lastMediaRefreshAt = performance.now();
+		refreshingMedia = true;
+		try {
+			const page = await listMessages(groupId, chatroomId);
+			const fresh = new Map(page.items.map((m) => [m.id, m.media ?? []]));
+			messages = messages.map((m) => (fresh.has(m.id) ? { ...m, media: fresh.get(m.id) } : m));
+		} catch {
+			// Best-effort: a failed refresh just leaves the broken thumbnail.
+		} finally {
+			refreshingMedia = false;
 		}
 	}
 
@@ -532,15 +551,22 @@
 	}
 </script>
 
-{#snippet messageBody(body: string, onPrimary: boolean)}
-	<div
-		class="prose prose-sm max-w-none wrap-anywhere {onPrimary
-			? 'prose-primary-content'
-			: ''} [&_a]:font-normal [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-	>
-		<!-- eslint-disable-next-line svelte/no-at-html-tags -- output sanitized by renderMarkdown (DOMPurify) -->
-		{@html renderMarkdown(body)}
-	</div>
+{#snippet messageBody(msg: ChatMessage, onPrimary: boolean)}
+	{#if msg.pendingMedia && msg.pendingMedia.length > 0}
+		<MessageMedia pending={msg.pendingMedia} />
+	{:else if msg.media && msg.media.length > 0}
+		<MessageMedia media={msg.media} onexpired={refreshMediaUrls} />
+	{/if}
+	{#if msg.body}
+		<div
+			class="prose prose-sm max-w-none wrap-anywhere {onPrimary
+				? 'prose-primary-content'
+				: ''} [&_a]:font-normal [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+		>
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -- output sanitized by renderMarkdown (DOMPurify) -->
+			{@html renderMarkdown(msg.body)}
+		</div>
+	{/if}
 {/snippet}
 
 <div
@@ -656,7 +682,7 @@
 									? 'opacity-60'
 									: ''}"
 							>
-								{@render messageBody(msg.body, true)}
+								{@render messageBody(msg, true)}
 							</div>
 							{#if showTime(i)}
 								<div class="chat-footer text-[10px] text-base-content/50">
@@ -687,7 +713,7 @@
 								</div>
 							{/if}
 							<div class="chat-bubble text-sm">
-								{@render messageBody(msg.body, false)}
+								{@render messageBody(msg, false)}
 							</div>
 							{#if showTime(i)}
 								<div class="chat-footer text-[10px] text-base-content/50">
@@ -701,28 +727,5 @@
 		</div>
 	</section>
 
-	<footer
-		class="shrink-0 border-t border-base-300 bg-base-100 px-4 pt-3 {keyboardOpen
-			? 'pb-3'
-			: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
-	>
-		<div class="mx-auto flex max-w-2xl items-end gap-2">
-			<textarea
-				bind:this={inputEl}
-				bind:value={inputText}
-				onkeydown={handleKeydown}
-				placeholder="메시지 입력..."
-				rows={1}
-				class="textarea max-h-40 min-h-0 flex-1 resize-none overflow-y-auto focus:border-primary focus:outline-none!"
-				aria-label="메시지 입력"></textarea>
-			<button
-				onclick={sendMessage}
-				disabled={!inputText.trim() || !connected}
-				class="btn btn-square shrink-0 btn-primary"
-				aria-label="메시지 보내기"
-			>
-				<ArrowUp class="h-5 w-5" />
-			</button>
-		</div>
-	</footer>
+	<ChatComposer {groupId} {chatroomId} {connected} {keyboardOpen} onsend={sendMessage} />
 </div>
