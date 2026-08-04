@@ -28,8 +28,14 @@ let
   # so the node_modules tree — and thus this hash — is architecture-dependent.
   # Add an entry after building on a new arch (set to lib.fakeHash, build, paste
   # the `got:`). Unlisted systems fail fast with a clear message.
+  #
+  # STALE as of the M3 chat-media work: `heic-to` (browser HEIC→JPEG decoder for
+  # iPhone photos) was added to bun.lock, so the previous hash
+  # (sha256-z5VIg5qiuGeu3xxX891TXr/yeFfIHhfAdTSH6FehsTw=) no longer matches.
+  # Rebuild on a Linux builder / alfheim and paste the printed `got:` hash:
+  #     nix build .#frontend
   nodeModulesHashes = {
-    aarch64-linux = "sha256-z5VIg5qiuGeu3xxX891TXr/yeFfIHhfAdTSH6FehsTw=";
+    aarch64-linux = lib.fakeHash;
   };
   nodeModulesHash =
     nodeModulesHashes.${pkgs.system}
