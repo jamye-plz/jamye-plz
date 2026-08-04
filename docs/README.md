@@ -45,17 +45,28 @@
 ### 🗂️ 실행 (`planning/`)
 | 문서 | 내용 |
 |---|---|
-| [milestone.md](planning/milestone.md) | 마일스톤(M0~M4+배포) + 태스크 매핑(T1~16)·의존성·트랙 |
+| [002-v2-roadmap.md](planning/002-v2-roadmap.md) | **v2 로드맵 (현재 진행 중)** — M0~M4 · Open Decisions · 품질 게이트 |
+| [milestone.md](planning/milestone.md) | v1 마일스톤(M0~M4+배포) + 태스크 매핑(T1~16) — **완료·기록용** |
+| [001-daisyui-migration.md](planning/001-daisyui-migration.md) | shadcn-svelte → daisyUI 마이그레이션 기록 |
+| [tech-debt-tracker.md](planning/tech-debt-tracker.md) | 기술 부채 추적 |
+
+### 🚀 배포 (`deployment/`)
+| 문서 | 내용 |
+|---|---|
+| [nixos-alfheim.md](deployment/nixos-alfheim.md) | alfheim 실제 배포 절차 — homelab 배선·시크릿·MinIO·인그레스 |
 
 ---
 
 ## 진행 상태
 
-- ✅ **디스커버리** — 제품 정체성·스코프 확정 (셋로그 벤치마킹, "얘기+대화" 차별화)
-- ✅ **기술 스택 선정** — SvelteKit/FastAPI 생태계, WASM 온디바이스 AI, NixOS 배포 조사 완료
-- ✅ **정식 기획** — 요구사항·데이터모델·API·태스크 + 3종 리뷰(완전성/메타/과설계) PASS
-- ✅ **문서화** — 본 문서 세트
-- ⏭️ **다음** — Phase 2 구현 (Backend/Frontend 병렬) → 검증 → 정제 → 배포
+> 갱신 2026-08-04
+
+- ✅ **디스커버리 · 기술 스택 · 정식 기획 · 문서화** — 위 문서 세트로 확정
+- ✅ **v1 구현 완료**
+- ✅ **배포 완료** — NixOS 홈랩(alfheim), `https://jamye-plz.ridewithmin.com` 운영 중
+- 🔄 **v2 진행 중** — M0 스토리지 · M1 Web Push · M2 그룹 관리 완료.
+  다음은 **M3 채팅 미디어 첨부** → M4a 음성 메시지(STT 프로바이더 미확정).
+  상세: [002-v2-roadmap.md](planning/002-v2-roadmap.md)
 
 ---
 
@@ -65,5 +76,6 @@
 2. [product/features.md](product/features.md) — 무엇이 동작하는가
 3. [architecture/tech-stack.md](architecture/tech-stack.md) — 무엇으로 만드는가 + 왜 그 선택인가
 4. [architecture/data-model.md](architecture/data-model.md) · [api-contract.md](architecture/api-contract.md) · [on-device-ai.md](architecture/on-device-ai.md) — 어떻게 설계되는가
-5. [architecture/deployment.md](architecture/deployment.md) — 어디에 어떻게 올리는가
-6. [planning/milestone.md](planning/milestone.md) — 어떤 순서로 만드는가
+5. [architecture/deployment.md](architecture/deployment.md) — 어디에 어떻게 올리는가(설계)
+   · [deployment/nixos-alfheim.md](deployment/nixos-alfheim.md) — 실제 배포 절차
+6. [planning/002-v2-roadmap.md](planning/002-v2-roadmap.md) — **지금 무엇을 만들고 있는가**

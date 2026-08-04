@@ -5,7 +5,10 @@
 > 시작할 수 있도록, **각 기능의 "이미 있는 것(EXISTS) vs 새로 만들 것(GAP)"을 파일 앵커와
 > 함께** 정리했다.
 >
-> **작성일** 2026-07-19 · **상태** Draft (kickoff 시 Open Decisions 확정 필요) · **기준 커밋** `main` (PR #15 머지 후)
+> **작성일** 2026-07-19 · **갱신** 2026-08-04 · **기준 커밋** `main` (PR #15 머지 후)
+>
+> **상태** 진행 중 — **M0·M1·M2 완료**(main 머지 + alfheim 프로덕션 배포, 실기기 푸시 수신 검증).
+> 다음은 **M3(채팅 미디어)**. M4a는 **D7(STT 프로바이더) 미확정**으로 대기, M4b는 vNext(§7 D6).
 >
 > 이 로드맵은 v1 코드베이스 4개 영역 정찰(reconnaissance) 결과에 근거한다. 파일:라인
 > 앵커는 작성 시점 기준이며 구현 전 재확인할 것.
@@ -17,12 +20,15 @@
 v1은 놀랄 만큼 많은 부분이 **이미 스캐폴딩**돼 있다. v2의 상당량은 "새로 짓기"가 아니라
 "deferred stub 완성 + 확장"이다.
 
-| 기능 | 한 줄 요약 | 스캐폴딩 정도 |
-|------|-----------|---------------|
-| **Web Push (VAPID)** | 모델·엔드포인트·SW 핸들러·pywebpush 의존성까지 완비, send 경로만 stub | 🟩🟩🟩🟩⬜ **거의 완성 — 라스트 마일** |
-| **그룹 관리 고도화** | owner 개념·`role` 컬럼·`require_owner` 인가 존재, 멤버 목록 완성. write 경로 전무 | 🟩🟩⬜⬜⬜ **인가 재사용 가능, CRUD 신규** |
-| **채팅 미디어 첨부** | topic presign→confirm 흐름 존재, **스토리지 enabler(M0) 구현 완료**(`feat/m0-object-storage`), 채팅 메시지는 아직 text-only | 🟩🟩⬜⬜⬜ **M0 완료 — 채팅 메시지 확장(M3)만 남음** |
-| **음성 채팅 + STT** | 음성 코드 전무. WS·메시지 `type`·미디어 스캐폴드만 재사용 가능 | ⬜⬜⬜⬜⬜ **거의 전부 신규 (+비동기 job 부재)** |
+"착수 전 정찰" 열은 2026-07-19 스냅샷이라 그대로 두고, 진행 상황만 "현재" 열에 갱신한다.
+
+| 기능 | 착수 전 정찰 (2026-07-19) | 현재 |
+|------|--------------------------|------|
+| **Web Push (VAPID)** | 모델·엔드포인트·SW 핸들러·pywebpush 의존성까지 완비, send 경로만 stub | ✅ **완료 — M1 (PR #17)**. 배포 후 실기기 수신 검증 |
+| **그룹 관리 고도화** | owner 개념·`role` 컬럼·`require_owner` 인가 존재, 멤버 목록 완성. write 경로 전무 | ✅ **완료 — M2 (PR #18)** |
+| **채팅 미디어 첨부** | topic presign→confirm 흐름 존재, 채팅 메시지는 text-only | 🟩🟩⬜⬜⬜ **M0 완료 (PR #16) — M3 미착수** |
+| **음성 채팅 + STT** | 음성 코드 전무. WS·메시지 `type`·미디어 스캐폴드만 재사용 가능 | ⬜⬜⬜⬜⬜ **미착수 — M4a는 D7 확정 대기** |
+| *(기반) 오브젝트 스토리지* | boto3 선언만 있고 `import` 0건 (stub) | ✅ **완료 — M0 (PR #16)** + NixOS 배선(PR #19·#20) |
 
 **가장 중요한 통찰 2가지**
 1. **오브젝트 스토리지(boto3/S3·MinIO)는 미디어 첨부와 음성 둘 다의 선결 조건**이다. `boto3`는
@@ -38,13 +44,13 @@ v1은 놀랄 만큼 많은 부분이 **이미 스캐폴딩**돼 있다. v2의 �
 의존성·리스크 기준 권장 순서 (사용자 우선순위와 매핑):
 
 ```
-M0  오브젝트 스토리지 enabler   ─┐ (M3·M4 선행)   [작음·기반]
-M1  Web Push (VAPID)          ─┼─ M0와 병렬 가능   [라스트 마일·고가치·저위험]
-M2  그룹 관리 고도화            ─┘ (독립)          [CRUD·중간]
-M3  채팅 미디어 첨부 (img/video)  ← M0 필요          [중상]
+M0  오브젝트 스토리지 enabler   ─┐ (M3·M4 선행)   [작음·기반]        ✅ 완료 (#16)
+M1  Web Push (VAPID)          ─┼─ M0와 병렬 가능   [라스트 마일·고가치·저위험] ✅ 완료 (#17)
+M2  그룹 관리 고도화            ─┘ (독립)          [CRUD·중간]        ✅ 완료 (#18)
+M3  채팅 미디어 첨부 (img/video)  ← M0 필요          [중상]             ◀ 다음
 M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고위험 → 분할]
-    M4a 비동기 음성 메시지 (권장 v2 범위)
-    M4b 실시간 음성 채팅 WebRTC (스트레치 / vNext 권장)
+    M4a 비동기 음성 메시지 (v2 범위 확정)                              ⏸ D7 대기
+    M4b 실시간 음성 채팅 WebRTC                                       ⏭ vNext (D6에서 제외)
 ```
 
 - **M0 + M1**은 서로 독립이라 병렬 착수 가능. M1은 신규 인프라가 없어 **가장 빠른 win**.
@@ -52,8 +58,9 @@ M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고�
 - **M3**는 M0 완료가 전제.
 - **M4**는 M0 + 비동기 job(+선택적 Redis)이 전제이며, 범위가 커 **M4a/M4b로 분할** 권장.
 
-> 사용자가 제시한 순서(그룹→미디어→음성→푸시)와 다르게, **스토리지 enabler와 푸시를 먼저**
-> 두는 것을 권장한다. 최종 순서는 kickoff 시 확정.
+> **kickoff에서 확정된 순서** (2026-07-19): M0+M1 → M2 → M3 → M4a. M4b는 vNext.
+> 사용자가 처음 제시한 순서(그룹→미디어→음성→푸시) 대신 **스토리지 enabler와 푸시를 먼저**
+> 두는 권장안이 채택됐고, M0·M1·M2까지 그대로 실행됐다.
 
 ---
 
@@ -61,7 +68,7 @@ M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고�
 
 **목표**: deferred된 presign 실경로를 구현해 실제 파일 업로드/조회를 가능케 한다. 미디어 첨부(M3)·음성(M4)의 공통 기반.
 
-> **구현 완료 (2026-07-19)** — `feat/m0-object-storage` 브랜치에서 구현 완료. 아래 "현재 상태"·"작업"은
+> ✅ **완료 — PR #16 머지** (2026-07-19). 아래 "현재 상태"·"작업"은
 > 착수 전 정찰 스냅샷이라 그대로 두고, 실제 배송 내용만 요약한다:
 > - `backend/app/core/storage.py` 신설: `minio_enabled`(access/secret key 존재)일 때 실 presign PUT/GET,
 >   아니면 결정적 로컬 fallback URL(backend.md 규칙 11).
@@ -75,6 +82,13 @@ M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고�
 >   `MINIO_ROOT_USER/PASSWORD/PORT` 추가.
 > - `config.py`가 `APP_ENV=production`에서 MinIO 키 미설정 시 fail-closed(평문 미서명 URL이 프로덕션에서
 >   조용히 활성화되는 것을 방지).
+>
+> **프로덕션 배선 (PR #19·#20, 2026-08-04)** — M0는 앱 코드만 다뤘고 로컬은 `infra/docker-compose.yml`로
+> 충분했으나, alfheim 배포에는 MinIO 자체가 없었다. `infra/module.nix`에 `services.minio`(S3 `:9000`,
+> 콘솔은 loopback) + `storage.*` 옵션(`createLocally`/`port`/`publicUrl`/`bucket`/`rootCredentialsFile`)을
+> 추가해 flake 하나로 풀스택이 뜨도록 했고, 버킷 프로비저닝을 tmpfs(`RuntimeDirectory`) 기반 재시도
+> 유닛으로 만들어 실패 시 실제 curl/mc 오류가 로그에 남게 했다(크리덴셜 미노출). 배포 절차는
+> [nixos-alfheim.md](../deployment/nixos-alfheim.md) 참고.
 >
 > **후속 작업(범위 밖, 다음 마일스톤)**: 프론트엔드 첫 호출처는 M3(채팅 미디어 첨부)에서 배선한다(§5).
 > `storage.py`의 `VIDEO_MIME_TYPES`/`MAX_VIDEO_BYTES`는 M3/M4용 확장 포인트로 정의만 돼 있고 아직 어떤
@@ -147,6 +161,33 @@ M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고�
 
 **목표**: 실제 브라우저 푸시 알림. 스캐폴딩이 거의 완성이라 **라스트 마일만** 채운다.
 
+> ✅ **완료 — PR #17 머지** (2026-08-04). **프로덕션 배포 후 실기기 푸시 수신까지 검증 완료.**
+> 아래 "현재 상태"·"작업"은 착수 전 정찰 스냅샷이라 그대로 두고, 실제 배송 내용만 요약한다:
+> - `notification_service.send_push` 실경로: `pywebpush`로 `{title,body,url}` 발송, 404/410 구독 자동 prune,
+>   사용자당 최신 N개(10)만 로드, 네트워크 I/O 전 DB 트랜잭션 해제.
+> - `push_dispatch.py` 신설 — fire-and-forget 디스패치를 세마포어(동시 4)와 in-flight 상한(64)으로 제한,
+>   포화 시 이벤트를 흘려보내 요청 경로를 절대 블로킹하지 않음(D2 = BackgroundTasks 계열 확정).
+> - `GET /api/push/vapid-public-key` 추가(키 미설정 시 빈 문자열 → 프론트가 조용히 비활성).
+> - `DELETE /api/push/subscribe`가 선택적 `{endpoint}`를 받아 **기기 단위 해지** 지원.
+> - **SSRF 방어**: `core/push_endpoint.py`가 엔드포인트 검증 단일 소스. IDNA 정규화 후 IP 리터럴·수치 별칭
+>   (`127.1`/`2130706433`/`0x7f000001`)·비-global/멀티캐스트/예약 대역·`/etc/hosts` IPv6 별칭을 차단하고,
+>   구독 시점에는 DNS 해석까지 확인(발송 경로는 리졸버를 타지 않음). 리다이렉트는 세션 레벨에서 비활성.
+> - **구독 키 검증**: `p256dh`는 strict base64 디코딩 + 실제 P-256 곡선 위의 점인지까지 파싱해 검증.
+> - 프론트: 마이페이지 알림 토글, `urlBase64ToUint8Array`, VAPID 키 회전 인지 재구독(`reconcileOrRecreate`),
+>   로그아웃 시 구독 detach, 로그인 계정 전환 시 구독 소유권 재귀속(`PushReconciler.svelte`, 루트 레이아웃 상주).
+> - SW: `pushsubscriptionchange`가 **현재** 서버 키를 다시 받아 재구독하고, 등록 POST 실패 시 방금 만든
+>   로컬 구독을 되돌림.
+>
+> **배포 중 발견·수정** (`94deabb`): `manifest.webmanifest`가 두 경로(vite-plugin-pwa 자체 엔트리 +
+> `@vite-pwa/sveltekit` glob)로 **이중 precache**되어 workbox `addToCacheList`가 SW 최상위 평가에서 throw →
+> **서비스워커 등록 자체가 실패**했다. 등록이 없으니 `getActiveRegistration()`이 null이 되고 토글은 이를
+> "알림 권한 차단"으로 잘못 표시했다. `injectManifest.globIgnores: ['**/*.webmanifest']`로 해소
+> (`manifestTransforms`로는 SvelteKit 통합의 `client/` prefix 제거가 같이 사라져 불가).
+>
+> **후속(P2, 미해결)**: (a) 백그라운드 등록 실패로 SW 구독이 제거된 경우 자동 복구 없음 — "켜져 있었음"
+> 마커 영속화 필요. (b) `notificationclick`이 payload의 **상대 경로**를 `WindowClient.url`(절대)과 비교해
+> 이미 열린 채팅 탭을 못 찾고 새 탭을 연다. → [tech-debt-tracker.md](./tech-debt-tracker.md)
+
 ### 현재 상태 (거의 완성)
 - **완성**: `push_subscription` 모델, `POST/DELETE /api/push/subscribe`(`routers/push.py`),
   `PushSubscriptionRepository`(`notification_repository.py:163-195`), config VAPID 3키
@@ -183,6 +224,21 @@ M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고�
 ## 4. M2 — 그룹 관리 고도화
 
 **목표**: 그룹 이름 수정 · 멤버 관리(제거/탈퇴/역할·소유권 이양) · 그룹 soft-delete.
+
+> ✅ **완료 — PR #18 머지** (2026-08-04). 아래 "현재 상태"·"작업"은 착수 전 정찰 스냅샷이라
+> 그대로 두고, 실제 배송 내용만 요약한다:
+> - 마이그레이션 `groups.deleted_at` 추가. soft-delete(D3 확정: 즉시 숨김 + `deleted_at` 보존).
+> - 엔드포인트: `PATCH /api/groups/{id}`(이름) · `DELETE /api/groups/{id}`(soft-delete) ·
+>   `DELETE /api/groups/{gid}/members/{uid}`(제거/탈퇴) · `PATCH /api/groups/{gid}/members/{uid}`(소유권 이양).
+> - **인가 캐스케이드**: `require_membership`이 먼저 `get_group_or_404`를 타므로 soft-delete된 그룹은
+>   멤버 목록·상세·토픽·채팅 어디서든 404로 사라진다.
+> - **경합 방어**: 소유권 이양·멤버 제거·탈퇴·삭제·이름 변경을 전부 `lock_group_or_404`(`SELECT … FOR UPDATE`)
+>   아래에서 수행 — "마지막 owner가 동시에 탈퇴" 같은 경합에서 owner 없는 그룹이 생기지 않는다.
+>   (채팅 메시지 경로는 의도적으로 락을 걸지 않는다 — 그룹 단위 직렬화가 되어 처리량이 무너지므로.)
+> - **WS 즉시 축출**: 제거·탈퇴·그룹 삭제 시 해당 사용자의 열린 소켓을 close code `4001`로 끊는다
+>   (`ws_hub.evict_user`/`evict_room`). 축출된 클라이언트는 재연결 시 404를 받는다.
+> - 프론트: 그룹 설정 페이지(이름 변경·나가기·삭제), 멤버 목록의 제거/이양 컨트롤, 확인 모달,
+>   그룹 이탈 후 관련 쿼리 캐시 purge(5분 staleTime 때문에 뒤로가기로 되살아나는 것 방지).
 
 ### 현재 상태
 - **재사용 가능**: `owner_id`(`group.py:25`) + Membership `role`(`membership.py:24`, `owner|member`) +
@@ -293,6 +349,23 @@ WebRTC 시그널링(기존 WS 재사용)·peer connection·STUN/TURN. 실시간 
 
 ## 7. Open Decisions (kickoff 시 확정)
 
+### 확정 결과 (2026-07-19 kickoff)
+
+**D7을 제외한 전부 확정.** 아래 "권장" 표는 확정 근거로 보존한다.
+
+| # | 확정 | 반영 위치 |
+|---|------|----------|
+| **D1** | ✅ **MinIO + 접근 정책 B**(프라이빗 버킷 + 단기 presigned GET) — 권장안 채택 | M0 (#16), NixOS 배선 (#19·#20) |
+| **D2** | ✅ **요청 비블로킹 fire-and-forget** — 권장(BackgroundTasks)과 동일 계열이되, 동시 4 / in-flight 64 상한을 둔 `push_dispatch.py`로 구현 | M1 (#17) |
+| **D3** | ✅ **즉시 숨김 + `deleted_at` 보존**(하드 purge는 후속) — 권장안 채택 | M2 (#18) |
+| **D4** | ✅ **`message_media` 전용 테이블** — 권장안 채택 | M3 (예정) |
+| **D5** | ✅ **직접 재생(mp4) + 크기 제한**(썸네일·트랜스코딩 후속) — 권장안 채택 | M3 (예정) |
+| **D6** | ✅ **음성 메시지(M4a)만 v2 범위. WebRTC(M4b)는 vNext** — 권장안 채택 | M4a (대기) |
+| **D7** | ⏸ **미확정** — `sherpa-onnx` vs `faster-whisper`를 **정확도 · 한국어 호환성 · jamye-plz 적합성** 기준으로 비교한 뒤 결정. **M4a 착수 전 선행 필수** | — |
+| **D8** | ✅ **arq + Redis**(내구성 + ws_hub pub/sub 동시 해결) — M4a에서 도입 | M4a (대기) |
+
+### 권장안 (착수 전 원본)
+
 각 항목에 **권장안**을 제시. 새 세션은 착수 전 사용자와 확정할 것.
 
 | # | 결정 | 옵션 | 권장 |
@@ -307,6 +380,7 @@ WebRTC 시그널링(기존 WS 재사용)·peer connection·STUN/TURN. 실시간 
 | **D8** | 비동기 인프라 | FastAPI BackgroundTasks · arq+Redis · Celery | **arq+Redis**(내구성 + ws_hub pub/sub 동시 해결) — 단, MVP는 BackgroundTasks로 시작 가능 |
 
 > **D6이 로드맵 규모를 가장 크게 좌우**한다(실시간 WebRTC 포함 여부). 착수 전 최우선 확정.
+> → kickoff에서 **음성 메시지(M4a)만 v2 범위**로 확정, WebRTC는 vNext.
 
 ---
 
@@ -315,7 +389,9 @@ WebRTC 시그널링(기존 WS 재사용)·peer connection·STUN/TURN. 실시간 
 - **Backend**: 클린 아키텍처(router→service→repo→model), 커스텀 예외(raw `HTTPException` 금지),
   **third-party는 env-conditional + deferred fallback**(`backend.md` 규칙 11), 파라미터라이즈드 쿼리,
   명시적 트랜잭션. 모델 변경 시 **alembic 마이그레이션 필수**(up/down 검증).
-  게이트: `uv run pytest` · `uvx ruff check/format` · `npx pyright --project pyrightconfig.json` = 0.
+  게이트: `uv run pytest` · **`uv run ruff check/format`** · `npx pyright --project pyrightconfig.json` = 0.
+  > `uvx ruff`는 **프로젝트 핀을 무시하고 최신 ruff를 받아** 기존 파일까지 무더기로 지적한다.
+  > 반드시 `uv run`(락파일 버전)으로 돌릴 것 — [tech-debt-tracker.md](./tech-debt-tracker.md) #7.
 - **Frontend**: Svelte 5 runes · Tailwind v4 + daisyUI · 내부 네비 `resolve()`(`$app/paths`) · bulk-suppression 금지.
   게이트: `bunx eslint .` = 0 · `bun run check` = 0/0 · `bunx prettier --check .` · `bun run build` = 0.
 - **공통**: Conventional Commits(scope별 분리) · UI 문자열 한국어(i18n 규칙) · `bun.lock` 변경 시
