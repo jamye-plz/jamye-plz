@@ -97,18 +97,47 @@ def presign_put(object_key: str, content_type: str, byte_size: int) -> tuple[str
     return url, PRESIGN_PUT_EXPIRES_IN
 
 
-def presign_get(object_key: str) -> str:
-    """Return a short-TTL presigned GET URL for reading private media."""
+def presign_get(object_key: str, *, download_filename: str | None = None) -> str:
+    """Return a short-TTL presigned GET URL for reading private media.
+
+    With `download_filename`, the signature also binds
+    `response-content-disposition: attachment`, so the browser saves the file
+    instead of navigating to it. This is the only way to force a download from
+    here: the object lives on a different origin (MINIO_ENDPOINT), and the HTML
+    `download` attribute is ignored cross-origin.
+    """
     settings = get_settings()
     if not settings.minio_enabled:
         return _fallback_url(object_key)
 
+    params: dict[str, str] = {"Bucket": settings.minio_bucket, "Key": object_key}
+    if download_filename:
+        # Quote-escape so a crafted filename cannot break out of the header.
+        safe = download_filename.replace('"', "")
+        params["ResponseContentDisposition"] = f'attachment; filename="{safe}"'
+
     client = get_s3_client()
     return client.generate_presigned_url(
         "get_object",
-        Params={"Bucket": settings.minio_bucket, "Key": object_key},
+        Params=params,
         ExpiresIn=PRESIGN_GET_EXPIRES_IN,
     )
+
+
+# Extension used for the download filename; the original name is not stored.
+_EXT_BY_MIME = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+}
+
+
+def download_filename_for(media_id: str, content_type: str) -> str:
+    """A stable, safe filename for a saved attachment."""
+    ext = _EXT_BY_MIME.get(content_type, "bin")
+    return f"jamye-{media_id}.{ext}"
 
 
 def ensure_bucket() -> None:

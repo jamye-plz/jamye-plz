@@ -163,6 +163,21 @@ class ChatService:
         await self._db.refresh(message)
         return message, media_rows, True
 
+    async def presign_media_download(self, chatroom_id: str, media_id: str) -> str:
+        """Signed URL that saves the attachment instead of opening it.
+
+        Caller must have already passed the membership gate. The repository
+        join re-checks that this attachment really belongs to this chatroom, so
+        a guessed media_id from another group cannot be downloaded.
+        """
+        media = await self._media_repo.get_in_chatroom(media_id, chatroom_id)
+        if media is None:
+            raise NotFoundError("Media", media_id)
+        return storage.presign_get(
+            media.object_key,
+            download_filename=storage.download_filename_for(media.id, media.type),
+        )
+
     @staticmethod
     def media_out(rows: list[MessageMedia]) -> list[MessageMediaOut]:
         """Attach a short-TTL presigned GET to each row (access policy B)."""

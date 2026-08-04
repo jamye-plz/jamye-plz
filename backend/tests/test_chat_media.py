@@ -13,7 +13,7 @@ import pytest
 from pydantic import ValidationError as PydanticValidationError
 
 from app.core import storage
-from app.core.exceptions import ValidationError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.models.message import Message
 from app.models.message_media import MessageMedia
 from app.schemas.chat import ChatMediaPresignRequest, MessageMediaIn
@@ -316,6 +316,65 @@ def test_presign_rejects_zero_bytes() -> None:
 
 
 # ── media_out ─────────────────────────────────────────────────────────────────
+
+
+# ── Download (IDOR guard + filename) ──────────────────────────────────────────
+
+
+class FakeMediaLookupRepo:
+    """Mirrors get_in_chatroom's join: media is only visible in its own room."""
+
+    def __init__(self, media: MessageMedia, chatroom_id: str) -> None:
+        self.media = media
+        self.chatroom_id = chatroom_id
+
+    async def get_in_chatroom(self, media_id: str, chatroom_id: str) -> MessageMedia | None:
+        if media_id == self.media.id and chatroom_id == self.chatroom_id:
+            return self.media
+        return None
+
+
+def make_download_service(chatroom_id: str = CHATROOM_ID) -> ChatService:
+    svc = ChatService(FakeDb())
+    media = MessageMedia(
+        id="media-1",
+        message_id="msg-1",
+        type="image/jpeg",
+        object_key=key_for(chatroom_id),
+    )
+    svc._media_repo = FakeMediaLookupRepo(media, chatroom_id)  # type: ignore[attr-defined]
+    return svc
+
+
+async def test_download_rejects_media_from_another_chatroom() -> None:
+    # The attack: guess a media id and ask for it from a room you DO belong to.
+    svc = make_download_service()
+    with pytest.raises(NotFoundError):
+        await svc.presign_media_download(OTHER_CHATROOM_ID, "media-1")
+
+
+async def test_download_rejects_unknown_media_id() -> None:
+    svc = make_download_service()
+    with pytest.raises(NotFoundError):
+        await svc.presign_media_download(CHATROOM_ID, "media-does-not-exist")
+
+
+async def test_download_returns_a_url_for_own_chatroom() -> None:
+    svc = make_download_service()
+    url = await svc.presign_media_download(CHATROOM_ID, "media-1")
+    assert url
+
+
+def test_download_filename_uses_extension_from_mime() -> None:
+    assert storage.download_filename_for("abc", "image/jpeg").endswith(".jpg")
+    assert storage.download_filename_for("abc", "video/mp4").endswith(".mp4")
+    # Unknown type must still produce a safe, extension-bearing name.
+    assert storage.download_filename_for("abc", "application/x-evil").endswith(".bin")
+
+
+def test_download_filename_has_no_path_or_quote_characters() -> None:
+    name = storage.download_filename_for("../../etc/passwd", "image/png")
+    assert '"' not in name
 
 
 def test_media_out_attaches_a_url_per_row() -> None:

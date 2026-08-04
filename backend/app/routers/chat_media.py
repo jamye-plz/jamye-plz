@@ -9,6 +9,7 @@ ChatService.send_message and docs/architecture/api-contract.md flow 3).
 import uuid
 
 from fastapi import APIRouter
+from fastapi.responses import RedirectResponse
 
 from app.core import storage
 from app.core.deps import CurrentUser, DbSession
@@ -43,3 +44,27 @@ async def presign_chat_media(
         upload_url=upload_url,
         expires_in=expires_in,
     )
+
+
+@router.get("/{media_id}/download")
+async def download_chat_media(
+    group_id: str,
+    chatroom_id: str,
+    media_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Redirect to a signed URL that forces a save.
+
+    A redirect rather than a `download_url` field on every history item: the
+    payload stays small, and authorization is re-checked at click time instead
+    of being baked into a URL minted when the page loaded.
+    """
+    group_svc = GroupService(db)
+    await group_svc.require_membership(group_id, current_user.id)
+    chat_svc = ChatService(db)
+    await chat_svc.get_chatroom_in_group_or_404(chatroom_id, group_id)
+    url = await chat_svc.presign_media_download(chatroom_id, media_id)
+    # 307 keeps the method and, unlike 301/302, is explicitly non-cacheable by
+    # default — the target URL expires in minutes and must not be reused.
+    return RedirectResponse(url, status_code=307)
