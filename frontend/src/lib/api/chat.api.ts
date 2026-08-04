@@ -21,6 +21,20 @@ export function presignChatMedia(
 }
 
 /**
+ * Same-origin URL that redirects to a signed, `Content-Disposition: attachment`
+ * MinIO URL. Used as a plain `<a href>`: the HTML `download` attribute is
+ * ignored cross-origin, so forcing the save has to happen in the signature.
+ * Auth rides the httpOnly cookie, and the server re-checks membership per click.
+ */
+export function chatMediaDownloadUrl(
+	groupId: string,
+	chatroomId: string,
+	mediaId: string
+): string {
+	return `/api/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/download`;
+}
+
+/**
  * Presign + PUT one file, returning the metadata the WS `send_message` frame
  * needs. `byte_size` must be the real `File.size`: it is bound into the
  * signature as Content-Length, so a mismatch makes MinIO reject the upload.

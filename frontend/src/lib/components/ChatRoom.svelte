@@ -6,6 +6,7 @@
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type {
+		ChatMedia,
 		ChatMediaInput,
 		ChatMessage,
 		WsClientMessage,
@@ -16,6 +17,7 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import ChatComposer from '$lib/components/ChatComposer.svelte';
 	import MessageMedia from '$lib/components/MessageMedia.svelte';
+	import MediaLightbox from '$lib/components/MediaLightbox.svelte';
 
 	// A single chatroom view (history + live WS + composer). Reused by the group
 	// main chat and per-topic chat — each is an isolated room keyed by chatroomId.
@@ -478,6 +480,15 @@
 	 * a chat window stays open far longer, so images/videos in scrollback WILL
 	 * start 403ing mid-session. Refetching history returns freshly signed URLs.
 	 */
+	// Fullscreen viewer. Holds its own copy of the items so a history refetch
+	// mid-view cannot swap the picture under the user.
+	let lightbox = $state<{ items: ChatMedia[]; index: number } | null>(null);
+
+	function openLightbox(msg: ChatMessage, index: number) {
+		if (!msg.media) return;
+		lightbox = { items: msg.media, index };
+	}
+
 	let refreshingMedia = false;
 	let lastMediaRefreshAt = Number.NEGATIVE_INFINITY;
 	async function refreshMediaUrls() {
@@ -555,7 +566,11 @@
 	{#if msg.pendingMedia && msg.pendingMedia.length > 0}
 		<MessageMedia pending={msg.pendingMedia} />
 	{:else if msg.media && msg.media.length > 0}
-		<MessageMedia media={msg.media} onexpired={refreshMediaUrls} />
+		<MessageMedia
+			media={msg.media}
+			onopen={(i) => openLightbox(msg, i)}
+			onexpired={refreshMediaUrls}
+		/>
 	{/if}
 	{#if msg.body}
 		<div
@@ -729,3 +744,13 @@
 
 	<ChatComposer {groupId} {chatroomId} {connected} {keyboardOpen} onsend={sendMessage} />
 </div>
+
+{#if lightbox}
+	<MediaLightbox
+		{groupId}
+		{chatroomId}
+		items={lightbox.items}
+		startIndex={lightbox.index}
+		onclose={() => (lightbox = null)}
+	/>
+{/if}
