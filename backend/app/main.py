@@ -16,11 +16,17 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+# Pydantic's own error, NOT app.core.exceptions.ValidationError — the latter is
+# an AppError subclass already handled by the `except AppError` arm below.
+# Conflating the two would let a malformed media frame escape and kill the socket.
+from pydantic import ValidationError as PydanticValidationError
+
 from app.core import storage, ws_hub
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.routers import (
     auth,
+    chat_media,
     chatrooms,
     groups,
     invites,
@@ -31,6 +37,7 @@ from app.routers import (
     tags,
     topics,
 )
+from app.schemas.chat import MessageMediaIn
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +109,7 @@ app.include_router(topics.router, prefix=API_PREFIX)
 app.include_router(media.router, prefix=API_PREFIX)
 app.include_router(tags.router, prefix=API_PREFIX)
 app.include_router(chatrooms.router, prefix=API_PREFIX)
+app.include_router(chat_media.router, prefix=API_PREFIX)
 app.include_router(push.router, prefix=API_PREFIX)
 app.include_router(notifications.router, prefix=API_PREFIX)
 
@@ -196,9 +204,26 @@ async def websocket_endpoint(websocket: WebSocket):
                 body: str = data.get("body", "")
                 client_msg_id: str | None = data.get("client_msg_id")
 
-                if not chatroom_id or not body:
+                # A media-only message is legitimate (photo with no caption), so
+                # `body` alone is no longer required — but a frame carrying
+                # neither text nor attachments still is not a message.
+                raw_media = data.get("media") or []
+                if not chatroom_id or (not body and not raw_media):
                     await websocket.send_json(
-                        {"type": "error", "detail": "chatroom_id and body required"}
+                        {
+                            "type": "error",
+                            "detail": "chatroom_id and either body or media required",
+                        }
+                    )
+                    continue
+
+                # Parse attachments up front: a malformed frame must not reach
+                # the service (and must not look like a server fault).
+                try:
+                    media_in = [MessageMediaIn.model_validate(m) for m in raw_media]
+                except (PydanticValidationError, TypeError) as exc:
+                    await websocket.send_json(
+                        {"type": "error", "detail": f"invalid media payload: {exc}"}
                     )
                     continue
 
@@ -207,11 +232,12 @@ async def websocket_endpoint(websocket: WebSocket):
                         chat_svc = ChatService(db)
                         # Enforce group membership even if the client skipped `join`.
                         await chat_svc.require_member_access(chatroom_id, user_id)
-                        message, _ = await chat_svc.send_message(
+                        message, media_rows, _ = await chat_svc.send_message(
                             chatroom_id=chatroom_id,
                             sender_id=user_id,
                             body=body,
                             client_msg_id=client_msg_id,
+                            media=media_in,
                         )
                         msg_payload: dict[str, Any] = {
                             "type": "message",
@@ -224,6 +250,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             "body": message.body,
                             "msg_type": message.type,
                             "created_at": message.created_at.isoformat(),
+                            "media": [m.model_dump() for m in ChatService.media_out(media_rows)],
                         }
                         # Echo to sender
                         await websocket.send_json(msg_payload)

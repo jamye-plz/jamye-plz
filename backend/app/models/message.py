@@ -11,6 +11,7 @@ from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.chatroom import Chatroom
+    from app.models.message_media import MessageMedia
     from app.models.user import User
 
 
@@ -42,3 +43,6 @@ class Message(Base):
         "Chatroom", back_populates="messages", lazy="noload"
     )
     sender: Mapped["User | None"] = relationship("User", back_populates="messages", lazy="noload")
+    media: Mapped[list["MessageMedia"]] = relationship(
+        "MessageMedia", back_populates="message", lazy="noload", cascade="all, delete-orphan"
+    )

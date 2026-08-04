@@ -7,6 +7,7 @@ from app.models.group import Group
 from app.models.invite import Invite
 from app.models.membership import Membership
 from app.models.message import Message
+from app.models.message_media import MessageMedia
 from app.models.notification import Notification
 from app.models.push_subscription import PushSubscription
 from app.models.topic import Topic
@@ -26,6 +27,7 @@ __all__ = [
     "Chatroom",
     "ChatroomRead",
     "Message",
+    "MessageMedia",
     "PushSubscription",
     "Notification",
 ]
