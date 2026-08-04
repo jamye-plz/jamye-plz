@@ -71,6 +71,7 @@
 | GET | `/api/groups/{gid}/chatrooms/{cid}/messages?cursor=` | 채팅방 메시지 히스토리 (cursor 페이지네이션). 각 메시지에 `media[]` 포함 | 필요 (멤버) |
 | POST | `/api/groups/{gid}/chatrooms/{cid}/read` | 읽음 처리 (`up_to`까지) | 필요 (멤버) |
 | POST | `/api/groups/{gid}/chatrooms/{cid}/media/presign` | 채팅 첨부 업로드 URL 발급 (사진·동영상) | 필요 (멤버) |
+| GET | `/api/groups/{gid}/chatrooms/{cid}/media/{mid}/download` | 첨부 다운로드 — 서명된 URL로 **307 리다이렉트** | 필요 (멤버) |
 
 > 실시간 메시지 송수신은 REST가 아니라 WebSocket으로 처리한다. 이 엔드포인트는 입장 시점의 과거 메시지 로딩과 재연결 후 재동기화 용도다.
 > 첨부는 presign만 REST이고, **confirm 단계는 없다** — 업로드 후 메타데이터를 WS `send_message` 프레임에 실어 보낸다(아래 "채팅 미디어 첨부 흐름").
@@ -293,6 +294,17 @@ sequenceDiagram
 - 클라이언트가 보낸 `content_type`·`byte_size`는 **서버가 재검증**한다.
 - 조회 URL은 접근 정책 B의 단기 presigned GET(600초)이다. 채팅 화면은 오래 열려 있어 세션 도중 만료될 수
   있으므로, 클라이언트는 로드 실패 시 히스토리를 재조회해 URL을 재발급받는다.
+
+**다운로드 — `GET .../media/{mid}/download`**
+
+미디어는 앱과 다른 오리진(MinIO)에 있어 HTML `download` 속성이 무시된다. 그래서 저장을 강제하려면
+**서명에 `response-content-disposition: attachment`를 넣어야** 한다. 이를 히스토리 응답마다 URL 2개로
+내려보내는 대신 리다이렉트 엔드포인트로 처리한다 — payload가 늘지 않고, **클릭 시점에 권한을 다시 검증**한다.
+
+- 멤버십 + 채팅방-그룹 소속 확인 후, `media_id`가 **이 채팅방의 메시지에 속하는지 조인으로 재확인**한다.
+  이 조인이 인가 그 자체다. 없으면 `media_id` 추측만으로 아무 그룹의 첨부나 받아갈 수 있다(IDOR).
+- 파일명은 원본을 저장하지 않으므로 `jamye-{media_id}.{ext}`로 생성한다.
+- **307**을 쓴다(캐시되지 않음). 대상 URL은 수 분 내 만료되므로 재사용되면 안 된다.
 
 ### 흐름 2 — 새 주제 → 리마인드 시스템 메시지
 
