@@ -23,6 +23,7 @@ erDiagram
     topics ||--o| chatrooms : "주제방"
     chatrooms ||--o{ messages : "기록"
     users ||--o{ messages : "발신"
+    messages ||--o{ message_media : "첨부"
     users ||--o{ push_subscriptions : "구독"
     users ||--o{ notifications : "수신"
 
@@ -100,6 +101,17 @@ erDiagram
         client_msg_id "null for system; UNIQUE(sender_id,client_msg_id)"
         body
         type "user|system"
+        created_at
+    }
+    message_media {
+        id PK
+        message_id FK
+        type "content_type"
+        object_key
+        width
+        height
+        byte_size
+        duration "video only, null"
         created_at
     }
     push_subscriptions {
@@ -267,6 +279,36 @@ erDiagram
 - **제약**: `UNIQUE(sender_id, client_msg_id)` — `client_msg_id IS NOT NULL`인 행만 대상이다(PostgreSQL은 NULL을 서로 다른 값으로 취급하므로 `sender_id`·`client_msg_id`가 모두 null인 system 메시지는 제약에서 자연 제외된다). WS 재연결이나 ack 유실 후 클라가 같은 `client_msg_id`로 재전송해도 서버가 같은 키를 중복 영속하지 않아 **멱등성**이 보장된다.
 - 리마인드(새 주제/첫 채팅)는 메인 채팅방에 `type=system` 메시지로 들어간다(`sender_id`·`client_msg_id` 모두 null).
 - 클라는 `client_msg_id`로 낙관적 전송하고 서버 `message_ack`로 확정한다. 위 unique 제약이 멱등성의 실제 보장 장치다(WS 프로토콜은 [`./api-contract.md`](./api-contract.md) 참고).
+- `body`는 NOT NULL이지만, **미디어가 첨부된 메시지는 빈 문자열을 허용**한다(이미지 단독 메시지). 서버는 `body`와 `media` 중 최소 하나를 요구한다.
+
+### message_media
+채팅 메시지에 첨부된 사진·동영상. MinIO 객체를 참조한다. `topic_media`의 메시지 스코프 버전이다.
+
+| 컬럼 | 타입/값 | 제약 |
+|------|---------|------|
+| id | PK | |
+| message_id | → `messages` | FK, 인덱스 |
+| type | content_type (`image/jpeg` \| `image/png` \| `image/webp` \| `image/gif` \| `video/mp4`) | |
+| object_key | MinIO 객체 키 (`chat/{chatroom_id}/{uuid4}`) | |
+| width | int | nullable |
+| height | int | nullable |
+| byte_size | int | nullable |
+| duration | int (초) | nullable — 동영상만 |
+| created_at | timestamp | |
+
+- **업로드 흐름은 topic_media와 다르다**: `topic_media`는 presign → PUT → **confirm**(별도 REST)이지만,
+  `message_media`는 `message_id`가 FK라 confirm 시점에 메시지가 아직 없다. 그래서 confirm 단계를 두지 않고
+  presign → PUT → **WS `send_message` 프레임에 메타데이터를 실어** 메시지 행과 미디어 행을 **한 트랜잭션**에서 만든다.
+  고아 행이 생기지 않고 왕복도 1회 줄어든다.
+- **BOLA 가드**: `object_key`가 `chat/{chatroom_id}/{uuid4}` 형식인지(단일 경로 세그먼트) 서버가 검증한다.
+  이 검사가 없으면 다른 그룹의 presign 응답에서 관찰한 `object_key`를 자기 메시지에 첨부해,
+  히스토리 응답의 presigned GET을 통해 볼 권한이 없는 객체를 읽을 수 있다(`topic_media`와 동일한 위협).
+- 클라이언트가 보낸 `content_type`·`byte_size`는 **서버가 재검증**한다(허용목록 + 종류별 상한).
+- 메시지당 최대 **4개**. 이미지 10MiB, 동영상(mp4) **50MiB** — 동영상 상한은 presigned PUT이 통과하는
+  Cloudflare 무료 플랜의 100MB 요청 본문 제한을 고려해 정했다.
+- 읽기는 접근 정책 B(프라이빗 버킷 + 단기 presigned GET, TTL 600초). 채팅 화면은 오래 열려 있어
+  **세션 도중 URL이 만료될 수 있으므로** 클라이언트는 로드 실패 시 히스토리를 재조회해 URL을 재발급받는다.
+- 메시지 삭제 기능이 없어 orphan 객체 정리는 아직 없다(후속).
 
 ### push_subscriptions
 Web Push 구독 정보(VAPID).
