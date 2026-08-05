@@ -84,7 +84,7 @@ def _probe_duration_seconds(data: bytes) -> float:
     """
     import av  # lazy, mirrors the faster_whisper import: worker-only path
 
-    with av.open(io.BytesIO(data), metadata_errors="ignore") as container:
+    with av.open(io.BytesIO(data), mode="r", metadata_errors="ignore") as container:
         if container.duration is not None:
             return container.duration / av.time_base
         stream = next((s for s in container.streams if s.type == "audio"), None)
