@@ -33,11 +33,10 @@
   # lib.fakeHash, `nix build .#frontend`, paste the printed `got:`). Last
   # regenerated for `heic-to` (browser HEIC→JPEG decoder for iPhone photos).
   #
-  # ⚠️ VERIFY ME: this hash is byte-identical to the pre-partysocket-removal
-  # one, which should be impossible for a changed node_modules tree — it was
-  # likely regenerated against the old bun.lock. If the deploy build fails
-  # with "hash mismatch", paste the printed `got:` hash here; that error is
-  # the safety net, not a new problem.
+  # Note: removing partysocket did NOT change this hash — verified by an
+  # actual Linux build against the new bun.lock. (bun's --ignore-scripts
+  # install evidently produced an identical tree; trust the build, not the
+  # intuition that it must differ.)
   nodeModulesHashes = {
     aarch64-linux = "sha256-s2M+aQAprvhdQqElhzTh7Fl/u9ryOOaR9CAMR5bafO4=";
   };
