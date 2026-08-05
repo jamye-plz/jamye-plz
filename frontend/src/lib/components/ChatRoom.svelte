@@ -522,10 +522,7 @@
 	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
 	// media_id lets every message-insertion path claim it. Entries are removed
 	// on match; the map only ever holds this room's still-unmatched frames.
-	const pendingTranscripts = new SvelteMap<
-		string,
-		{ status: string; transcript: string | null }
-	>();
+	const pendingTranscripts = new SvelteMap<string, { status: string; transcript: string | null }>();
 
 	function applyBufferedTranscripts(msg: ChatMessage): ChatMessage {
 		if (!msg.media?.length || pendingTranscripts.size === 0) return msg;
