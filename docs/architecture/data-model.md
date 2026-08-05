@@ -118,6 +118,9 @@ erDiagram
         byte_size
         duration "video only, null"
         position "order within message"
+        transcript "audio STT, null"
+        transcript_status "pending|done|failed, null"
+        filename "original name, null"
         created_at
     }
     chatroom_reads {
@@ -308,6 +311,9 @@ erDiagram
 | byte_size | int | nullable |
 | duration | int (초) | nullable — 동영상만 |
 | position | int | 메시지 내 순서 (0부터) |
+| transcript | text | nullable — 오디오 STT 결과 (M4a) |
+| transcript_status | `pending` \| `done` \| `failed` | nullable — NULL = 비오디오 또는 전사 비활성(무Redis) |
+| filename | varchar(255) | nullable — 원본 파일명(다운로드 시 복원, 부채 #8) |
 | created_at | timestamp | |
 
 - **업로드 흐름은 topic_media와 다르다**: `topic_media`는 presign → PUT → **confirm**(별도 REST)이지만,
@@ -322,6 +328,10 @@ erDiagram
   Cloudflare 무료 플랜의 100MB 요청 본문 제한을 고려해 정했다.
 - 읽기는 접근 정책 B(프라이빗 버킷 + 단기 presigned GET, TTL 600초). 채팅 화면은 오래 열려 있어
   **세션 도중 URL이 만료될 수 있으므로** 클라이언트는 로드 실패 시 히스토리를 재조회해 URL을 재발급받는다.
+- **전사(M4a)는 오디오 행에 붙는다** — 전사의 단위는 메시지가 아니라 오디오 파일이므로, 로드맵
+  초안의 "messages에 transcript 컬럼" 대신 여기에 둔다. `pending`은 REDIS_URL이 설정된 배포에서만
+  기록되며, 무Redis 배포에서는 NULL로 남아 "전사 없음"이 정상 상태다. 워커 실패는 `failed`로
+  기록돼 UI가 "받아쓰는 중"에 갇히지 않는다.
 - **`position`이 순서의 유일한 근거다.** 한 메시지의 첨부는 같은 트랜잭션에서 삽입되고 PostgreSQL의
   `now()`는 트랜잭션 내내 고정이므로 `created_at`이 전부 동일하다. 이 컬럼이 없으면 정렬 tiebreak가
   랜덤 uuid로 넘어가, 보낼 때 본 순서와 히스토리를 다시 불러온 순서가 달라진다.

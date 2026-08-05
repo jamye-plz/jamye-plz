@@ -219,6 +219,7 @@ REST와 **동일하게 httpOnly 쿠키의 JWT로 인증한다**. WebSocket 핸�
 |---|---|---|
 | `message` | `{ id, chatroom_id, sender_id, sender_nickname, sender_avatar_url, client_msg_id, body, msg_type, created_at, media[] }` | 일반 메시지. **발신자에게도 그대로 echo되며, 이것이 곧 전송 확정 신호다** — 별도 ack 메시지는 없다. 클라는 `client_msg_id`로 낙관적 메시지를 찾아 교체한다. `media`는 첨부가 없으면 빈 배열 |
 | `duplicate` | `{ client_msg_id }` | 같은 `client_msg_id`로 재전송된 경우. 낙관적 메시지를 그대로 확정 처리하면 된다 |
+| `transcript` | `{ chatroom_id, message_id, media_id, status, transcript }` | 음성 첨부의 **비동기 STT 결과** (`status`: `done` \| `failed`). 몇 분 전에 보낸 메시지에도 도착할 수 있으므로 클라는 `message_id`/`media_id`로 해당 미디어를 제자리 갱신한다 |
 | `system` | `{ id?, chatroom_id?, body, created_at? }` | 시스템 메시지 (새 주제·첫 채팅 리마인드). `sender_id`는 null |
 | `error` | `{ detail }` | 처리 실패 (권한 없음, 잘못된 방, 잘못된 미디어 페이로드 등) |
 
@@ -296,10 +297,11 @@ sequenceDiagram
 
 | 항목 | 값 |
 |---|---|
-| 허용 MIME | `image/jpeg` · `image/png` · `image/webp` · `image/gif` · `video/mp4` |
+| 허용 MIME | `image/jpeg` · `image/png` · `image/webp` · `image/gif` · `video/mp4` · `audio/webm` · `audio/mp4` · `audio/ogg` |
 | 이미지 최대 | 10 MiB |
 | 동영상 최대 | **50 MiB** (presigned PUT이 통과하는 Cloudflare 무료 플랜 100MB 본문 제한 고려) |
-| 메시지당 개수 | 최대 4 |
+| 오디오 최대 | 15 MiB (클라 녹음 상한 5분) |
+| 메시지당 개수 | 최대 4. **단, 오디오는 단독 1개만**(음성 메시지 = 오디오 첨부 1개를 가진 일반 메시지) |
 | 위반 시 | presign은 422, WS는 `{"type":"error","detail":...}` |
 
 - **BOLA 가드**: `object_key`는 `chat/{chatroom_id}/{uuid4}` 형식(단일 세그먼트)이어야 한다. 타 채팅방에서
@@ -322,6 +324,25 @@ sequenceDiagram
   이 조인이 인가 그 자체다. 없으면 `media_id` 추측만으로 아무 그룹의 첨부나 받아갈 수 있다(IDOR).
 - 파일명은 원본을 저장하지 않으므로 `jamye-{media_id}.{ext}`로 생성한다.
 - **307**을 쓴다(캐시되지 않음). 대상 URL은 수 분 내 만료되므로 재사용되면 안 된다.
+
+### 흐름 4 — 음성 메시지 + 비동기 전사 (M4a)
+
+별도 메시지 타입은 없다 — **음성 메시지 = 오디오 첨부 1개를 가진 일반 메시지**다. 업로드는 흐름 3과
+동일하고(브라우저 MediaRecorder 녹음 → presign → PUT → `send_message`에 동봉), 전사만 비동기로 붙는다.
+
+```
+[전송 시] REDIS_URL이 설정돼 있으면 message_media.transcript_status = "pending" + arq 큐잉
+[워커]   MinIO에서 오디오 fetch → faster-whisper(language="ko", vad_filter, int8)
+         → transcript 저장(done|failed) → Redis `jamye:transcripts` publish
+[백엔드] lifespan 구독자가 WS `transcript` 프레임으로 채팅방에 broadcast
+```
+
+- **REDIS_URL이 없으면 전사가 조용히 생략된다**(`transcript_status`는 NULL 유지) — 음성 메시지
+  자체는 정상 전송·재생된다. 데모/개발 환경의 문서화된 fallback이다.
+- 워커는 별도 프로세스라 백엔드의 인메모리 ws_hub에 닿을 수 없다 — Redis 채널이 그 브리지다.
+- 전사 실패는 `status: "failed"`로 도착하고 행에도 남는다(영원히 "받아쓰는 중"으로 남지 않음).
+- MIME별 녹음 주체: Chrome은 `audio/webm`(opus), iOS Safari는 `audio/mp4`(AAC), Firefox는
+  `audio/ogg`. faster-whisper가 셋 다 PyAV로 직접 디코딩하므로 서버 트랜스코딩은 없다.
 
 ### 흐름 2 — 새 주제 → 리마인드 시스템 메시지
 
