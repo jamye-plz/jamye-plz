@@ -248,7 +248,7 @@
 	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
 		if (messagesQuery.data) {
-			messages = [...messagesQuery.data.items].reverse();
+			messages = [...messagesQuery.data.items].reverse().map(applyBufferedTranscripts);
 			nextCursor = messagesQuery.data.next_cursor;
 			// Pin to the bottom before revealing: scroll after the DOM updates
 			// (tick) and again after layout settles (rAF), then show the list.
@@ -288,7 +288,7 @@
 			listMessages(groupId, chatroomId)
 				.then((page) => {
 					const have = new Set(messages.map((m) => m.id));
-					const missed = page.items.filter((m) => !have.has(m.id));
+					const missed = page.items.filter((m) => !have.has(m.id)).map(applyBufferedTranscripts);
 					if (!missed.length) return;
 					const stick = isNearBottom();
 					messages = [...messages, ...missed].sort((a, b) =>
@@ -310,7 +310,7 @@
 				const data: WsServerMessage = JSON.parse(event.data as string);
 				const stick = isNearBottom();
 				if (data.type === 'message') {
-					const msg: ChatMessage = {
+					const msg: ChatMessage = applyBufferedTranscripts({
 						id: data.id,
 						chatroom_id: data.chatroom_id,
 						sender_id: data.sender_id,
@@ -321,7 +321,7 @@
 						created_at: data.created_at,
 						media: data.media ?? [],
 						client_msg_id: data.client_msg_id ?? undefined
-					};
+					});
 					const idx = data.client_msg_id
 						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
 						: -1;
@@ -351,18 +351,31 @@
 					// Async STT finished for a voice message (possibly one sent
 					// minutes ago) — patch the media entry in place. No scroll:
 					// the bubble grows a caption, the log must not jump.
-					messages = messages.map((m) =>
-						m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
-							? {
-									...m,
-									media: m.media.map((x) =>
-										x.id === data.media_id
-											? { ...x, transcript: data.transcript, transcript_status: data.status }
-											: x
-									)
-								}
-							: m
+					const owner = messages.find(
+						(m) => m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
 					);
+					if (!owner) {
+						// The frame beat its message (worker publish is unordered
+						// with the echo/broadcast). Hold it; the insertion paths
+						// apply it when the message shows up.
+						pendingTranscripts.set(data.media_id, {
+							status: data.status,
+							transcript: data.transcript
+						});
+					} else {
+						messages = messages.map((m) =>
+							m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
+								? {
+										...m,
+										media: m.media.map((x) =>
+											x.id === data.media_id
+												? { ...x, transcript: data.transcript, transcript_status: data.status }
+												: x
+										)
+									}
+								: m
+						);
+					}
 				}
 			} catch {
 				// ignore parse errors
@@ -496,6 +509,31 @@
 		];
 		scrollToBottom();
 		return true;
+	}
+
+	// Transcript frames that arrived before the message they belong to. The
+	// worker publishes through Redis on its own schedule — it is NOT ordered
+	// with this handler's echo/broadcast — so a fast failure (or a very short
+	// clip) can beat the `message` frame here. Dropping the frame would strand
+	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
+	// media_id lets every message-insertion path claim it. Entries are removed
+	// on match; the map only ever holds this room's still-unmatched frames.
+	const pendingTranscripts = new SvelteMap<
+		string,
+		{ status: string; transcript: string | null }
+	>();
+
+	function applyBufferedTranscripts(msg: ChatMessage): ChatMessage {
+		if (!msg.media?.length || pendingTranscripts.size === 0) return msg;
+		let changed = false;
+		const media = msg.media.map((m) => {
+			const buffered = pendingTranscripts.get(m.id);
+			if (!buffered) return m;
+			pendingTranscripts.delete(m.id);
+			changed = true;
+			return { ...m, transcript: buffered.transcript, transcript_status: buffered.status };
+		});
+		return changed ? { ...msg, media } : msg;
 	}
 
 	// Fullscreen viewer. Holds its own copy of the items so a URL refresh
