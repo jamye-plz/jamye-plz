@@ -54,6 +54,12 @@
 	}
 
 	let recording = $state(false);
+	// True while the getUserMedia permission prompt is open. `recording` is
+	// still false then, so without this a double tap starts a second
+	// getUserMedia; when both resolve, the later MediaRecorder overwrites
+	// `recorder` and the FIRST stream's reference is lost — a mic that stays
+	// on with nothing left pointing at it.
+	let requestingMic = $state(false);
 	let recordSeconds = $state(0);
 	let voiceClip = $state<VoiceClip | null>(null);
 	let recorder: MediaRecorder | null = null;
@@ -98,17 +104,21 @@
 	}
 
 	async function startRecording() {
+		if (recording || requestingMic) return;
 		errorText = '';
 		if (typeof MediaRecorder === 'undefined') {
 			errorText = '이 브라우저는 음성 녹음을 지원하지 않아요.';
 			return;
 		}
+		requestingMic = true;
 		let stream: MediaStream;
 		try {
 			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		} catch {
 			errorText = '마이크를 사용할 수 없어요. 브라우저 설정에서 권한을 허용해 주세요.';
 			return;
+		} finally {
+			requestingMic = false;
 		}
 		if (disposed) {
 			// Unmounted while the permission prompt was open — release the mic
@@ -516,7 +526,7 @@
 			<button
 				type="button"
 				onclick={() => (recording ? stopRecording() : startRecording())}
-				disabled={busy || voiceClip !== null || attachments.length > 0}
+				disabled={busy || requestingMic || voiceClip !== null || attachments.length > 0}
 				class="btn btn-square shrink-0 {recording ? 'btn-error' : 'btn-ghost'}"
 				aria-label={recording ? '녹음 종료' : '음성 메시지 녹음'}
 				aria-pressed={recording}
