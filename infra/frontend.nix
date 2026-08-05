@@ -34,8 +34,12 @@ let
   # means regenerating the hash on a Linux builder (set the entry to
   # lib.fakeHash, `nix build .#frontend`, paste the printed `got:`). Last
   # regenerated for `heic-to` (browser HEIC→JPEG decoder for iPhone photos).
+  #
+  # STALE as of M4a: `partysocket` (installed but never used — tech debt #10)
+  # is being removed from bun.lock in the same PR. Run `bun remove partysocket`
+  # in frontend/, then rebuild on a Linux builder and paste the `got:` hash.
   nodeModulesHashes = {
-    aarch64-linux = "sha256-s2M+aQAprvhdQqElhzTh7Fl/u9ryOOaR9CAMR5bafO4=";
+    aarch64-linux = lib.fakeHash;
   };
   nodeModulesHash =
     nodeModulesHashes.${pkgs.system}

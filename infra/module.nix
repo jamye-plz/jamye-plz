@@ -55,7 +55,13 @@ let
       "export DATABASE_URL=${lib.escapeShellArg cfg.databaseUrl}\n"
     + lib.optionalString (cfg.storage.publicUrl != null)
       "export MINIO_ENDPOINT=${lib.escapeShellArg cfg.storage.publicUrl}\n"
-    + "export MINIO_BUCKET=${lib.escapeShellArg cfg.storage.bucket}\n";
+    + "export MINIO_BUCKET=${lib.escapeShellArg cfg.storage.bucket}\n"
+    # REDIS_URL is loopback-only, non-secret deploy config: it switches the
+    # backend's transcription enqueue + transcript bridge on. Absent (enable =
+    # false) the backend runs with transcription disabled — voice messages
+    # still work, they just go untranscribed.
+    + lib.optionalString cfg.transcription.enable
+      "export REDIS_URL=redis://127.0.0.1:${toString cfg.transcription.port}\n";
   startBackend = pkgs.writeShellScript "jamye-plz-backend-start" ''
     ${exports}
     exec ${pkg.backend}/bin/uvicorn app.main:app --host 127.0.0.1 --port ${toString cfg.backendPort}
@@ -63,6 +69,20 @@ let
   startMigrate = pkgs.writeShellScript "jamye-plz-migrate-start" ''
     ${exports}
     exec ${pkg.backend}/bin/alembic upgrade head
+  '';
+  # The worker deliberately reuses `exports` verbatim — including the PUBLIC
+  # MinIO endpoint. Overriding it to the local S3 port would be faster for
+  # object reads, but config.py fails closed in production on a localhost /
+  # non-https MINIO_ENDPOINT (it is normally embedded into presigned URLs),
+  # and a voice clip is ~1 MB — the tunnel roundtrip is negligible.
+  startSttWorker = pkgs.writeShellScript "jamye-plz-stt-worker-start" ''
+    ${exports}
+    export STT_MODEL=${lib.escapeShellArg cfg.transcription.model}
+    export STT_COMPUTE_TYPE=${lib.escapeShellArg cfg.transcription.computeType}
+    # faster-whisper resolves model names through the HF cache; StateDirectory
+    # persists it so the ~800 MB download happens once, not per restart.
+    export HF_HOME=/var/lib/jamye-plz-stt
+    exec ${pkg.backend}/bin/arq app.workers.transcribe.WorkerSettings
   '';
 in
 {
@@ -189,6 +209,39 @@ in
         type = lib.types.str;
         default = "jamye";
         description = "Bucket holding media objects. Created on first start when `createLocally` is true.";
+      };
+    };
+
+    transcription = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Run the M4a voice-message transcription stack: a loopback-only Redis
+          (queue + worker→backend bridge) and the faster-whisper arq worker.
+          Disabled, voice messages still send and play — they are simply never
+          transcribed (the documented fallback).
+        '';
+      };
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 6379;
+        description = "Loopback port for the jamye-plz Redis instance.";
+      };
+      model = lib.mkOption {
+        type = lib.types.str;
+        default = "large-v3-turbo";
+        example = "/var/lib/jamye-plz-stt/models/faster-whisper-large-v3";
+        description = ''
+          faster-whisper model: a size/name resolved through the HF cache
+          (downloaded on the worker's first job), or an absolute path to a
+          pre-downloaded CTranslate2 model directory for hermetic deploys.
+        '';
+      };
+      computeType = lib.mkOption {
+        type = lib.types.str;
+        default = "int8";
+        description = "CTranslate2 compute type for CPU inference.";
       };
     };
   };
@@ -411,6 +464,47 @@ in
         Restart = "on-failure";
         RestartSec = 2;
         # Hardening
+        NoNewPrivileges = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        ReadWritePaths = [ cfg.stateDir ];
+      };
+    };
+
+    # ── Transcription: Redis (queue + bridge) + faster-whisper worker ───────
+    services.redis.servers.jamye-plz = lib.mkIf cfg.transcription.enable {
+      enable = true;
+      # TCP on loopback only — the queue, the worker and the backend bridge
+      # all live on this host; nothing on the tailnet needs to reach Redis.
+      port = cfg.transcription.port;
+      bind = "127.0.0.1";
+    };
+
+    systemd.services.jamye-plz-stt-worker = lib.mkIf cfg.transcription.enable {
+      description = "jamye-plz voice transcription worker (arq + faster-whisper)";
+      after =
+        [ "network-online.target" "redis-jamye-plz.service" "jamye-plz-migrate.service" ]
+        ++ lib.optional cfg.storage.createLocally "jamye-plz-minio-bucket.service";
+      # wants (not requires) network-online: the target is only needed for the
+      # one-time model download; once cached the worker must survive reboots
+      # where the target flaps.
+      wants = [ "network-online.target" ];
+      requires =
+        [ "redis-jamye-plz.service" "jamye-plz-migrate.service" ]
+        ++ lib.optional cfg.storage.createLocally "jamye-plz-minio-bucket.service";
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        User = cfg.user;
+        Group = cfg.user;
+        WorkingDirectory = cfg.stateDir;
+        EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
+        ExecStart = startSttWorker;
+        Restart = "on-failure";
+        RestartSec = 5;
+        # Model cache (HF_HOME) — survives restarts so the download runs once.
+        StateDirectory = "jamye-plz-stt";
+        # Hardening — mirrors the backend unit.
         NoNewPrivileges = true;
         ProtectSystem = "strict";
         ProtectHome = true;
