@@ -438,7 +438,11 @@
 			const olderPage = await listMessages(groupId, chatroomId, cursor);
 			const older = [...olderPage.items].reverse(); // oldest-first
 			const seen = new Set(messages.map((m) => m.id));
-			const fresh = older.filter((m) => !seen.has(m.id));
+			// Claim buffered transcript frames here too: an older page's REST
+			// snapshot can predate the worker's commit while the frame already
+			// arrived (and was buffered) — every insertion path must drain the
+			// buffer or that bubble sticks on "transcribing…".
+			const fresh = older.filter((m) => !seen.has(m.id)).map(applyBufferedTranscripts);
 			messages = [...fresh, ...messages];
 			nextCursor = olderPage.next_cursor;
 		} catch {
