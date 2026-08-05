@@ -63,7 +63,9 @@
 		{#each pending as item, i (i)}
 			<div
 				class="flex w-full skeleton items-center justify-center rounded-lg"
-				style={item.content_type.startsWith('audio/') ? 'height:3.5rem' : ratio(item.width, item.height)}
+				style={item.content_type.startsWith('audio/')
+					? 'height:3.5rem'
+					: ratio(item.width, item.height)}
 				role="status"
 				aria-label="전송 중"
 			>
@@ -102,7 +104,10 @@
 							aria-label="음성 메시지"
 						></audio>
 						{#if item.transcript_status === 'pending'}
-							<p class="mt-1 flex items-center gap-1.5 px-1 text-xs text-base-content/50" role="status">
+							<p
+								class="mt-1 flex items-center gap-1.5 px-1 text-xs text-base-content/50"
+								role="status"
+							>
 								<span class="loading loading-xs loading-spinner"></span>
 								받아쓰는 중...
 							</p>

@@ -40,9 +40,7 @@ export function refreshChatMediaUrl(
 	chatroomId: string,
 	mediaId: string
 ): Promise<ChatMedia> {
-	return apiGet<ChatMedia>(
-		`/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/url`
-	);
+	return apiGet<ChatMedia>(`/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/url`);
 }
 
 /**

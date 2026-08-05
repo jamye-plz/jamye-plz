@@ -421,17 +421,24 @@
 
 		{#if recording}
 			<div class="mb-2 flex items-center gap-3 rounded-xl bg-base-200 px-3 py-2" role="status">
-				<span class="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-error" aria-hidden="true"
+				<span
+					class="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-error"
+					aria-hidden="true"
 				></span>
 				<span class="text-sm text-base-content">녹음 중 {fmtSeconds(recordSeconds)}</span>
 				<span class="flex-1"></span>
-				<button type="button" onclick={cancelRecording} class="btn btn-ghost btn-sm" aria-label="녹음 취소">
+				<button
+					type="button"
+					onclick={cancelRecording}
+					class="btn btn-ghost btn-sm"
+					aria-label="녹음 취소"
+				>
 					취소
 				</button>
 				<button
 					type="button"
 					onclick={stopRecording}
-					class="btn btn-sm btn-error"
+					class="btn btn-error btn-sm"
 					aria-label="녹음 종료"
 				>
 					<Square class="h-3.5 w-3.5" />
@@ -495,7 +502,10 @@
 			<button
 				type="button"
 				onclick={() => fileInput?.click()}
-				disabled={busy || recording || voiceClip !== null || attachments.length >= MAX_MEDIA_PER_MESSAGE}
+				disabled={busy ||
+					recording ||
+					voiceClip !== null ||
+					attachments.length >= MAX_MEDIA_PER_MESSAGE}
 				class="btn btn-square shrink-0 btn-ghost"
 				aria-label="사진 또는 동영상 첨부"
 			>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages, markChatroomRead, refreshChatMediaUrl } from '$lib/api/chat.api';
@@ -515,8 +516,11 @@
 	 * pictures would stay broken for the rest of the session.
 	 */
 	const MAX_MEDIA_REFRESH_ATTEMPTS = 3;
-	const mediaRefreshAttempts = new Map<string, number>();
-	const mediaRefreshInFlight = new Set<string>();
+	// SvelteMap/SvelteSet purely to satisfy svelte/prefer-svelte-reactivity —
+	// nothing renders from these (pure bookkeeping), so the reactivity is
+	// unused but harmless.
+	const mediaRefreshAttempts = new SvelteMap<string, number>();
+	const mediaRefreshInFlight = new SvelteSet<string>();
 
 	/**
 	 * An attachment rendered, so the URL it was given works — clear its strike
