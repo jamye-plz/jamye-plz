@@ -294,6 +294,7 @@ erDiagram
 | height | int | nullable |
 | byte_size | int | nullable |
 | duration | int (초) | nullable — 동영상만 |
+| position | int | 메시지 내 순서 (0부터) |
 | created_at | timestamp | |
 
 - **업로드 흐름은 topic_media와 다르다**: `topic_media`는 presign → PUT → **confirm**(별도 REST)이지만,
@@ -308,6 +309,9 @@ erDiagram
   Cloudflare 무료 플랜의 100MB 요청 본문 제한을 고려해 정했다.
 - 읽기는 접근 정책 B(프라이빗 버킷 + 단기 presigned GET, TTL 600초). 채팅 화면은 오래 열려 있어
   **세션 도중 URL이 만료될 수 있으므로** 클라이언트는 로드 실패 시 히스토리를 재조회해 URL을 재발급받는다.
+- **`position`이 순서의 유일한 근거다.** 한 메시지의 첨부는 같은 트랜잭션에서 삽입되고 PostgreSQL의
+  `now()`는 트랜잭션 내내 고정이므로 `created_at`이 전부 동일하다. 이 컬럼이 없으면 정렬 tiebreak가
+  랜덤 uuid로 넘어가, 보낼 때 본 순서와 히스토리를 다시 불러온 순서가 달라진다.
 - 메시지 삭제 기능이 없어 orphan 객체 정리는 아직 없다(후속).
 
 ### push_subscriptions

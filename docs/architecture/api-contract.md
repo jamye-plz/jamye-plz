@@ -71,6 +71,7 @@
 | GET | `/api/groups/{gid}/chatrooms/{cid}/messages?cursor=` | 채팅방 메시지 히스토리 (cursor 페이지네이션). 각 메시지에 `media[]` 포함 | 필요 (멤버) |
 | POST | `/api/groups/{gid}/chatrooms/{cid}/read` | 읽음 처리 (`up_to`까지) | 필요 (멤버) |
 | POST | `/api/groups/{gid}/chatrooms/{cid}/media/presign` | 채팅 첨부 업로드 URL 발급 (사진·동영상) | 필요 (멤버) |
+| GET | `/api/groups/{gid}/chatrooms/{cid}/media/{mid}/url` | 만료된 첨부의 조회 URL 재발급 (단건) | 필요 (멤버) |
 | GET | `/api/groups/{gid}/chatrooms/{cid}/media/{mid}/download` | 첨부 다운로드 — 서명된 URL로 **307 리다이렉트** | 필요 (멤버) |
 
 > 실시간 메시지 송수신은 REST가 아니라 WebSocket으로 처리한다. 이 엔드포인트는 입장 시점의 과거 메시지 로딩과 재연결 후 재동기화 용도다.
@@ -292,8 +293,12 @@ sequenceDiagram
 - **BOLA 가드**: `object_key`는 `chat/{chatroom_id}/{uuid4}` 형식(단일 세그먼트)이어야 한다. 타 채팅방에서
   발급된 키를 첨부하려는 시도는 거부된다.
 - 클라이언트가 보낸 `content_type`·`byte_size`는 **서버가 재검증**한다.
-- 조회 URL은 접근 정책 B의 단기 presigned GET(600초)이다. 채팅 화면은 오래 열려 있어 세션 도중 만료될 수
-  있으므로, 클라이언트는 로드 실패 시 히스토리를 재조회해 URL을 재발급받는다.
+- 조회 URL은 접근 정책 B의 단기 presigned GET(600초)이다. 채팅 화면은 오래 열려 있어 세션 도중 만료되므로,
+  클라이언트는 로드 실패 시 `GET .../media/{mid}/url`로 **해당 첨부 하나만** 재발급받는다.
+  히스토리 페이지 재조회로는 안 된다 — 스크롤로 불러온 옛 메시지는 최신 페이지에 없어서 영영 복구되지 않는다.
+  첨부당 재시도 횟수는 제한한다(객체가 실제로 사라진 경우 무한 루프 방지).
+- 한 메시지의 첨부 순서는 `position` 컬럼으로 보존한다. 같은 트랜잭션에서 삽입돼 `created_at`이 동일하므로,
+  이 컬럼이 없으면 정렬이 랜덤 uuid로 넘어가 **히스토리를 다시 불러올 때마다 순서가 뒤바뀐다**.
 
 **다운로드 — `GET .../media/{mid}/download`**
 
