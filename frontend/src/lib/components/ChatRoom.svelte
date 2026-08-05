@@ -502,11 +502,27 @@
 	const mediaRefreshAttempts = new Map<string, number>();
 	const mediaRefreshInFlight = new Set<string>();
 
+	/**
+	 * An attachment rendered, so the URL it was given works — clear its strike
+	 * count. The counter has to track CONSECUTIVE failures, not lifetime ones:
+	 * over a multi-hour session a picture legitimately expires every 10 minutes,
+	 * and a lifetime cap would permanently break it on the fourth expiry.
+	 *
+	 * Note this resets on the picture loading, NOT on the refresh call
+	 * returning 200 — the endpoint signs from the DB row, so it happily hands
+	 * back a URL for an object that is no longer in the bucket. Resetting on
+	 * the API response would therefore restore the very loop the cap exists to
+	 * prevent.
+	 */
+	function onMediaLoaded(mediaId: string) {
+		mediaRefreshAttempts.delete(mediaId);
+	}
+
 	async function refreshMediaUrl(mediaId: string) {
 		if (!chatroomId || mediaRefreshInFlight.has(mediaId)) return;
-		// Bound retries per attachment: an object that is genuinely gone (rather
-		// than merely expired) would otherwise loop error → refresh → error for
-		// as long as it stays on screen.
+		// Bound consecutive failures per attachment: an object that is genuinely
+		// gone (rather than merely expired) would otherwise loop
+		// error → refresh → error for as long as it stays on screen.
 		const attempts = mediaRefreshAttempts.get(mediaId) ?? 0;
 		if (attempts >= MAX_MEDIA_REFRESH_ATTEMPTS) return;
 		mediaRefreshAttempts.set(mediaId, attempts + 1);
@@ -585,6 +601,7 @@
 			media={msg.media}
 			onopen={(i) => openLightbox(msg, i)}
 			onexpired={refreshMediaUrl}
+			onloaded={onMediaLoaded}
 		/>
 	{/if}
 	{#if msg.body}

@@ -14,19 +14,31 @@
 		 * open for hours, so this WILL fire in normal use.
 		 */
 		onexpired?: (mediaId: string) => void;
+		/**
+		 * Report that an attachment actually rendered. This — not a 200 from the
+		 * refresh endpoint — is the only proof a reissued URL was any good, since
+		 * the endpoint signs from the DB row and happily returns a URL for an
+		 * object that is no longer in the bucket.
+		 */
+		onloaded?: (mediaId: string) => void;
 	}
 
-	const { media = [], pending = [], onopen, onexpired }: Props = $props();
+	const { media = [], pending = [], onopen, onexpired, onloaded }: Props = $props();
 
 	// Ask at most once per URL: re-arms when that attachment's URL actually
 	// changes, so a long session recovers from repeated expiry. The parent caps
-	// total attempts, which is what stops a genuinely missing object from
-	// looping error → refresh → error.
+	// CONSECUTIVE failed refreshes, which is what stops a genuinely missing
+	// object from looping error → refresh → error.
 	let askedFor = $state<Record<string, string>>({});
 
 	// Urls that finished decoding — everything else shows a skeleton, so a slow
 	// image reserves its space instead of popping in and shoving the log around.
 	let loaded = $state<Record<string, boolean>>({});
+
+	function handleLoad(item: ChatMedia) {
+		loaded[item.url] = true;
+		onloaded?.(item.id);
+	}
 
 	function handleError(item: ChatMedia) {
 		delete loaded[item.url];
@@ -80,7 +92,7 @@
 						controls
 						preload="metadata"
 						playsinline
-						onloadeddata={() => (loaded[item.url] = true)}
+						onloadeddata={() => handleLoad(item)}
 						onerror={() => handleError(item)}
 						class="w-full rounded-lg bg-base-300 {loaded[item.url] ? '' : 'invisible'}"
 						style={loaded[item.url] ? '' : ratio(item.width, item.height)}
@@ -105,7 +117,7 @@
 							alt="첨부 이미지"
 							width={item.width ?? undefined}
 							height={item.height ?? undefined}
-							onload={() => (loaded[item.url] = true)}
+							onload={() => handleLoad(item)}
 							onerror={() => handleError(item)}
 							loading="lazy"
 							class="max-h-64 w-full rounded-lg bg-base-300 object-cover {loaded[item.url]
