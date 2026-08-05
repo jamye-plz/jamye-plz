@@ -9,31 +9,30 @@
 		/** Open the fullscreen viewer at this item. Omit to disable tap-to-open. */
 		onopen?: (index: number) => void;
 		/**
-		 * Ask the parent to refetch history so expired presigned URLs are
-		 * reissued. Media URLs are signed for 10 minutes but a chat stays open
-		 * far longer, so this WILL fire in normal use.
+		 * Report the attachment whose URL stopped working so the parent can
+		 * reissue just that one. Signatures last 10 minutes while a chat stays
+		 * open for hours, so this WILL fire in normal use.
 		 */
-		onexpired?: () => void;
+		onexpired?: (mediaId: string) => void;
 	}
 
 	const { media = [], pending = [], onopen, onexpired }: Props = $props();
 
-	// Ask for a refresh at most once per set of URLs. Re-arms when the URLs
-	// actually change, so a long session can recover from repeated expiry. The
-	// parent rate-limits the refetch, which is what stops a genuinely missing
-	// object from looping error → refetch → error.
-	let askedFor = $state('');
-	const urlKey = $derived(media.map((m) => m.url).join('|'));
+	// Ask at most once per URL: re-arms when that attachment's URL actually
+	// changes, so a long session recovers from repeated expiry. The parent caps
+	// total attempts, which is what stops a genuinely missing object from
+	// looping error → refresh → error.
+	let askedFor = $state<Record<string, string>>({});
 
 	// Urls that finished decoding — everything else shows a skeleton, so a slow
 	// image reserves its space instead of popping in and shoving the log around.
 	let loaded = $state<Record<string, boolean>>({});
 
-	function handleError(url: string) {
-		delete loaded[url];
-		if (!onexpired || askedFor === urlKey) return;
-		askedFor = urlKey;
-		onexpired();
+	function handleError(item: ChatMedia) {
+		delete loaded[item.url];
+		if (!onexpired || askedFor[item.id] === item.url) return;
+		askedFor[item.id] = item.url;
+		onexpired(item.id);
 	}
 
 	function gridClass(count: number): string {
@@ -82,7 +81,7 @@
 						preload="metadata"
 						playsinline
 						onloadeddata={() => (loaded[item.url] = true)}
-						onerror={() => handleError(item.url)}
+						onerror={() => handleError(item)}
 						class="w-full rounded-lg bg-base-300 {loaded[item.url] ? '' : 'invisible'}"
 						style={loaded[item.url] ? '' : ratio(item.width, item.height)}
 						aria-label="첨부 동영상"
@@ -107,7 +106,7 @@
 							width={item.width ?? undefined}
 							height={item.height ?? undefined}
 							onload={() => (loaded[item.url] = true)}
-							onerror={() => handleError(item.url)}
+							onerror={() => handleError(item)}
 							loading="lazy"
 							class="max-h-64 w-full rounded-lg bg-base-300 object-cover {loaded[item.url]
 								? ''

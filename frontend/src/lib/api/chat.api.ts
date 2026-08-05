@@ -1,6 +1,6 @@
 import { apiGet, apiPost } from './client';
 import { uploadToPresignedUrl } from './upload';
-import type { ChatMediaInput, ChatPage } from '$lib/types/chat.types';
+import type { ChatMedia, ChatMediaInput, ChatPage } from '$lib/types/chat.types';
 
 interface ChatPresignResponse {
 	object_key: string;
@@ -28,6 +28,21 @@ export function presignChatMedia(
  */
 export function chatMediaDownloadUrl(groupId: string, chatroomId: string, mediaId: string): string {
 	return `/api/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/download`;
+}
+
+/**
+ * Reissue one attachment's viewing URL after its 10-minute signature expires.
+ * Per-attachment rather than per-page: history pages in older messages as the
+ * user scrolls, and refetching the newest page would not contain them at all.
+ */
+export function refreshChatMediaUrl(
+	groupId: string,
+	chatroomId: string,
+	mediaId: string
+): Promise<ChatMedia> {
+	return apiGet<ChatMedia>(
+		`/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/url`
+	);
 }
 
 /**

@@ -163,6 +163,19 @@ class ChatService:
         await self._db.refresh(message)
         return message, media_rows, True
 
+    async def presign_media_view(self, chatroom_id: str, media_id: str) -> MessageMediaOut:
+        """Reissue the inline (viewing) URL for one attachment.
+
+        History pages in older messages as the user scrolls, and those URLs
+        expire independently. Refetching the newest page would not contain an
+        older message at all, so its picture would stay broken forever — hence
+        a per-attachment refresh rather than a page reload.
+        """
+        media = await self._media_repo.get_in_chatroom(media_id, chatroom_id)
+        if media is None:
+            raise NotFoundError("Media", media_id)
+        return self.media_out([media])[0]
+
     async def presign_media_download(self, chatroom_id: str, media_id: str) -> str:
         """Signed URL that saves the attachment instead of opening it.
 

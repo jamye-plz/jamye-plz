@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from app.core import storage
 from app.core.deps import CurrentUser, DbSession
-from app.schemas.chat import ChatMediaPresignOut, ChatMediaPresignRequest
+from app.schemas.chat import ChatMediaPresignOut, ChatMediaPresignRequest, MessageMediaOut
 from app.services.chat_service import ChatService
 from app.services.group_service import GroupService
 
@@ -44,6 +44,27 @@ async def presign_chat_media(
         upload_url=upload_url,
         expires_in=expires_in,
     )
+
+
+@router.get("/{media_id}/url", response_model=MessageMediaOut)
+async def refresh_chat_media_url(
+    group_id: str,
+    chatroom_id: str,
+    media_id: str,
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Reissue one attachment's short-TTL viewing URL.
+
+    Scrolled-back history holds messages whose URLs expired long ago; refetching
+    the newest page would not include them, so the client refreshes the single
+    attachment that failed.
+    """
+    group_svc = GroupService(db)
+    await group_svc.require_membership(group_id, current_user.id)
+    chat_svc = ChatService(db)
+    await chat_svc.get_chatroom_in_group_or_404(chatroom_id, group_id)
+    return await chat_svc.presign_media_view(chatroom_id, media_id)
 
 
 @router.get("/{media_id}/download")
