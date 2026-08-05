@@ -127,8 +127,20 @@
 			return;
 		}
 		const mimeType = RECORDER_MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t));
-		const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+		// From here to rec.start(), any throw (no usable encoder for this
+		// stream, despite isTypeSupported) must stop the tracks itself:
+		// `onstop` is the normal cleanup path and it never fires for a
+		// recorder that never started — without the catch, the OS mic
+		// indicator stays on with no recording UI left to stop it.
+		let rec: MediaRecorder;
 		const chunks: Blob[] = [];
+		try {
+			rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+		} catch {
+			stream.getTracks().forEach((t) => t.stop());
+			errorText = '이 브라우저에서는 음성 녹음을 시작할 수 없어요.';
+			return;
+		}
 		discardRecording = false;
 		rec.ondataavailable = (e) => {
 			if (e.data.size > 0) chunks.push(e.data);
@@ -154,7 +166,15 @@
 		recorder = rec;
 		recording = true;
 		recordSeconds = 0;
-		rec.start();
+		try {
+			rec.start();
+		} catch {
+			stream.getTracks().forEach((t) => t.stop());
+			recorder = null;
+			recording = false;
+			errorText = '이 브라우저에서는 음성 녹음을 시작할 수 없어요.';
+			return;
+		}
 		recordTimer = setInterval(() => {
 			recordSeconds += 1;
 			// Hard cap: opus at voice bitrate keeps 5 min around 1 MB, and the
