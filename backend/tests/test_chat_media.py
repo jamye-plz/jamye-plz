@@ -86,6 +86,7 @@ class FakeMediaRepo:
                 height=item.get("height"),  # type: ignore[arg-type]
                 byte_size=item.get("byte_size"),  # type: ignore[arg-type]
                 duration=item.get("duration"),  # type: ignore[arg-type]
+                filename=item.get("filename"),  # type: ignore[arg-type]
             )
             for i, item in enumerate(items)
         ]

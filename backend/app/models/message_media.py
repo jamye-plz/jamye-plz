@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -37,6 +37,15 @@ class MessageMedia(Base):
     # attachments (one transaction, stable now()), so without this the ordering
     # tiebreak is a random uuid and reloaded history reshuffles the set.
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Async STT result for audio attachments (M4a). NULL on non-audio media,
+    # and on audio sent while Redis/transcription is not provisioned — that is
+    # the documented no-transcription fallback, not an error state.
+    transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # pending | done | failed. NULL = transcription not applicable/not enabled.
+    transcript_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Original client-side filename (any attachment kind), so downloads can
+    # restore "IMG_4821.jpg" instead of the synthesised jamye-{id}.{ext}.
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships

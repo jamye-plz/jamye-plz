@@ -32,6 +32,7 @@ class MessageMediaRepository:
                 height=item.get("height"),
                 byte_size=item.get("byte_size"),
                 duration=item.get("duration"),
+                filename=item.get("filename"),
                 # Sender's pick order. Stored, because created_at ties within
                 # the transaction and the uuid tiebreak is random.
                 position=i,

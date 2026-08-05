@@ -57,6 +57,8 @@ class MessageMediaIn(BaseModel):
     height: int | None = Field(None, ge=1)
     byte_size: int | None = Field(None, ge=1)
     duration: int | None = Field(None, ge=0)
+    # Original client-side name, restored on download (tech debt #8).
+    filename: str | None = Field(None, max_length=255)
 
     @field_validator("content_type")
     @classmethod
@@ -82,6 +84,10 @@ class MessageMediaOut(BaseModel):
     height: int | None = None
     byte_size: int | None = None
     duration: int | None = None
+    filename: str | None = None
+    # Async STT (M4a): pending | done | failed; None = not applicable/disabled.
+    transcript: str | None = None
+    transcript_status: str | None = None
 
 
 class MessageOut(BaseModel):

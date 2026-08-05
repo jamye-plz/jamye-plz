@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_claim_email: str = "admin@example.com"
 
+    # ── Transcription (M4a voice messages) ───────────────────────────────────
+    # Async STT rides arq + Redis. With REDIS_URL unset, voice messages still
+    # work — they are simply never transcribed (transcript_status stays NULL),
+    # which is the documented demo fallback, not an error.
+    redis_url: str = ""
+    # faster-whisper model: a size/name ("large-v3-turbo") resolved through the
+    # HF cache, or an absolute path to a pre-downloaded CTranslate2 model dir
+    # (the hermetic option — no network at worker startup).
+    stt_model: str = "large-v3-turbo"
+    stt_compute_type: str = "int8"
+
     # ── App ───────────────────────────────────────────────────────────────────
     app_env: str = "development"
     app_timezone: str = "Asia/Seoul"
@@ -103,6 +114,10 @@ class Settings(BaseSettings):
     @property
     def vapid_enabled(self) -> bool:
         return bool(self.vapid_private_key and self.vapid_public_key)
+
+    @property
+    def transcription_enabled(self) -> bool:
+        return bool(self.redis_url)
 
     @property
     def is_production(self) -> bool:
