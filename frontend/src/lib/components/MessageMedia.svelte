@@ -86,13 +86,21 @@
 					</div>
 				{/if}
 				{#if isVideo(item.content_type)}
+					<!--
+						Skeleton lifts on `loadedmetadata`, NOT `loadeddata`: with
+						preload="metadata" a browser may never fetch a frame until
+						playback starts, and the video sits invisible under the skeleton
+						until this fires — so waiting for frame data deadlocks, with no
+						visible controls to press play with. Metadata is also the moment
+						dimensions are known, which is all the skeleton reserved space for.
+					-->
 					<!-- svelte-ignore a11y_media_has_caption -->
 					<video
 						src={item.url}
 						controls
 						preload="metadata"
 						playsinline
-						onloadeddata={() => handleLoad(item)}
+						onloadedmetadata={() => handleLoad(item)}
 						onerror={() => handleError(item)}
 						class="w-full rounded-lg bg-base-300 {loaded[item.url] ? '' : 'invisible'}"
 						style={loaded[item.url] ? '' : ratio(item.width, item.height)}
