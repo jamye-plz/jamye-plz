@@ -51,9 +51,21 @@ def _get_model() -> Any:
 
 
 def _download(object_key: str) -> bytes:
-    """Sync boto3 fetch — call via asyncio.to_thread."""
+    """Sync boto3 fetch — call via asyncio.to_thread.
+
+    The size check here is the AUTHORITATIVE audio cap. The client-declared
+    byte_size on the WS frame is untrusted, and the presign cap can be evaded
+    by presigning under a laxer MIME (video allows 50 MiB) and re-declaring
+    the attachment as audio — so the only number that counts is the stored
+    object's actual ContentLength, checked before a single byte is decoded.
+    Without this, one crafted message parks the single-job worker on a
+    10-minute decode, repeatably.
+    """
     settings = get_settings()
     obj = storage.get_s3_client().get_object(Bucket=settings.minio_bucket, Key=object_key)
+    size = obj.get("ContentLength")
+    if size is None or size > storage.MAX_AUDIO_BYTES:
+        raise ValueError(f"audio object {object_key} is {size} bytes, over the transcription cap")
     return obj["Body"].read()
 
 
@@ -93,6 +105,14 @@ async def transcribe(ctx: dict[str, Any], media_id: str) -> None:
             return
         media, chatroom_id = row
 
+        # arq retries the WHOLE job when anything after the commit fails
+        # (e.g. a transient publish error). The row is already terminal then —
+        # redoing the download+decode would waste the single job slot, so a
+        # retry only re-publishes.
+        if media.transcript_status in ("done", "failed"):
+            await _publish(ctx, chatroom_id, media)
+            return
+
         try:
             data = await asyncio.to_thread(_download, media.object_key)
             text = await asyncio.to_thread(_transcribe_bytes, data)
@@ -106,20 +126,25 @@ async def transcribe(ctx: dict[str, Any], media_id: str) -> None:
         await db.commit()
 
         # Publish AFTER the commit so a subscriber acting on the event always
-        # sees the persisted state. ctx["redis"] is arq's own pool.
-        await ctx["redis"].publish(
-            TRANSCRIPT_CHANNEL,
-            json.dumps(
-                {
-                    "chatroom_id": chatroom_id,
-                    "message_id": media.message_id,
-                    "media_id": media.id,
-                    "status": media.transcript_status,
-                    "transcript": media.transcript,
-                }
-            ),
-        )
+        # sees the persisted state.
+        await _publish(ctx, chatroom_id, media)
         break
+
+
+async def _publish(ctx: dict[str, Any], chatroom_id: str, media: MessageMedia) -> None:
+    """Emit the bridge event. ctx["redis"] is arq's own pool."""
+    await ctx["redis"].publish(
+        TRANSCRIPT_CHANNEL,
+        json.dumps(
+            {
+                "chatroom_id": chatroom_id,
+                "message_id": media.message_id,
+                "media_id": media.id,
+                "status": media.transcript_status,
+                "transcript": media.transcript,
+            }
+        ),
+    )
 
 
 def _redis_settings() -> RedisSettings | None:

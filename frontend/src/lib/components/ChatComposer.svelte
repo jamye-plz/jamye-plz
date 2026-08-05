@@ -61,6 +61,11 @@
 	// Cancel and stop share MediaRecorder.stop(); this flag tells onstop
 	// whether to keep the clip or throw it away.
 	let discardRecording = false;
+	// Set on teardown. getUserMedia can resolve AFTER the room unmounted (the
+	// permission prompt was open) — at that point `recorder` is still null, so
+	// the cleanup's stopRecording() had nothing to stop, and starting now would
+	// leave the mic on with no UI left to turn it off.
+	let disposed = false;
 
 	const busy = $derived(uploading || converting);
 	const canSend = $derived(
@@ -103,6 +108,12 @@
 			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		} catch {
 			errorText = '마이크를 사용할 수 없어요. 브라우저 설정에서 권한을 허용해 주세요.';
+			return;
+		}
+		if (disposed) {
+			// Unmounted while the permission prompt was open — release the mic
+			// immediately; there is no component left to stop it later.
+			stream.getTracks().forEach((t) => t.stop());
 			return;
 		}
 		const mimeType = RECORDER_MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t));
@@ -160,6 +171,7 @@
 	// Leaving the room mid-recording must release the microphone — a live
 	// MediaStream keeps the browser's recording indicator on.
 	$effect(() => () => {
+		disposed = true;
 		discardRecording = true;
 		stopRecording();
 		if (voiceClip) URL.revokeObjectURL(voiceClip.previewUrl);

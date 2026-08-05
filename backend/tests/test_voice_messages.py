@@ -29,6 +29,12 @@ from tests.test_chat_media import (
 )
 
 
+def audio_in(object_key: str, content_type: str = "audio/webm", **kw: object):
+    """Audio attachment with the now-mandatory byte_size defaulted."""
+    kw.setdefault("byte_size", 1024)
+    return media_in(object_key, content_type=content_type, **kw)
+
+
 def make_service() -> ChatService:
     svc = ChatService(FakeDb())
     svc._message_repo = FakeMessageRepo()  # type: ignore[attr-defined]
@@ -41,7 +47,9 @@ def make_service() -> ChatService:
 
 def test_audio_mimes_are_allowed() -> None:
     for mime in ("audio/webm", "audio/mp4", "audio/ogg"):
-        m = MessageMediaIn(object_key=key_for(CHATROOM_ID), content_type=mime, duration=42)
+        m = MessageMediaIn(
+            object_key=key_for(CHATROOM_ID), content_type=mime, duration=42, byte_size=1024
+        )
         assert m.content_type == mime
 
 
@@ -72,10 +80,7 @@ async def test_audio_mixed_with_image_is_rejected() -> None:
             body="",
             media=[
                 media_in(key_for(CHATROOM_ID, "00000001-0000-4000-8000-000000000000")),
-                media_in(
-                    key_for(CHATROOM_ID, "00000002-0000-4000-8000-000000000000"),
-                    content_type="audio/webm",
-                ),
+                audio_in(key_for(CHATROOM_ID, "00000002-0000-4000-8000-000000000000")),
             ],
         )
 
@@ -88,11 +93,8 @@ async def test_two_audios_are_rejected() -> None:
             sender_id=USER_ID,
             body="",
             media=[
-                media_in(
-                    key_for(CHATROOM_ID, "00000001-0000-4000-8000-000000000000"),
-                    content_type="audio/webm",
-                ),
-                media_in(
+                audio_in(key_for(CHATROOM_ID, "00000001-0000-4000-8000-000000000000")),
+                audio_in(
                     key_for(CHATROOM_ID, "00000002-0000-4000-8000-000000000000"),
                     content_type="audio/mp4",
                 ),
@@ -106,10 +108,23 @@ async def test_single_audio_message_is_allowed_and_keeps_duration() -> None:
         chatroom_id=CHATROOM_ID,
         sender_id=USER_ID,
         body="",
-        media=[media_in(key_for(CHATROOM_ID), content_type="audio/webm", duration=37)],
+        media=[audio_in(key_for(CHATROOM_ID), duration=37)],
     )
     assert len(rows) == 1
     assert rows[0].duration == 37
+
+
+def test_audio_without_byte_size_is_rejected() -> None:
+    """QA HIGH: an omitted byte_size used to skip the cap entirely — for audio
+    the declared size feeds the worker's budget, so it is now mandatory."""
+    with pytest.raises(PydanticValidationError):
+        MessageMediaIn(object_key=key_for(CHATROOM_ID), content_type="audio/webm")
+
+
+def test_image_without_byte_size_is_still_allowed() -> None:
+    """The browser is the consumer for images; presign already bounds them."""
+    m = MessageMediaIn(object_key=key_for(CHATROOM_ID), content_type="image/jpeg")
+    assert m.byte_size is None
 
 
 # ── Enqueue contract ──────────────────────────────────────────────────────────
@@ -120,8 +135,9 @@ async def test_without_redis_audio_sends_untranscribed(monkeypatch: pytest.Monke
     and — critically — the send itself still succeeds."""
     enqueued: list[str] = []
 
-    async def record(media_id: str) -> None:
+    async def record(media_id: str) -> bool:
         enqueued.append(media_id)
+        return True
 
     monkeypatch.setattr(chat_service_module, "enqueue_transcription", record)
     monkeypatch.setattr(
@@ -134,7 +150,7 @@ async def test_without_redis_audio_sends_untranscribed(monkeypatch: pytest.Monke
         chatroom_id=CHATROOM_ID,
         sender_id=USER_ID,
         body="",
-        media=[media_in(key_for(CHATROOM_ID), content_type="audio/webm")],
+        media=[audio_in(key_for(CHATROOM_ID))],
     )
     assert rows[0].transcript_status is None
     assert enqueued == []
@@ -145,8 +161,9 @@ async def test_with_redis_audio_is_marked_pending_and_enqueued(
 ) -> None:
     enqueued: list[str] = []
 
-    async def record(media_id: str) -> None:
+    async def record(media_id: str) -> bool:
         enqueued.append(media_id)
+        return True
 
     monkeypatch.setattr(chat_service_module, "enqueue_transcription", record)
     monkeypatch.setattr(
@@ -159,7 +176,7 @@ async def test_with_redis_audio_is_marked_pending_and_enqueued(
         chatroom_id=CHATROOM_ID,
         sender_id=USER_ID,
         body="",
-        media=[media_in(key_for(CHATROOM_ID), content_type="audio/webm")],
+        media=[audio_in(key_for(CHATROOM_ID))],
     )
     assert rows[0].transcript_status == "pending"
     assert enqueued == [rows[0].id]
@@ -170,8 +187,9 @@ async def test_images_are_never_marked_pending(monkeypatch: pytest.MonkeyPatch) 
     even with Redis fully configured."""
     enqueued: list[str] = []
 
-    async def record(media_id: str) -> None:
+    async def record(media_id: str) -> bool:
         enqueued.append(media_id)
+        return True
 
     monkeypatch.setattr(chat_service_module, "enqueue_transcription", record)
     monkeypatch.setattr(
@@ -188,6 +206,31 @@ async def test_images_are_never_marked_pending(monkeypatch: pytest.MonkeyPatch) 
     )
     assert rows[0].transcript_status is None
     assert enqueued == []
+
+
+async def test_failed_enqueue_reverts_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    """QA MEDIUM: a pending mark whose job never entered the queue would pin
+    the UI on 'transcribing…' forever — it must revert to the untranscribed
+    state (NULL), and the send itself must still succeed."""
+
+    async def failing(media_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(chat_service_module, "enqueue_transcription", failing)
+    monkeypatch.setattr(
+        chat_service_module,
+        "get_settings",
+        lambda: SimpleNamespace(transcription_enabled=True),
+    )
+    svc = make_service()
+    message, rows, is_new = await svc.send_message(
+        chatroom_id=CHATROOM_ID,
+        sender_id=USER_ID,
+        body="",
+        media=[audio_in(key_for(CHATROOM_ID))],
+    )
+    assert is_new  # the send survived the queue failure
+    assert rows[0].transcript_status is None
 
 
 # ── Bridge event parsing ──────────────────────────────────────────────────────

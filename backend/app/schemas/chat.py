@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.core.storage import CHAT_MEDIA_MIME_TYPES, max_bytes_for
+from app.core.storage import AUDIO_MIME_TYPES, CHAT_MEDIA_MIME_TYPES, max_bytes_for
 
 # ── Media ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +67,14 @@ class MessageMediaIn(BaseModel):
 
     @model_validator(mode="after")
     def validate_byte_size_for_kind(self) -> "MessageMediaIn":
+        # Audio must declare its size: the row feeds a CPU-bound worker whose
+        # budget depends on it, so "omitted" cannot mean "unchecked". (For
+        # images/video the browser is the consumer and the presign signature
+        # already bounds the actual upload.) The worker additionally verifies
+        # the REAL object size before downloading — this check is UX, that one
+        # is the enforcement.
+        if self.content_type in AUDIO_MIME_TYPES and self.byte_size is None:
+            raise ValueError("byte_size is required for audio attachments")
         if self.byte_size is not None:
             cap = max_bytes_for(self.content_type)
             if self.byte_size > cap:

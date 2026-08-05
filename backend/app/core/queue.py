@@ -6,6 +6,7 @@ REDIS_URL is unset. Voice messages then simply go untranscribed
 provisioned.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -22,16 +23,23 @@ logger = logging.getLogger(__name__)
 TRANSCRIPT_CHANNEL = "jamye:transcripts"
 
 _pool: ArqRedis | None = None
+_pool_lock = asyncio.Lock()
 
 
 async def get_arq_pool() -> ArqRedis | None:
-    """Lazily created, process-wide arq pool. None when Redis is not configured."""
+    """Lazily created, process-wide arq pool. None when Redis is not configured.
+
+    Creation is locked: two concurrent cold-start sends would otherwise both
+    pass the None check and open two pools, leaking one connection set.
+    """
     global _pool
     settings = get_settings()
     if not settings.transcription_enabled:
         return None
     if _pool is None:
-        _pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        async with _pool_lock:
+            if _pool is None:
+                _pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     return _pool
 
 
@@ -42,20 +50,23 @@ async def close_arq_pool() -> None:
         _pool = None
 
 
-async def enqueue_transcription(media_id: str) -> None:
-    """Fire-and-forget enqueue. MUST never break the message send.
+async def enqueue_transcription(media_id: str) -> bool:
+    """Enqueue, reporting whether the job actually made it into the queue.
 
-    The message is already committed by the time this runs; a queue hiccup
-    should degrade to "no transcript" (the documented fallback), not to a
-    failed send. Errors are logged, not raised.
+    MUST never raise: the message is already committed by the time this runs,
+    and a queue hiccup should degrade to "no transcript" (the documented
+    fallback), not to a failed send. The bool lets the caller undo a `pending`
+    mark that nothing will ever resolve.
     """
     try:
         pool = await get_arq_pool()
         if pool is None:
-            return
+            return False
         await pool.enqueue_job("transcribe", media_id)
+        return True
     except Exception:
         logger.warning("Failed to enqueue transcription for media %s", media_id, exc_info=True)
+        return False
 
 
 def parse_transcript_event(raw: bytes | str) -> dict[str, Any] | None:

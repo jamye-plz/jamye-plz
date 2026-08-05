@@ -1,5 +1,7 @@
 """ChatService — chatroom and message business logic."""
 
+import logging
+
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,8 @@ from app.repositories.message_media_repository import MessageMediaRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import MessageMediaIn, MessageMediaOut, MessageOut
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
@@ -185,8 +189,19 @@ class ChatService:
         # a queue failure must degrade to "no transcript", never to a failed
         # send (enqueue_transcription swallows and logs).
         for row in media_rows:
-            if row.transcript_status == "pending":
-                await enqueue_transcription(row.id)
+            if row.transcript_status == "pending" and not await enqueue_transcription(row.id):
+                # The job never entered the queue (e.g. Redis briefly down at
+                # pool creation). A pending mark nothing will resolve would pin
+                # the UI on "transcribing…" forever — revert to the documented
+                # untranscribed state. Best-effort: the message itself is
+                # already committed and must not fail here.
+                row.transcript_status = None
+                try:
+                    await self._db.commit()
+                except Exception:
+                    logger.warning(
+                        "Could not revert stale pending mark on media %s", row.id, exc_info=True
+                    )
         return message, media_rows, True
 
     async def presign_media_view(self, chatroom_id: str, media_id: str) -> MessageMediaOut:
