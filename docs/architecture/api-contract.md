@@ -300,7 +300,7 @@ sequenceDiagram
 | 허용 MIME | `image/jpeg` · `image/png` · `image/webp` · `image/gif` · `video/mp4` · `audio/webm` · `audio/mp4` · `audio/ogg` |
 | 이미지 최대 | 10 MiB |
 | 동영상 최대 | **50 MiB** (presigned PUT이 통과하는 Cloudflare 무료 플랜 100MB 본문 제한 고려) |
-| 오디오 최대 | 15 MiB (클라 녹음 상한 5분) |
+| 오디오 최대 | 15 MiB **+ 재생 길이 330초(서버 검증)** — 저비트레이트로 바이트 캡을 피해도 워커가 디코딩 전에 컨테이너 길이를 확인해 거부한다 |
 | 메시지당 개수 | 최대 4. **단, 오디오는 단독 1개만**(음성 메시지 = 오디오 첨부 1개를 가진 일반 메시지) |
 | 위반 시 | presign은 422, WS는 `{"type":"error","detail":...}` |
 

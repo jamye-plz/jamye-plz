@@ -69,6 +69,36 @@ def _download(object_key: str) -> bytes:
     return obj["Body"].read()
 
 
+def _probe_duration_seconds(data: bytes) -> float:
+    """Container-level duration probe — no decoding. Call via asyncio.to_thread.
+
+    The byte cap cannot bound work: low-bitrate opus fits hours into 15 MiB.
+    Header duration is preferred, but MediaRecorder's webm notoriously omits
+    it (the same reason the composer measures elapsed time itself) — then the
+    packets are demuxed WITHOUT decoding and their durations summed, which is
+    I/O-bound and cheap compared to transcription.
+
+    Raises when no duration can be established: an unmeasurable file does not
+    get to spend the worker's decode budget (fail closed → status=failed; the
+    audio itself stays playable in chat).
+    """
+    import av  # lazy, mirrors the faster_whisper import: worker-only path
+
+    with av.open(io.BytesIO(data), metadata_errors="ignore") as container:
+        if container.duration is not None:
+            return container.duration / av.time_base
+        stream = next((s for s in container.streams if s.type == "audio"), None)
+        if stream is None:
+            raise ValueError("no audio stream in attachment")
+        total = 0.0
+        for packet in container.demux(stream):
+            if packet.duration is not None and packet.time_base is not None:
+                total += float(packet.duration * packet.time_base)
+        if total <= 0.0:
+            raise ValueError("audio duration could not be determined")
+        return total
+
+
 def _transcribe_bytes(data: bytes) -> str:
     """Sync, CPU-bound — call via asyncio.to_thread.
 
@@ -115,6 +145,11 @@ async def transcribe(ctx: dict[str, Any], media_id: str) -> None:
 
         try:
             data = await asyncio.to_thread(_download, media.object_key)
+            duration = await asyncio.to_thread(_probe_duration_seconds, data)
+            if duration > storage.MAX_AUDIO_SECONDS:
+                raise ValueError(
+                    f"audio is {duration:.0f}s, over the {storage.MAX_AUDIO_SECONDS}s cap"
+                )
             text = await asyncio.to_thread(_transcribe_bytes, data)
             media.transcript = text
             media.transcript_status = "done"

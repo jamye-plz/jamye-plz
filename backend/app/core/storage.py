@@ -45,6 +45,11 @@ AUDIO_MIME_TYPES = frozenset({"audio/webm", "audio/mp4", "audio/ogg"})
 # Opus at voice bitrates is ~24kbps (5 min ≈ 1 MB); AAC ~64kbps (5 min ≈ 2.4 MB).
 # 15 MiB is a generous ceiling, far under the video cap.
 MAX_AUDIO_BYTES = 15 * 1024 * 1024  # 15 MiB
+# Duration cap enforced by the worker before decoding. The byte cap alone is
+# insufficient: 8 kbps opus fits ~4 HOURS into 15 MiB, which would park the
+# single-job STT worker until its timeout. Client recording stops at 300 s
+# (MAX_RECORDING_SECONDS); the margin absorbs container-metadata rounding.
+MAX_AUDIO_SECONDS = 330
 
 # Everything a chat message may carry (M3: photos + video, M4a: + voice audio).
 CHAT_MEDIA_MIME_TYPES = IMAGE_MIME_TYPES | VIDEO_MIME_TYPES | AUDIO_MIME_TYPES

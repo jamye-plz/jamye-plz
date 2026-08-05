@@ -334,3 +334,45 @@ async def test_download_falls_back_to_synthesised_name(
     svc._media_repo = FakeMediaLookupRepo(media, CHATROOM_ID)  # type: ignore[attr-defined]
     await svc.presign_media_download(CHATROOM_ID, "media-1")
     assert captured["download_filename"] == "jamye-media-1.m4a"
+
+
+# ── Worker duration probe ─────────────────────────────────────────────────────
+# The byte cap cannot bound work (8 kbps opus fits hours into 15 MiB), so the
+# worker probes the container duration before spending its decode budget.
+
+
+def _silent_wav(seconds: float, rate: int = 8000) -> bytes:
+    """Tiny in-memory WAV of silence — real container, real duration."""
+    import io as _io
+    import wave
+
+    buf = _io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(rate)
+        w.writeframes(b"\x00" * int(seconds * rate))
+    return buf.getvalue()
+
+
+def test_probe_reads_real_container_duration() -> None:
+    from app.workers.transcribe import _probe_duration_seconds
+
+    assert _probe_duration_seconds(_silent_wav(2.0)) == pytest.approx(2.0, abs=0.1)
+
+
+def test_probe_rejects_non_audio_bytes() -> None:
+    from app.workers.transcribe import _probe_duration_seconds
+
+    with pytest.raises(Exception):
+        _probe_duration_seconds(b"definitely not audio")
+
+
+def test_overlong_audio_exceeds_cap() -> None:
+    """A file comfortably under the byte cap but over the duration cap —
+    exactly the low-bitrate bypass the probe exists to stop."""
+    from app.workers.transcribe import _probe_duration_seconds
+
+    long_wav = _silent_wav(storage.MAX_AUDIO_SECONDS + 30, rate=8000)
+    assert len(long_wav) < storage.MAX_AUDIO_BYTES  # fits the byte cap...
+    assert _probe_duration_seconds(long_wav) > storage.MAX_AUDIO_SECONDS  # ...but not this one
