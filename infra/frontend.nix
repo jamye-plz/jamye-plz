@@ -38,7 +38,7 @@
   # install evidently produced an identical tree; trust the build, not the
   # intuition that it must differ.)
   nodeModulesHashes = {
-    aarch64-linux = "sha256-s2M+aQAprvhdQqElhzTh7Fl/u9ryOOaR9CAMR5bafO4=";
+    aarch64-linux = "sha256-VsOqP829lfUu5PzmQk9vNgGgOZJDkw9vFUUPfHpjYlM=";
   };
   nodeModulesHash =
     nodeModulesHashes.${pkgs.system}
