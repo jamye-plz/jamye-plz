@@ -2,7 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
-	import { listMessages, markChatroomRead } from '$lib/api/chat.api';
+	import { listMessages, markChatroomRead, refreshChatMediaUrl } from '$lib/api/chat.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
 	import type {
@@ -435,10 +435,15 @@
 		}
 	}
 
-	function sendMessage(body: string, media: ChatMediaInput[] = []) {
+	/**
+	 * Queue a message on the socket. Returns whether it was actually sent — an
+	 * upload can outlive the connection, and the composer must not discard the
+	 * user's draft and previews for a send that silently no-opped.
+	 */
+	function sendMessage(body: string, media: ChatMediaInput[] = []): boolean {
 		// A media-only message is valid, so body alone no longer gates the send.
 		if ((!body && media.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || !chatroomId)
-			return;
+			return false;
 
 		const clientMsgId = crypto.randomUUID();
 		const msg: WsClientMessage = {
@@ -473,14 +478,10 @@
 			}
 		];
 		scrollToBottom();
+		return true;
 	}
 
-	/**
-	 * Reissue expired presigned media URLs. They are signed for 10 minutes while
-	 * a chat window stays open far longer, so images/videos in scrollback WILL
-	 * start 403ing mid-session. Refetching history returns freshly signed URLs.
-	 */
-	// Fullscreen viewer. Holds its own copy of the items so a history refetch
+	// Fullscreen viewer. Holds its own copy of the items so a URL refresh
 	// mid-view cannot swap the picture under the user.
 	let lightbox = $state<{ items: ChatMedia[]; index: number } | null>(null);
 
@@ -489,24 +490,38 @@
 		lightbox = { items: msg.media, index };
 	}
 
-	let refreshingMedia = false;
-	let lastMediaRefreshAt = Number.NEGATIVE_INFINITY;
-	async function refreshMediaUrls() {
-		if (refreshingMedia || !chatroomId) return;
-		// Cooldown, not a one-shot: URLs expire every 10 minutes so a long
-		// session needs to refresh repeatedly, but an object that is genuinely
-		// gone must not turn "image failed" into a refetch loop.
-		if (performance.now() - lastMediaRefreshAt < 30_000) return;
-		lastMediaRefreshAt = performance.now();
-		refreshingMedia = true;
+	/**
+	 * Reissue ONE attachment's presigned URL. Signatures last 10 minutes while a
+	 * chat window stays open for hours, so scrollback media will start failing.
+	 *
+	 * Per-attachment, not per-page: scrolling up loads older pages, and
+	 * refetching just the newest page would never contain those messages — their
+	 * pictures would stay broken for the rest of the session.
+	 */
+	const MAX_MEDIA_REFRESH_ATTEMPTS = 3;
+	const mediaRefreshAttempts = new Map<string, number>();
+	const mediaRefreshInFlight = new Set<string>();
+
+	async function refreshMediaUrl(mediaId: string) {
+		if (!chatroomId || mediaRefreshInFlight.has(mediaId)) return;
+		// Bound retries per attachment: an object that is genuinely gone (rather
+		// than merely expired) would otherwise loop error → refresh → error for
+		// as long as it stays on screen.
+		const attempts = mediaRefreshAttempts.get(mediaId) ?? 0;
+		if (attempts >= MAX_MEDIA_REFRESH_ATTEMPTS) return;
+		mediaRefreshAttempts.set(mediaId, attempts + 1);
+		mediaRefreshInFlight.add(mediaId);
 		try {
-			const page = await listMessages(groupId, chatroomId);
-			const fresh = new Map(page.items.map((m) => [m.id, m.media ?? []]));
-			messages = messages.map((m) => (fresh.has(m.id) ? { ...m, media: fresh.get(m.id) } : m));
+			const fresh = await refreshChatMediaUrl(groupId, chatroomId, mediaId);
+			messages = messages.map((m) =>
+				m.media?.some((x) => x.id === mediaId)
+					? { ...m, media: m.media.map((x) => (x.id === mediaId ? fresh : x)) }
+					: m
+			);
 		} catch {
 			// Best-effort: a failed refresh just leaves the broken thumbnail.
 		} finally {
-			refreshingMedia = false;
+			mediaRefreshInFlight.delete(mediaId);
 		}
 	}
 
@@ -569,7 +584,7 @@
 		<MessageMedia
 			media={msg.media}
 			onopen={(i) => openLightbox(msg, i)}
-			onexpired={refreshMediaUrls}
+			onexpired={refreshMediaUrl}
 		/>
 	{/if}
 	{#if msg.body}

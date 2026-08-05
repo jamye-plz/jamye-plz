@@ -16,8 +16,12 @@
 		chatroomId: string;
 		connected: boolean;
 		keyboardOpen: boolean;
-		/** Called once uploads finished; media is [] for a text-only message. */
-		onsend: (body: string, media: ChatMediaInput[]) => void;
+		/**
+		 * Called once uploads finished; media is [] for a text-only message.
+		 * MUST report whether the frame was actually queued — a long upload can
+		 * outlive the socket, and the composer only clears the draft on success.
+		 */
+		onsend: (body: string, media: ChatMediaInput[]) => boolean;
 		oninput?: () => void;
 	}
 
@@ -175,8 +179,9 @@
 		const pending = attachments;
 
 		if (pending.length === 0) {
-			inputText = '';
-			onsend(body, []);
+			// Only drop the draft once the frame is actually on the wire.
+			if (onsend(body, [])) inputText = '';
+			else errorText = '연결이 끊겨 전송하지 못했어요. 잠시 후 다시 시도해 주세요.';
 			return;
 		}
 
@@ -191,9 +196,18 @@
 				const dims = await probe(a);
 				uploaded.push(await uploadChatMedia(groupId, chatroomId, a.file, dims));
 			}
+			// A 50 MiB upload can easily outlive the socket. Clearing before
+			// knowing the frame was accepted would throw away the text AND revoke
+			// the previews while the send silently no-ops — the user would lose
+			// everything after waiting through the whole upload, with no error.
+			// The objects are already in the bucket, so a retry just re-sends
+			// the metadata; nothing is re-uploaded.
+			if (!onsend(body, uploaded)) {
+				errorText = '연결이 끊겨 전송하지 못했어요. 잠시 후 다시 시도해 주세요.';
+				return;
+			}
 			inputText = '';
 			clearAttachments();
-			onsend(body, uploaded);
 		} catch {
 			errorText = '첨부 파일을 업로드하지 못했어요. 다시 시도해 주세요.';
 		} finally {
