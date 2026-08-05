@@ -40,9 +40,7 @@ export function refreshChatMediaUrl(
 	chatroomId: string,
 	mediaId: string
 ): Promise<ChatMedia> {
-	return apiGet<ChatMedia>(
-		`/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/url`
-	);
+	return apiGet<ChatMedia>(`/groups/${groupId}/chatrooms/${chatroomId}/media/${mediaId}/url`);
 }
 
 /**
@@ -69,7 +67,9 @@ export async function uploadChatMedia(
 		width: dimensions?.width ?? null,
 		height: dimensions?.height ?? null,
 		byte_size: file.size,
-		duration: dimensions?.duration ?? null
+		duration: dimensions?.duration ?? null,
+		// Original name — the server stores it and restores it on download.
+		filename: file.name || null
 	};
 }
 

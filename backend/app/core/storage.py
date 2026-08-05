@@ -37,14 +37,32 @@ VIDEO_MIME_TYPES = frozenset({"video/mp4"})
 # cannot explain to the user.
 MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MiB
 
-# Everything a chat message may carry (M3: photos + video).
-CHAT_MEDIA_MIME_TYPES = IMAGE_MIME_TYPES | VIDEO_MIME_TYPES
+# Voice messages (M4a). One MIME per browser family: Chrome records
+# audio/webm (opus), iOS Safari records audio/mp4 (AAC), Firefox audio/ogg.
+# faster-whisper decodes all three via its bundled PyAV, so no server-side
+# transcoding is needed.
+AUDIO_MIME_TYPES = frozenset({"audio/webm", "audio/mp4", "audio/ogg"})
+# Opus at voice bitrates is ~24kbps (5 min ≈ 1 MB); AAC ~64kbps (5 min ≈ 2.4 MB).
+# 15 MiB is a generous ceiling, far under the video cap.
+MAX_AUDIO_BYTES = 15 * 1024 * 1024  # 15 MiB
+# Duration cap enforced by the worker before decoding. The byte cap alone is
+# insufficient: 8 kbps opus fits ~4 HOURS into 15 MiB, which would park the
+# single-job STT worker until its timeout. Client recording stops at 300 s
+# (MAX_RECORDING_SECONDS); the margin absorbs container-metadata rounding.
+MAX_AUDIO_SECONDS = 330
+
+# Everything a chat message may carry (M3: photos + video, M4a: + voice audio).
+CHAT_MEDIA_MIME_TYPES = IMAGE_MIME_TYPES | VIDEO_MIME_TYPES | AUDIO_MIME_TYPES
 MAX_MEDIA_PER_MESSAGE = 4
 
 
 def max_bytes_for(content_type: str) -> int:
     """Per-kind upload cap. Raises KeyError-free: caller validates the MIME first."""
-    return MAX_VIDEO_BYTES if content_type in VIDEO_MIME_TYPES else MAX_IMAGE_BYTES
+    if content_type in VIDEO_MIME_TYPES:
+        return MAX_VIDEO_BYTES
+    if content_type in AUDIO_MIME_TYPES:
+        return MAX_AUDIO_BYTES
+    return MAX_IMAGE_BYTES
 
 
 PRESIGN_PUT_EXPIRES_IN = 3600  # 1 hour to complete an upload
@@ -131,6 +149,9 @@ _EXT_BY_MIME = {
     "image/webp": "webp",
     "image/gif": "gif",
     "video/mp4": "mp4",
+    "audio/webm": "webm",
+    "audio/mp4": "m4a",
+    "audio/ogg": "ogg",
 }
 
 

@@ -1,8 +1,11 @@
 # 데이터 모델
 
-PostgreSQL 위 11개 테이블로 사용자·그룹·잼얘(주제)·채팅·알림을 표현한다. 권한은 RLS 대신 서비스 레이어에서 `memberships` 기반으로 강제한다.
+PostgreSQL 위 13개 테이블로 사용자·그룹·잼얘(주제)·채팅·알림을 표현한다. 권한은 RLS 대신 서비스 레이어에서 `memberships` 기반으로 강제한다.
 
-> 버전 v1 · 2026-06-16 · SSOT: plan.json
+> 갱신 2026-08-05 (v2 M3까지 반영) · 최초 v1 2026-06-16
+>
+> v1 이후 추가: `chatroom_reads`(읽음 처리, alembic `a1b2c3d4e5f6`) ·
+> `message_media`(채팅 첨부, `d4e5f6a7b8c9`·`e5f6a7b8c9d0`) · `groups.deleted_at`(`c3d4e5f6a7b8`)
 
 ---
 
@@ -26,6 +29,8 @@ erDiagram
     messages ||--o{ message_media : "첨부"
     users ||--o{ push_subscriptions : "구독"
     users ||--o{ notifications : "수신"
+    users ||--o{ chatroom_reads : "읽음"
+    chatrooms ||--o{ chatroom_reads : "읽음"
 
     users {
         id PK
@@ -112,7 +117,17 @@ erDiagram
         height
         byte_size
         duration "video only, null"
+        position "order within message"
+        transcript "audio STT, null"
+        transcript_status "pending|done|failed, null"
+        filename "original name, null"
         created_at
+    }
+    chatroom_reads {
+        id PK
+        user_id FK
+        chatroom_id FK
+        last_read_at "UNIQUE(user_id,chatroom_id)"
     }
     push_subscriptions {
         id PK
@@ -138,7 +153,8 @@ erDiagram
 - `groups` 1:N `topics`
 - `topics` 1:N `topic_media`, 1:N `topic_tags`
 - `groups` 1:N `chatrooms` (main 1개 + topic N개)
-- `chatrooms` 1:N `messages`
+- `chatrooms` 1:N `messages`, `messages` 1:N `message_media`
+- `users` N:M `chatrooms` via `chatroom_reads` (읽음 시각)
 - `users` 1:N `push_subscriptions`, 1:N `notifications`
 
 ---
@@ -295,6 +311,9 @@ erDiagram
 | byte_size | int | nullable |
 | duration | int (초) | nullable — 동영상만 |
 | position | int | 메시지 내 순서 (0부터) |
+| transcript | text | nullable — 오디오 STT 결과 (M4a) |
+| transcript_status | `pending` \| `done` \| `failed` | nullable — NULL = 비오디오 또는 전사 비활성(무Redis) |
+| filename | varchar(255) | nullable — 원본 파일명(다운로드 시 복원, 부채 #8) |
 | created_at | timestamp | |
 
 - **업로드 흐름은 topic_media와 다르다**: `topic_media`는 presign → PUT → **confirm**(별도 REST)이지만,
@@ -309,10 +328,29 @@ erDiagram
   Cloudflare 무료 플랜의 100MB 요청 본문 제한을 고려해 정했다.
 - 읽기는 접근 정책 B(프라이빗 버킷 + 단기 presigned GET, TTL 600초). 채팅 화면은 오래 열려 있어
   **세션 도중 URL이 만료될 수 있으므로** 클라이언트는 로드 실패 시 히스토리를 재조회해 URL을 재발급받는다.
+- **전사(M4a)는 오디오 행에 붙는다** — 전사의 단위는 메시지가 아니라 오디오 파일이므로, 로드맵
+  초안의 "messages에 transcript 컬럼" 대신 여기에 둔다. `pending`은 REDIS_URL이 설정된 배포에서만
+  기록되며, 무Redis 배포에서는 NULL로 남아 "전사 없음"이 정상 상태다. 워커 실패는 `failed`로
+  기록돼 UI가 "받아쓰는 중"에 갇히지 않는다.
 - **`position`이 순서의 유일한 근거다.** 한 메시지의 첨부는 같은 트랜잭션에서 삽입되고 PostgreSQL의
   `now()`는 트랜잭션 내내 고정이므로 `created_at`이 전부 동일하다. 이 컬럼이 없으면 정렬 tiebreak가
   랜덤 uuid로 넘어가, 보낼 때 본 순서와 히스토리를 다시 불러온 순서가 달라진다.
 - 메시지 삭제 기능이 없어 orphan 객체 정리는 아직 없다(후속).
+
+### chatroom_reads
+사용자별·채팅방별 읽음 시각. 안 읽은 메시지 뱃지와 알림 정리의 기준이다.
+
+| 컬럼 | 타입/값 | 제약 |
+|------|---------|------|
+| id | PK | |
+| user_id | → `users` | FK |
+| chatroom_id | → `chatrooms` | FK |
+| last_read_at | timestamp | 클라가 실제로 렌더한 마지막 메시지 시각 |
+
+- **제약**: `UNIQUE(user_id, chatroom_id)` — 사용자·방 조합당 1행(upsert).
+- `last_read_at`은 서버 시각이 아니라 **클라가 실제로 화면에 그린 마지막 메시지의 시각**으로 올린다.
+  히스토리 로딩과 WS 연결 사이 틈에 도착한 메시지가 보지도 않은 채 읽음 처리되는 것을 막기 위해서다.
+  빈 방은 방 생성 시각으로 한정한다.
 
 ### push_subscriptions
 Web Push 구독 정보(VAPID).

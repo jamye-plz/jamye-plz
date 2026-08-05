@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { listMessages, markChatroomRead, refreshChatMediaUrl } from '$lib/api/chat.api';
@@ -247,7 +248,7 @@
 	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
 		if (messagesQuery.data) {
-			messages = [...messagesQuery.data.items].reverse();
+			messages = [...messagesQuery.data.items].reverse().map(applyBufferedTranscripts);
 			nextCursor = messagesQuery.data.next_cursor;
 			// Pin to the bottom before revealing: scroll after the DOM updates
 			// (tick) and again after layout settles (rAF), then show the list.
@@ -287,7 +288,7 @@
 			listMessages(groupId, chatroomId)
 				.then((page) => {
 					const have = new Set(messages.map((m) => m.id));
-					const missed = page.items.filter((m) => !have.has(m.id));
+					const missed = page.items.filter((m) => !have.has(m.id)).map(applyBufferedTranscripts);
 					if (!missed.length) return;
 					const stick = isNearBottom();
 					messages = [...messages, ...missed].sort((a, b) =>
@@ -309,7 +310,7 @@
 				const data: WsServerMessage = JSON.parse(event.data as string);
 				const stick = isNearBottom();
 				if (data.type === 'message') {
-					const msg: ChatMessage = {
+					const msg: ChatMessage = applyBufferedTranscripts({
 						id: data.id,
 						chatroom_id: data.chatroom_id,
 						sender_id: data.sender_id,
@@ -320,7 +321,7 @@
 						created_at: data.created_at,
 						media: data.media ?? [],
 						client_msg_id: data.client_msg_id ?? undefined
-					};
+					});
 					const idx = data.client_msg_id
 						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
 						: -1;
@@ -346,6 +347,35 @@
 						}
 					];
 					if (stick) tick().then(scrollToBottom);
+				} else if (data.type === 'transcript') {
+					// Async STT finished for a voice message (possibly one sent
+					// minutes ago) — patch the media entry in place. No scroll:
+					// the bubble grows a caption, the log must not jump.
+					const owner = messages.find(
+						(m) => m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
+					);
+					if (!owner) {
+						// The frame beat its message (worker publish is unordered
+						// with the echo/broadcast). Hold it; the insertion paths
+						// apply it when the message shows up.
+						pendingTranscripts.set(data.media_id, {
+							status: data.status,
+							transcript: data.transcript
+						});
+					} else {
+						messages = messages.map((m) =>
+							m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
+								? {
+										...m,
+										media: m.media.map((x) =>
+											x.id === data.media_id
+												? { ...x, transcript: data.transcript, transcript_status: data.status }
+												: x
+										)
+									}
+								: m
+						);
+					}
 				}
 			} catch {
 				// ignore parse errors
@@ -408,7 +438,11 @@
 			const olderPage = await listMessages(groupId, chatroomId, cursor);
 			const older = [...olderPage.items].reverse(); // oldest-first
 			const seen = new Set(messages.map((m) => m.id));
-			const fresh = older.filter((m) => !seen.has(m.id));
+			// Claim buffered transcript frames here too: an older page's REST
+			// snapshot can predate the worker's commit while the frame already
+			// arrived (and was buffered) — every insertion path must drain the
+			// buffer or that bubble sticks on "transcribing…".
+			const fresh = older.filter((m) => !seen.has(m.id)).map(applyBufferedTranscripts);
 			messages = [...fresh, ...messages];
 			nextCursor = olderPage.next_cursor;
 		} catch {
@@ -481,6 +515,28 @@
 		return true;
 	}
 
+	// Transcript frames that arrived before the message they belong to. The
+	// worker publishes through Redis on its own schedule — it is NOT ordered
+	// with this handler's echo/broadcast — so a fast failure (or a very short
+	// clip) can beat the `message` frame here. Dropping the frame would strand
+	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
+	// media_id lets every message-insertion path claim it. Entries are removed
+	// on match; the map only ever holds this room's still-unmatched frames.
+	const pendingTranscripts = new SvelteMap<string, { status: string; transcript: string | null }>();
+
+	function applyBufferedTranscripts(msg: ChatMessage): ChatMessage {
+		if (!msg.media?.length || pendingTranscripts.size === 0) return msg;
+		let changed = false;
+		const media = msg.media.map((m) => {
+			const buffered = pendingTranscripts.get(m.id);
+			if (!buffered) return m;
+			pendingTranscripts.delete(m.id);
+			changed = true;
+			return { ...m, transcript: buffered.transcript, transcript_status: buffered.status };
+		});
+		return changed ? { ...msg, media } : msg;
+	}
+
 	// Fullscreen viewer. Holds its own copy of the items so a URL refresh
 	// mid-view cannot swap the picture under the user.
 	let lightbox = $state<{ items: ChatMedia[]; index: number } | null>(null);
@@ -499,8 +555,11 @@
 	 * pictures would stay broken for the rest of the session.
 	 */
 	const MAX_MEDIA_REFRESH_ATTEMPTS = 3;
-	const mediaRefreshAttempts = new Map<string, number>();
-	const mediaRefreshInFlight = new Set<string>();
+	// SvelteMap/SvelteSet purely to satisfy svelte/prefer-svelte-reactivity —
+	// nothing renders from these (pure bookkeeping), so the reactivity is
+	// unused but harmless.
+	const mediaRefreshAttempts = new SvelteMap<string, number>();
+	const mediaRefreshInFlight = new SvelteSet<string>();
 
 	/**
 	 * An attachment rendered, so the URL it was given works — clear its strike

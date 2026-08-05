@@ -51,12 +51,20 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
 	event.notification.close();
-	const url = (event.notification.data as { url: string }).url;
+	const raw = (event.notification.data as { url: string }).url;
+	// The payload carries an app-relative path ("/groups/..."), but
+	// WindowClient.url is always absolute — comparing them directly never
+	// matched, so clicking a notification opened a duplicate tab even with the
+	// chat already on screen. Normalise before comparing.
+	const target = new URL(raw, self.location.origin).href;
 	event.waitUntil(
-		self.clients.matchAll({ type: 'window' }).then((clients) => {
-			const client = clients.find((c) => c.url === url && 'focus' in c);
+		// includeUncontrolled: a tab opened before this SW took control is not
+		// "controlled" yet, and would be invisible here — producing the same
+		// duplicate tab by a different route.
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+			const client = clients.find((c) => c.url === target && 'focus' in c);
 			if (client) return client.focus();
-			return self.clients.openWindow(url);
+			return self.clients.openWindow(target);
 		})
 	);
 });

@@ -4,7 +4,7 @@
 호스트에 백엔드·프론트엔드·DB·오브젝트 스토리지(MinIO)를 배포하고, 외부 공개는
 **yggdrasil** 인그레스 노드에 위임하는 방법입니다.
 
-> 갱신 2026-08-04 — MinIO·Web Push 배선 반영 (PR #17·#19·#20).
+> 갱신 2026-08-05 — 음성 전사 스택(M4a) 반영. MinIO·Web Push 배선은 PR #17·#19·#20.
 
 ## 아키텍처
 
@@ -26,6 +26,8 @@
                          │  jamye-plz-minio-bucket.service (버킷 생성, oneshot)        │
                          │  postgresql (로컬, Unix-socket peer 인증)              │
                          │  minio  S3 :9000 (tailnet) · 콘솔 127.0.0.1:9001        │
+                         │  redis-jamye-plz :6379 (127.0.0.1 전용, 전사 큐)         │
+                         │  jamye-plz-stt-worker.service (faster-whisper)          │
                          └────────────────────────────────────────────────────────┘
 
 미디어(presigned URL)는 앱과 별도 서브도메인을 탄다 — presigned URL에 호스트가
@@ -191,7 +193,9 @@ add-service 규약대로 호스트에 직접 선언하지 않고 `services/jamye
   # 앱 env — 백엔드가 읽는다.
   sops.templates."jamye-plz.env" = {
     owner = "jamye";                              # 모듈의 services.jamye-plz.user 기본값
-    restartUnits = [ "jamye-plz-backend.service" ];
+    # 워커도 같은 env 파일을 읽는다(MinIO 키로 오디오 fetch) — 시크릿이 바뀌면
+    # 둘 다 재시작돼야 한다.
+    restartUnits = [ "jamye-plz-backend.service" "jamye-plz-stt-worker.service" ];
     content = ''
       JWT_SECRET=${config.sops.placeholder."jamye-plz/jwt_secret"}
       KAKAO_CLIENT_ID=${config.sops.placeholder."jamye-plz/kakao_client_id"}
@@ -334,6 +338,41 @@ journalctl -u jamye-plz-minio-bucket --no-pager
 재시도하고, 끝내 실패하면 마지막 curl/mc 오류를 그대로 출력합니다. 백엔드가 이
 유닛을 `Requires`하므로 실패 시 앱도 뜨지 않습니다(조용히 무버킷 상태로 가는 것 방지).
 
+### 음성 전사 (M4a) — 추가 설정 없음
+
+**homelab에 새로 넣을 시크릿·env는 없다.** 전사 스택은 모듈 기본값(`transcription.enable = true`)으로
+함께 뜨고, 필요한 값은 모듈이 스스로 배선한다:
+
+- `REDIS_URL=redis://127.0.0.1:6379` — **모듈이 export** (loopback 전용, 비밀 아님, env 템플릿에 넣지 말 것)
+- `STT_MODEL` / `STT_COMPUTE_TYPE` — 워커 시작 스크립트가 nix 옵션에서 export
+- Redis는 `redis-jamye-plz` 인스턴스로 127.0.0.1에만 바인딩 — tailnet에서도 접근 불가
+
+기본값을 바꾸고 싶을 때만 `services/jamye-plz.nix`에 추가한다:
+
+```nix
+services.jamye-plz.transcription = {
+  # enable = true;              # 기본값. false면 Redis·워커가 안 뜨고
+  #                             # 음성 메시지는 전사 없이 정상 동작한다.
+  # model = "large-v3-turbo";   # 기본값. 정확도가 아쉬우면 "large-v3"로.
+  #                             # 절대경로를 주면 사전 다운로드 모델 사용(hermetic).
+  # computeType = "int8";       # 기본값.
+};
+```
+
+**첫 기동 주의**: 워커는 **첫 전사 job에서 모델(~800MB)을 다운로드**해
+`/var/lib/jamye-plz-stt`(StateDirectory)에 캐시한다 — 이후 재시작에는 재다운로드가 없다.
+따라서 배포 직후 첫 음성 메시지의 전사만 수 분 걸릴 수 있다. 완전 hermetic이 필요하면
+모델을 미리 받아 두고 `transcription.model`에 그 절대경로를 준다.
+
+배포 후 확인:
+
+```bash
+systemctl status redis-jamye-plz jamye-plz-stt-worker
+journalctl -u jamye-plz-stt-worker -f    # job 수신·모델 로딩·완료가 그대로 찍힌다
+```
+
+전사 실패는 행에 `failed`로 남고 UI에도 표시된다 — "받아쓰는 중"에 영구히 갇히지 않는다.
+
 롤백(호스트에서): `sudo nixos-rebuild switch --rollback`.
 
 ---
@@ -362,6 +401,9 @@ journalctl -u jamye-plz-minio-bucket --no-pager
 - WebSocket `/api/ws`는 두 Caddy 계층을 모두 투명하게 통과합니다(별도 설정 불필요 —
   Caddy가 Upgrade를 자동 프록시).
 - DB는 peer 인증을 쓰므로 `DATABASE_URL`에 비밀번호가 없고 시크릿이 아닙니다.
-- 단일 호스트 배포입니다. 헬스체크 기반 자동 롤백이 필요하면 추후 `deploy-rs`를
-  도입할 수 있지만, 호스트 1대에는 `nixos-rebuild --rollback`으로 충분합니다.
-```
+- 앱 호스트는 alfheim 1대입니다(인그레스는 yggdrasil이 담당). 헬스체크 기반 자동 롤백이
+  필요하면 추후 `deploy-rs`를 도입할 수 있지만, 호스트 1대에는 `nixos-rebuild --rollback`으로
+  충분합니다.
+- **`bun.lock`이 바뀌면** `infra/frontend.nix`의 FOD 해시를 Linux 빌더에서 재생성해야 합니다
+  (`lib.fakeHash` → `nix build .#frontend` → 출력된 `got:` 붙여넣기). 재생성하지 않으면
+  hash mismatch로 빌드가 실패합니다.

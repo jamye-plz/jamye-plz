@@ -1,10 +1,14 @@
 """ChatService — chatroom and message business logic."""
 
+import logging
+
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import storage
+from app.core.config import get_settings
+from app.core.queue import enqueue_transcription
 from app.core.exceptions import (
     ForbiddenError,
     MessageIdempotencyError,
@@ -24,6 +28,8 @@ from app.repositories.message_media_repository import MessageMediaRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.chat import MessageMediaIn, MessageMediaOut, MessageOut
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
@@ -100,6 +106,11 @@ class ChatService:
             raise ValidationError(
                 f"a message may carry at most {storage.MAX_MEDIA_PER_MESSAGE} attachments"
             )
+        # A voice message is exactly one audio attachment and nothing else —
+        # mixing audio with photos would need per-kind UI and transcript
+        # semantics nobody asked for.
+        if any(m.content_type in storage.AUDIO_MIME_TYPES for m in media) and len(media) > 1:
+            raise ValidationError("an audio attachment must be the only attachment on a message")
         seen: set[str] = set()
         items: list[dict[str, object]] = []
         for m in media:
@@ -118,7 +129,13 @@ class ChatService:
                     "byte_size": m.byte_size,
                     # duration only makes sense for video; drop a stray value on
                     # an image so the row can't claim a bogus length.
-                    "duration": m.duration if m.content_type in storage.VIDEO_MIME_TYPES else None,
+                    "duration": (
+                        m.duration
+                        if m.content_type in storage.VIDEO_MIME_TYPES
+                        or m.content_type in storage.AUDIO_MIME_TYPES
+                        else None
+                    ),
+                    "filename": m.filename,
                 }
             )
         return items
@@ -159,8 +176,32 @@ class ChatService:
         media_rows: list[MessageMedia] = []
         if media_values:
             media_rows = await self._media_repo.create_many(message.id, media_values)
+            if get_settings().transcription_enabled:
+                # Marked before the commit so the pending state is part of the
+                # same transaction as the message. With Redis unconfigured the
+                # status stays NULL — the documented no-transcription fallback.
+                for row in media_rows:
+                    if row.type in storage.AUDIO_MIME_TYPES:
+                        row.transcript_status = "pending"
         await self._db.commit()
         await self._db.refresh(message)
+        # Enqueue AFTER the commit: the worker must be able to see the row, and
+        # a queue failure must degrade to "no transcript", never to a failed
+        # send (enqueue_transcription swallows and logs).
+        for row in media_rows:
+            if row.transcript_status == "pending" and not await enqueue_transcription(row.id):
+                # The job never entered the queue (e.g. Redis briefly down at
+                # pool creation). A pending mark nothing will resolve would pin
+                # the UI on "transcribing…" forever — revert to the documented
+                # untranscribed state. Best-effort: the message itself is
+                # already committed and must not fail here.
+                row.transcript_status = None
+                try:
+                    await self._db.commit()
+                except Exception:
+                    logger.warning(
+                        "Could not revert stale pending mark on media %s", row.id, exc_info=True
+                    )
         return message, media_rows, True
 
     async def presign_media_view(self, chatroom_id: str, media_id: str) -> MessageMediaOut:
@@ -188,7 +229,7 @@ class ChatService:
             raise NotFoundError("Media", media_id)
         return storage.presign_get(
             media.object_key,
-            download_filename=storage.download_filename_for(media.id, media.type),
+            download_filename=media.filename or storage.download_filename_for(media.id, media.type),
         )
 
     @staticmethod
@@ -203,6 +244,9 @@ class ChatService:
                 height=r.height,
                 byte_size=r.byte_size,
                 duration=r.duration,
+                filename=r.filename,
+                transcript=r.transcript,
+                transcript_status=r.transcript_status,
             )
             for r in rows
         ]

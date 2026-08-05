@@ -9,19 +9,17 @@
 # bun.lock change and for every new target arch:
 #   Set the `nodeModulesHashes` entry to `lib.fakeHash`, run `nix build
 #   .#frontend`, and paste the printed `got: sha256-...` back in.
-{ pkgs
-, lib
-,
-}:
-let
+{
+  pkgs,
+  lib,
+}: let
   # Source minus generated/installed dirs (keeps the FOD hash stable).
   src = lib.cleanSourceWith {
     src = ../frontend;
-    filter = path: type:
-      let
-        base = baseNameOf (toString path);
-      in
-        !(builtins.elem base [ "node_modules" "build" ".svelte-kit" ".vercel" ".vite" ]);
+    filter = path: type: let
+      base = baseNameOf (toString path);
+    in
+      !(builtins.elem base ["node_modules" "build" ".svelte-kit" ".vercel" ".vite"]);
   };
 
   # bun-install FOD hash, keyed by target system. bun.lock pulls OS/CPU-gated
@@ -34,6 +32,11 @@ let
   # means regenerating the hash on a Linux builder (set the entry to
   # lib.fakeHash, `nix build .#frontend`, paste the printed `got:`). Last
   # regenerated for `heic-to` (browser HEIC→JPEG decoder for iPhone photos).
+  #
+  # Note: removing partysocket did NOT change this hash — verified by an
+  # actual Linux build against the new bun.lock. (bun's --ignore-scripts
+  # install evidently produced an identical tree; trust the build, not the
+  # intuition that it must differ.)
   nodeModulesHashes = {
     aarch64-linux = "sha256-s2M+aQAprvhdQqElhzTh7Fl/u9ryOOaR9CAMR5bafO4=";
   };
@@ -45,7 +48,7 @@ let
     pname = "jamye-frontend-node-modules";
     version = "0.1.0";
     inherit src;
-    nativeBuildInputs = [ pkgs.bun ];
+    nativeBuildInputs = [pkgs.bun];
     dontConfigure = true;
     # A FOD output must not reference store paths. stdenv's fixupPhase would
     # run patchShebangs (rewriting node_modules script shebangs to the store's
@@ -70,48 +73,48 @@ let
     outputHash = nodeModulesHash;
   };
 in
-pkgs.stdenv.mkDerivation {
-  pname = "jamye-frontend";
-  version = "0.1.0";
-  inherit src;
+  pkgs.stdenv.mkDerivation {
+    pname = "jamye-frontend";
+    version = "0.1.0";
+    inherit src;
 
-  nativeBuildInputs = [ pkgs.bun pkgs.nodejs pkgs.autoPatchelfHook ];
-  buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+    nativeBuildInputs = [pkgs.bun pkgs.nodejs pkgs.autoPatchelfHook];
+    buildInputs = [pkgs.stdenv.cc.cc.lib];
 
-  # We patch node_modules binaries manually below; the output ($out) is only
-  # static assets, so skip the automatic post-build pass.
-  dontAutoPatchelf = true;
-  # node_modules may carry binaries that reference libs we don't provide; warn
-  # instead of failing the build (the real toolchain bins get patched fine).
-  autoPatchelfIgnoreMissingDeps = true;
+    # We patch node_modules binaries manually below; the output ($out) is only
+    # static assets, so skip the automatic post-build pass.
+    dontAutoPatchelf = true;
+    # node_modules may carry binaries that reference libs we don't provide; warn
+    # instead of failing the build (the real toolchain bins get patched fine).
+    autoPatchelfIgnoreMissingDeps = true;
 
-  configurePhase = ''
-    runHook preConfigure
-    export HOME="$TMPDIR"
-    cp -R ${nodeModules}/node_modules ./node_modules
-    chmod -R u+w node_modules
-    # The FOD deliberately left shebangs (#!/usr/bin/env node) and prebuilt
-    # ELF binaries (esbuild, @rollup/*-gnu) untouched to stay reference-free.
-    # This derivation is NOT fixed-output, so make them runnable here.
-    patchShebangs node_modules
-    autoPatchelf node_modules
-    runHook postConfigure
-  '';
+    configurePhase = ''
+      runHook preConfigure
+      export HOME="$TMPDIR"
+      cp -R ${nodeModules}/node_modules ./node_modules
+      chmod -R u+w node_modules
+      # The FOD deliberately left shebangs (#!/usr/bin/env node) and prebuilt
+      # ELF binaries (esbuild, @rollup/*-gnu) untouched to stay reference-free.
+      # This derivation is NOT fixed-output, so make them runnable here.
+      patchShebangs node_modules
+      autoPatchelf node_modules
+      runHook postConfigure
+    '';
 
-  buildPhase = ''
-    runHook preBuild
-    bun run build
-    runHook postBuild
-  '';
+    buildPhase = ''
+      runHook preBuild
+      bun run build
+      runHook postBuild
+    '';
 
-  installPhase = ''
-    runHook preInstall
-    mkdir -p "$out"
-    cp -R build/. "$out/"
-    runHook postInstall
-  '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p "$out"
+      cp -R build/. "$out/"
+      runHook postInstall
+    '';
 
-  passthru = { inherit nodeModules; };
+    passthru = {inherit nodeModules;};
 
-  meta.description = "jamye-plz SvelteKit SPA (static build)";
-}
+    meta.description = "jamye-plz SvelteKit SPA (static build)";
+  }

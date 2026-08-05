@@ -1,9 +1,10 @@
 # jamye-plz — local dev infrastructure
 #
-# Postgres + MinIO (S3-compatible object storage). Backend (uv) and frontend
-# (npm) run on the host and connect to these services at localhost. Defaults
-# mirror backend/.env.example (DATABASE_URL=postgresql+asyncpg://jamye:password
-# @localhost:5432/jamye, MINIO_ENDPOINT=http://localhost:9000).
+# Postgres + MinIO (S3-compatible object storage) + Redis (arq transcription
+# queue, M4a). Backend (uv) and frontend (bun) run on the host and connect to
+# these services at localhost. Defaults mirror backend/.env.example
+# (DATABASE_URL=postgresql+asyncpg://jamye:password@localhost:5432/jamye,
+# MINIO_ENDPOINT=http://localhost:9000, REDIS_URL=redis://localhost:6379).
 #
 # Override values via infra/.env (copy from infra/.env.example).
 #
@@ -61,6 +62,22 @@ services:
       # `mc` ships inside the minio/minio image itself (no extra client
       # needed); `curl` is not guaranteed to be present on all base images.
       test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    # Queue + worker→backend transcript bridge (M4a voice messages). The
+    # backend works without it — voice messages then simply go untranscribed —
+    # so this service is only needed to exercise the STT pipeline locally.
+    # Pinned like the others for reproducible dev environments.
+    image: docker.io/library/redis:8.4
+    container_name: jamye-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10

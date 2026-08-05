@@ -1,8 +1,21 @@
 # 배포
 
-NixOS 홈랩 단일 서버에 하이브리드로 배포한다. 인프라는 NixOS native services로 선언하고, 앱은 podman OCI 컨테이너로 띄운다. 외부 노출은 cloudflared 터널.
+NixOS 홈랩에 배포한다. 외부 노출은 cloudflared 터널.
 
-> 버전 v1 · 2026-06-16 · SSOT: plan.json
+> 최초 v1 2026-06-16 (설계) · 갱신 2026-08-05
+>
+> ## ⚠️ 이 문서는 v1 **설계안**이고, 실제 구현은 두 곳에서 달라졌다
+>
+> 1. **앱도 nix native로 배포한다 — podman OCI는 채택하지 않았다.** 백엔드는
+>    `uv2nix`(uv.lock을 그대로 읽음)로 venv를 만들고, 프론트는 bun FOD로 정적 빌드해
+>    Caddy가 서빙한다. 아래 §1·§앱 컨테이너 절의 podman 서술은 **채택되지 않은 설계**다.
+> 2. **인그레스는 단일 서버가 아니라 2노드다.** Cloudflare Tunnel → yggdrasil(Caddy, TLS 종단)
+>    → tailnet → alfheim(앱). 아래 다이어그램의 단일 호스트 전제와 다르다.
+>
+> **실제로 돌아가는 구성과 절차는 [`../deployment/nixos-alfheim.md`](../deployment/nixos-alfheim.md)를
+> 보라.** 이 문서는 당시 판단 근거를 남기기 위해 보존한다.
+>
+> 또한 **Redis는 아직 배포돼 있지 않다** — M4a(음성 STT)에서 arq와 함께 들어온다.
 
 ---
 
@@ -11,10 +24,14 @@ NixOS 홈랩 단일 서버에 하이브리드로 배포한다. 인프라는 NixO
 | 계층 | 구성요소 | 배포 방식 | 이유 |
 |------|----------|-----------|------|
 | 인프라 | PostgreSQL, MinIO, Caddy, Redis | NixOS native services | nix 모듈이 성숙. 선언적 백업·자동 ACME를 그대로 누림 |
-| 앱 | FastAPI, SvelteKit | podman OCI (`virtualisation.oci-containers`, backend=podman) | nix 패키징 시 `uv.lock`/`npmDepsHash` 재해시 마찰이 커 컨테이너로 우회 |
+| 앱 | FastAPI, SvelteKit | ~~podman OCI~~ → **실제로는 nix native** (uv2nix venv + 정적 SPA) | 아래 "앱을 컨테이너로 두는 이유"는 결국 기각됐다 — 하단 주석 참조 |
 
 - **인프라를 native로 두는 이유**: `services.postgresql` + `services.postgresqlBackup`로 DB와 정기 덤프를 선언 한 줄로 잡고, `services.caddy`가 ACME 인증서를 자동 발급·갱신한다. 검증된 모듈이라 운영 마찰이 작다.
-- **앱을 컨테이너로 두는 이유**: Python/Node 의존성을 nix로 패키징하면 lockfile 해시(`uv.lock`, `npmDepsHash`)를 변경마다 다시 맞춰야 해 개발 흐름이 끊긴다. OCI 이미지로 빌드하면 이 마찰을 피하면서 배포는 여전히 nix 선언으로 관리한다.
+- ~~**앱을 컨테이너로 두는 이유**: Python/Node 의존성을 nix로 패키징하면 lockfile 해시를 변경마다 다시 맞춰야 해 개발 흐름이 끊긴다.~~
+  **→ 실제로는 그 마찰이 예상보다 작았다.** `uv2nix`는 `uv.lock`을 그대로 읽어 백엔드 쪽 재해시가
+  아예 없고, 프론트만 **bun.lock이 바뀔 때 FOD 해시를 Linux 빌더에서 재생성**하면 된다
+  (`infra/frontend.nix`). 그 대가로 podman 레이어가 통째로 사라졌다.
+  `infra/docker-compose.yml`은 **로컬 개발용**으로만 남아 있다.
 - **단일 서버**라 `deploy-rs`/`colmena` 없이 `nixos-rebuild`로 충분하다(over-engineering 회피).
 
 ---
@@ -84,7 +101,7 @@ services.caddy = {
 
 > COOP/COEP 헤더는 **WASM 멀티스레드(SharedArrayBuffer)** 를 켜기 위해 반드시 필요하다. `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`가 있어야 `self.crossOriginIsolated`가 true가 되고 온디바이스 AI의 멀티스레드 추론이 활성화된다. 헤더가 빠지면 멀티스레드 WASM이 비활성화되고 외부 리소스가 차단된다(상세 [`./on-device-ai.md`](./on-device-ai.md)). 외부 리소스 차단을 완화하려면 `credentialless` 모드를 검토한다.
 
-### 앱 컨테이너 (podman OCI)
+### 앱 컨테이너 (podman OCI) — ⚠️ 미채택 설계
 
 ```nix
 virtualisation.oci-containers = {
@@ -133,15 +150,15 @@ virtualisation.oci-containers = {
 ├── flake.nix
 ├── nix/
 │   ├── hosts/            # 호스트별 NixOS 구성 (단일 서버)
-│   ├── modules/          # postgres / minio / caddy / redis / app / secrets
+│   ├── modules/          # postgres / minio / caddy / app / secrets
 │   └── overlays/         # 패키지 오버레이
 ├── frontend/             # SvelteKit (adapter-static SPA)
 ├── backend/              # FastAPI (router→service→repository)
 └── packages/             # jamye-frontend(buildNpmPackage), jamye-api 이미지 정의
 ```
 
-- `nix/modules/`에 인프라 서비스(postgres·minio·caddy·redis)와 앱 컨테이너(app), 시크릿(secrets) 모듈을 분리한다.
-- `packages/`에서 프론트 정적 빌드와 API 컨테이너 이미지를 정의한다.
+> ⚠️ **실제 레포 구조는 다르다.** `nix/`·`packages/`는 없고 `flake.nix` + `infra/{backend,frontend,module}.nix`
+> 구성이며, 시크릿은 이 레포가 아니라 homelab의 sops-nix가 소유한다(모듈은 `environmentFile` 경로만 받는다).
 
 ---
 
