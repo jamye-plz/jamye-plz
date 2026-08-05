@@ -7,9 +7,9 @@
 >
 > **작성일** 2026-07-19 · **갱신** 2026-08-04 · **기준 커밋** `main` (PR #15 머지 후)
 >
-> **상태** 진행 중 — **M0·M1·M2 완료**(main 머지 + alfheim 프로덕션 배포, 실기기 푸시 수신 검증).
-> 다음은 **M3(채팅 미디어)**. **Open Decisions D1~D8 전부 확정**(D7 = faster-whisper, 2026-08-04).
-> M4b는 vNext(§7 D6).
+> **상태** 진행 중 — **M0·M1·M2·M3 완료**(main 머지. M0~M2는 alfheim 프로덕션 배포·실기기 푸시 수신 검증 완료).
+> **Open Decisions D1~D8 전부 확정**(D7 = faster-whisper, 2026-08-04).
+> 남은 것은 **M4a(음성 메시지)** 하나. M4b는 vNext(§7 D6).
 >
 > 이 로드맵은 v1 코드베이스 4개 영역 정찰(reconnaissance) 결과에 근거한다. 파일:라인
 > 앵커는 작성 시점 기준이며 구현 전 재확인할 것.
@@ -27,8 +27,8 @@ v1은 놀랄 만큼 많은 부분이 **이미 스캐폴딩**돼 있다. v2의 �
 |------|--------------------------|------|
 | **Web Push (VAPID)** | 모델·엔드포인트·SW 핸들러·pywebpush 의존성까지 완비, send 경로만 stub | ✅ **완료 — M1 (PR #17)**. 배포 후 실기기 수신 검증 |
 | **그룹 관리 고도화** | owner 개념·`role` 컬럼·`require_owner` 인가 존재, 멤버 목록 완성. write 경로 전무 | ✅ **완료 — M2 (PR #18)** |
-| **채팅 미디어 첨부** | topic presign→confirm 흐름 존재, 채팅 메시지는 text-only | 🟩🟩⬜⬜⬜ **M0 완료 (PR #16) — M3 미착수** |
-| **음성 채팅 + STT** | 음성 코드 전무. WS·메시지 `type`·미디어 스캐폴드만 재사용 가능 | ⬜⬜⬜⬜⬜ **미착수 — D7 확정(faster-whisper), M4a 착수 가능** |
+| **채팅 미디어 첨부** | topic presign→confirm 흐름 존재, 채팅 메시지는 text-only | ✅ **완료 — M3 (PR #21)**. 사진·mp4 + 전체화면 뷰어·다운로드 |
+| **음성 채팅 + STT** | 음성 코드 전무. WS·메시지 `type`·미디어 스캐폴드만 재사용 가능 | ⬜⬜⬜⬜⬜ **미착수 — v2에 남은 유일한 마일스톤(M4a)** |
 | *(기반) 오브젝트 스토리지* | boto3 선언만 있고 `import` 0건 (stub) | ✅ **완료 — M0 (PR #16)** + NixOS 배선(PR #19·#20) |
 
 **가장 중요한 통찰 2가지**
@@ -48,9 +48,9 @@ v1은 놀랄 만큼 많은 부분이 **이미 스캐폴딩**돼 있다. v2의 �
 M0  오브젝트 스토리지 enabler   ─┐ (M3·M4 선행)   [작음·기반]        ✅ 완료 (#16)
 M1  Web Push (VAPID)          ─┼─ M0와 병렬 가능   [라스트 마일·고가치·저위험] ✅ 완료 (#17)
 M2  그룹 관리 고도화            ─┘ (독립)          [CRUD·중간]        ✅ 완료 (#18)
-M3  채팅 미디어 첨부 (img/video)  ← M0 필요          [중상]             ◀ 다음
+M3  채팅 미디어 첨부 (img/video)  ← M0 필요          [중상]             ✅ 완료 (#21)
 M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고위험 → 분할]
-    M4a 비동기 음성 메시지 (v2 범위 확정)                              ◀ D7 확정, 착수 가능
+    M4a 비동기 음성 메시지 (v2 범위 확정)                              ◀ 다음 (D7 확정)
     M4b 실시간 음성 채팅 WebRTC                                       ⏭ vNext (D6에서 제외)
 ```
 
@@ -282,6 +282,29 @@ M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고�
 ## 5. M3 — 채팅 미디어 첨부 (이미지 / 비디오)
 
 **목표**: 채팅 메시지에 이미지·비디오 첨부. **M0(스토리지) 선행 필수.**
+
+> ✅ **완료 — PR #21 머지** (2026-08-05). 아래 "현재 상태"·"작업"은 착수 전 정찰 스냅샷이라
+> 그대로 두고, 실제 배송 내용만 요약한다:
+> - 마이그레이션 `d4e5f6a7b8c9`(`message_media`) + `e5f6a7b8c9d0`(`position`).
+> - **confirm 엔드포인트 없음 — 계획과 다름.** `message_media.message_id`가 FK라 confirm 시점에
+>   메시지가 없어 고아 행이 생긴다. presign → PUT → **WS `send_message` 프레임에 메타데이터 동봉**으로
+>   바꿔 메시지 행과 미디어 행을 한 트랜잭션에서 만든다.
+> - `POST /groups/{gid}/chatrooms/{cid}/media/presign`, `GET .../media/{mid}/url`(만료 재발급),
+>   `GET .../media/{mid}/download`(307 → `Content-Disposition: attachment`).
+> - **BOLA 가드** `validate_object_key_for_chatroom` + 다운로드/재발급의 `get_in_chatroom` 조인 인가.
+>   클라이언트가 보낸 MIME·크기는 서버가 재검증. 메시지당 4개, 중복 키 거부.
+> - **동영상 상한 50MiB** — 계획의 100MiB는 presigned PUT이 통과하는 Cloudflare 무료 플랜의 100MB
+>   본문 제한에 걸려 엣지에서 거부된다.
+> - 빈 body 완화(`body` OR `media`), 히스토리 미디어 배치 조회(N+1 방지).
+> - 프론트: `ChatComposer`·`MessageMedia`·`MediaLightbox` 신규(728줄 `ChatRoom`에 얹지 않음),
+>   **HEIC → JPEG 브라우저 변환**(헤더 기반 판별, WASM 지연 로드), 스켈레톤(전송 중·디코딩 중),
+>   전체화면 뷰어(스와이프·핀치 줌·다운로드), all-or-nothing 업로드.
+>
+> **계획에 없었으나 추가한 것**: 이미지 전체화면 뷰어와 다운로드(사용자 요청), HEIC 지원(주 사용자가
+> 아이폰). HEIC는 `heic-to` 의존성이 추가돼 `infra/frontend.nix`의 FOD 해시를 재생성했다.
+>
+> **미구현(후속)**: 썸네일·트랜스코딩(D5에서 후속으로 확정), 원본 파일명 미저장(다운로드는
+> `jamye-{media_id}.{ext}`), orphan 객체 정리(메시지 삭제 기능 자체가 없음).
 
 ### 현재 상태
 - **재사용**: topic presign→confirm→list 계약·stub fallback 패턴(`media.py`, `TopicService.confirm_media/list_media`,

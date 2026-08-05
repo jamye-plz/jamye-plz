@@ -9,6 +9,9 @@
 | 5 | 백그라운드 구독 등록 실패로 **SW 푸시 구독이 제거되면 자동 복구되지 않음** | v2 M1 (PR #17 리뷰, P2로 defer) | P2 | 🔴 **Open** | `service-worker.ts`의 `pushsubscriptionchange`와 `push.api.ts`의 `requestAndSubscribe`는 등록 POST 실패 시 로컬 구독을 **되돌린다**(유령 구독 방지). 되돌린 뒤에는 사용자가 토글을 다시 켜기 전까지 복구되지 않는다. → "켜져 있었음" 마커를 영속화(`localStorage`/IndexedDB)하고 `PushReconciler`가 그 마커를 보고 재구독하도록 |
 | 6 | `notificationclick`이 **이미 열린 채팅 탭을 못 찾고 새 탭을 연다** | v2 M1 (PR #17 리뷰, P2로 defer) | P2 | 🔴 **Open** | `service-worker.ts:57` — payload의 `url`은 **상대 경로**(`/groups/...`)인데 `WindowClient.url`은 **절대 URL**이라 `c.url === url` 비교가 항상 실패한다. → `new URL(url, self.location.origin).href`로 정규화한 뒤 비교 |
 | 7 | **ruff 실행 방식 불일치** — `uvx ruff`가 프로젝트 핀을 무시하고 최신 버전을 받음 | v2 M1/M2 품질 게이트 실행 중 발견 | P3 | 🔴 **Open** | `pyproject.toml`은 `ruff>=0.8.0`(락 0.15.17)인데 `uvx ruff`는 0.16.0을 받아와 **무관한 기존 파일까지 무더기로 지적**한다. `uv run ruff`는 clean. → 게이트 문서·스크립트를 `uv run ruff`로 통일하고(로드맵 §8 반영 완료), 필요하면 `ruff==` 상한 핀 |
+| 8 | 채팅 첨부의 **원본 파일명 미저장** — 다운로드 파일명이 `jamye-{media_id}.{ext}` | v2 M3 (PR #21, 범위에서 제외) | P3 | 🔴 **Open** | `message_media`에 `filename` 컬럼이 없어 서버가 이름을 합성한다. 사용자가 보낸 `IMG_4821.jpg`가 저장 시 의미 없는 이름이 된다. → nullable `filename` 컬럼 + 마이그레이션 1건. 업로드 시점에 `File.name`은 이미 클라가 갖고 있다 |
+| 9 | 채팅 첨부 **orphan 객체 정리 없음** | v2 M3 (PR #21, 구조적) | P3 | 🔴 **Open** | 업로드는 성공했는데 WS 전송이 실패하면 MinIO 객체만 남는다. 메시지 삭제 기능 자체가 없어 지금은 누수 경로가 이것 하나뿐이고 발생 빈도도 낮다. → 메시지 삭제를 만들 때 함께 설계(예: `object_key` 기준 미참조 객체 배치 정리) |
+| 10 | `partysocket` 의존성이 **설치만 되고 미사용** | 기획-구현 드리프트 (tech-stack에 문서화됨) | P3 | 🔴 **Open** | 실시간은 표준 `WebSocket`을 직접 쓰고 재연결도 `ChatRoom.svelte`가 관리한다. 번들에는 안 들어가지만 의존성 목록이 실제와 다르다. → `bun remove partysocket`(bun.lock 변경 시 `infra/frontend.nix` FOD 해시 재생성 필요) |
 
 > **현황**: #1·#3·#4 해소. #2(cookie LOW)는 정적 SPA라 **비취약으로 수용**(문서화) — 프론트가 kit 서버 쿠키 코드를 실행하지 않음. `bun audit` = 1 low (cookie, 비취약) / 0 high.
-> **미해결**: #5·#6(v2 M1 푸시 P2 — 기능은 동작하나 엣지 케이스), #7(ruff 게이트 정합성).
+> **미해결**: #5·#6(v2 M1 푸시 P2 — 기능은 동작하나 엣지 케이스), #7(ruff 게이트 정합성), #8·#9(v2 M3 후속), #10(미사용 의존성).

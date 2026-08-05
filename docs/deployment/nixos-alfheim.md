@@ -362,6 +362,9 @@ journalctl -u jamye-plz-minio-bucket --no-pager
 - WebSocket `/api/ws`는 두 Caddy 계층을 모두 투명하게 통과합니다(별도 설정 불필요 —
   Caddy가 Upgrade를 자동 프록시).
 - DB는 peer 인증을 쓰므로 `DATABASE_URL`에 비밀번호가 없고 시크릿이 아닙니다.
-- 단일 호스트 배포입니다. 헬스체크 기반 자동 롤백이 필요하면 추후 `deploy-rs`를
-  도입할 수 있지만, 호스트 1대에는 `nixos-rebuild --rollback`으로 충분합니다.
-```
+- 앱 호스트는 alfheim 1대입니다(인그레스는 yggdrasil이 담당). 헬스체크 기반 자동 롤백이
+  필요하면 추후 `deploy-rs`를 도입할 수 있지만, 호스트 1대에는 `nixos-rebuild --rollback`으로
+  충분합니다.
+- **`bun.lock`이 바뀌면** `infra/frontend.nix`의 FOD 해시를 Linux 빌더에서 재생성해야 합니다
+  (`lib.fakeHash` → `nix build .#frontend` → 출력된 `got:` 붙여넣기). 재생성하지 않으면
+  hash mismatch로 빌드가 실패합니다.

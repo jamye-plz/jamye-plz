@@ -1,8 +1,11 @@
 # 데이터 모델
 
-PostgreSQL 위 11개 테이블로 사용자·그룹·잼얘(주제)·채팅·알림을 표현한다. 권한은 RLS 대신 서비스 레이어에서 `memberships` 기반으로 강제한다.
+PostgreSQL 위 13개 테이블로 사용자·그룹·잼얘(주제)·채팅·알림을 표현한다. 권한은 RLS 대신 서비스 레이어에서 `memberships` 기반으로 강제한다.
 
-> 버전 v1 · 2026-06-16 · SSOT: plan.json
+> 갱신 2026-08-05 (v2 M3까지 반영) · 최초 v1 2026-06-16
+>
+> v1 이후 추가: `chatroom_reads`(읽음 처리, alembic `a1b2c3d4e5f6`) ·
+> `message_media`(채팅 첨부, `d4e5f6a7b8c9`·`e5f6a7b8c9d0`) · `groups.deleted_at`(`c3d4e5f6a7b8`)
 
 ---
 
@@ -26,6 +29,8 @@ erDiagram
     messages ||--o{ message_media : "첨부"
     users ||--o{ push_subscriptions : "구독"
     users ||--o{ notifications : "수신"
+    users ||--o{ chatroom_reads : "읽음"
+    chatrooms ||--o{ chatroom_reads : "읽음"
 
     users {
         id PK
@@ -112,7 +117,14 @@ erDiagram
         height
         byte_size
         duration "video only, null"
+        position "order within message"
         created_at
+    }
+    chatroom_reads {
+        id PK
+        user_id FK
+        chatroom_id FK
+        last_read_at "UNIQUE(user_id,chatroom_id)"
     }
     push_subscriptions {
         id PK
@@ -138,7 +150,8 @@ erDiagram
 - `groups` 1:N `topics`
 - `topics` 1:N `topic_media`, 1:N `topic_tags`
 - `groups` 1:N `chatrooms` (main 1개 + topic N개)
-- `chatrooms` 1:N `messages`
+- `chatrooms` 1:N `messages`, `messages` 1:N `message_media`
+- `users` N:M `chatrooms` via `chatroom_reads` (읽음 시각)
 - `users` 1:N `push_subscriptions`, 1:N `notifications`
 
 ---
@@ -313,6 +326,21 @@ erDiagram
   `now()`는 트랜잭션 내내 고정이므로 `created_at`이 전부 동일하다. 이 컬럼이 없으면 정렬 tiebreak가
   랜덤 uuid로 넘어가, 보낼 때 본 순서와 히스토리를 다시 불러온 순서가 달라진다.
 - 메시지 삭제 기능이 없어 orphan 객체 정리는 아직 없다(후속).
+
+### chatroom_reads
+사용자별·채팅방별 읽음 시각. 안 읽은 메시지 뱃지와 알림 정리의 기준이다.
+
+| 컬럼 | 타입/값 | 제약 |
+|------|---------|------|
+| id | PK | |
+| user_id | → `users` | FK |
+| chatroom_id | → `chatrooms` | FK |
+| last_read_at | timestamp | 클라가 실제로 렌더한 마지막 메시지 시각 |
+
+- **제약**: `UNIQUE(user_id, chatroom_id)` — 사용자·방 조합당 1행(upsert).
+- `last_read_at`은 서버 시각이 아니라 **클라가 실제로 화면에 그린 마지막 메시지의 시각**으로 올린다.
+  히스토리 로딩과 WS 연결 사이 틈에 도착한 메시지가 보지도 않은 채 읽음 처리되는 것을 막기 위해서다.
+  빈 방은 방 생성 시각으로 한정한다.
 
 ### push_subscriptions
 Web Push 구독 정보(VAPID).

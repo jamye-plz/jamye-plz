@@ -1,8 +1,11 @@
 # API 계약 (REST + WebSocket)
 
-백엔드 FastAPI가 노출하는 REST 엔드포인트 24개와 실시간 WebSocket 프로토콜, 인증 모델을 정리한 계약 문서다.
+백엔드 FastAPI가 노출하는 REST 엔드포인트와 실시간 WebSocket 프로토콜, 인증 모델을 정리한 계약 문서다.
 
-> 버전 v1 · 2026-06-16 · SSOT: plan.json
+> 갱신 2026-08-05 (v2 M3까지 반영) · 최초 v1 2026-06-16
+>
+> 아래 표가 모든 라우트를 담지는 않는다(실제 등록된 라우트는 37개). 목록의 진실은 코드이며,
+> 런타임에서 `GET /api/docs`(OpenAPI)로 확인할 수 있다. 이 문서는 **계약과 시맨틱**을 다룬다.
 
 ## 개요
 
@@ -206,22 +209,26 @@ REST와 **동일하게 httpOnly 쿠키의 JWT로 인증한다**. WebSocket 핸�
 
 | 메시지 | 페이로드 | 설명 |
 |---|---|---|
-| `join_room` | `{ chatroom_id }` | 채팅방 입장 (구독 시작) |
-| `leave_room` | `{ chatroom_id }` | 채팅방 퇴장 |
-| `send_message` | `{ chatroom_id, body, client_msg_id, media? }` | 메시지 전송. `client_msg_id`는 클라이언트가 생성하는 멱등 키로, 낙관적 렌더링과 ack 매칭·중복 방지에 쓴다. 서버는 이 값을 `messages`에 저장하고 unique 제약으로 멱등성을 강제한다([data-model](./data-model.md)). **`media`가 있으면 `body`는 빈 문자열이어도 된다**(이미지 단독 메시지). 둘 다 비면 거부 |
+| `join` | `{ chatroom_id }` | 채팅방 입장 (구독 시작). 이전 방은 서버가 자동으로 떠난다 — 별도 `leave`는 없다 |
+| `send_message` | `{ chatroom_id, body, client_msg_id, media? }` | 메시지 전송. `client_msg_id`는 클라이언트가 생성하는 멱등 키로, 낙관적 렌더링과 중복 방지에 쓴다. 서버는 이 값을 `messages`에 저장하고 unique 제약으로 멱등성을 강제한다([data-model](./data-model.md)). **`media`가 있으면 `body`는 빈 문자열이어도 된다**(이미지 단독 메시지). 둘 다 비면 거부 |
+| `ack` | `{ message_id }` | 클라이언트 수신 확인. 서버는 현재 아무 동작도 하지 않는다 |
 
 ### server → client
 
 | 메시지 | 페이로드 | 설명 |
 |---|---|---|
-| `message` | `{ id, chatroom_id, sender_id, body, type, created_at, media[] }` | 방의 다른 멤버에게 브로드캐스트되는 일반 메시지. `media`는 첨부가 없으면 빈 배열 |
-| `message_ack` | `{ client_msg_id, message_id }` | 전송한 메시지의 영속 완료 확인. `client_msg_id`로 낙관적 메시지를 확정 처리. 재전송이 중복으로 거부되면 기존 `message_id`를 그대로 반환한다 |
-| `system` | `{ chatroom_id, body }` | 시스템 메시지 (새 주제·첫 채팅 리마인드). `sender_id`는 null |
-| `error` | `{ code, detail }` | 처리 실패 (권한 없음, 잘못된 방 등) |
+| `message` | `{ id, chatroom_id, sender_id, sender_nickname, sender_avatar_url, client_msg_id, body, msg_type, created_at, media[] }` | 일반 메시지. **발신자에게도 그대로 echo되며, 이것이 곧 전송 확정 신호다** — 별도 ack 메시지는 없다. 클라는 `client_msg_id`로 낙관적 메시지를 찾아 교체한다. `media`는 첨부가 없으면 빈 배열 |
+| `duplicate` | `{ client_msg_id }` | 같은 `client_msg_id`로 재전송된 경우. 낙관적 메시지를 그대로 확정 처리하면 된다 |
+| `system` | `{ id?, chatroom_id?, body, created_at? }` | 시스템 메시지 (새 주제·첫 채팅 리마인드). `sender_id`는 null |
+| `error` | `{ detail }` | 처리 실패 (권한 없음, 잘못된 방, 잘못된 미디어 페이로드 등) |
 
+> **주의**: 메시지 타입 필드 이름이 방향마다 다르다 — 클라→서버는 봉투의 `type`이 메시지 종류이고,
+> 서버→클라의 `message`에서는 봉투가 `type: "message"`이므로 **메시지 본문의 종류는 `msg_type`**
+> (`user` \| `system`)으로 실려 온다.
+>
 > `presence`(접속 표시)와 `typing`(입력 중 표시)은 2차 범위다. 1차에서는 전송하지 않는다.
 
-### 흐름 1 — 메시지 전송 → ack → 브로드캐스트
+### 흐름 1 — 메시지 전송 → echo → 브로드캐스트
 
 ```mermaid
 sequenceDiagram
@@ -231,14 +238,19 @@ sequenceDiagram
     participant B as 같은 방 멤버 (클라)
 
     A->>A: 낙관적 렌더 (client_msg_id 생성)
-    A->>WS: send_message{chatroom_id, body, client_msg_id}
-    WS->>DB: 메시지 영속 (UNIQUE(sender_id, client_msg_id)로 멱등 보장)
-    WS-->>A: message_ack{client_msg_id, message_id}
-    A->>A: 낙관적 메시지 → 확정 처리
-    WS-->>B: message{id, chatroom_id, sender_id, body, ...}
+    A->>WS: send_message{chatroom_id, body, client_msg_id, media?}
+    WS->>DB: 메시지(+미디어) 영속 — 한 트랜잭션
+    Note over WS,DB: UNIQUE(sender_id, client_msg_id)로 멱등 보장
+    WS-->>A: message{... client_msg_id ...}  ← 발신자 echo
+    A->>A: client_msg_id로 낙관적 메시지 찾아 교체
+    WS-->>B: message{id, chatroom_id, sender_id, body, media[], ...}
 ```
 
-> 재연결 후 ack를 못 받아 같은 `client_msg_id`로 재전송하면, DB unique 제약에 걸려 기존 행을 그대로 쓰고 중복 영속을 막는다. 서버는 재전송에도 동일한 `message_ack`를 돌려준다.
+> **확정 신호는 별도 ack가 아니라 발신자에게 되돌아오는 `message` echo다.** 클라는 그 안의
+> `client_msg_id`로 낙관적 메시지를 찾아 서버 버전으로 교체한다.
+>
+> 재연결 후 echo를 못 받아 같은 `client_msg_id`로 재전송하면, DB unique 제약에 걸려 중복 영속이
+> 막히고 서버는 `duplicate{client_msg_id}`를 돌려준다.
 
 ### 흐름 3 — 채팅 미디어 첨부 (사진·동영상)
 

@@ -3,7 +3,7 @@
 > **재밌는 얘기 좀** — anything interesting?
 > 지인 폐쇄 그룹에서 일상의 재밌는 얘기(주제)를 가볍게 시드로 던지고, 언제든 살을 붙이며, 그 주제로 실시간 채팅하며 노는 lightweight 소셜 플랫폼.
 
-> 버전 v1 · 2026-06-16 · 본 문서 세트가 잼얘좀 v1의 정식 기획 문서다. (기계 판독용 기획 원본 `plan.json`은 로컬 세션 산출물이라 git에 포함되지 않으며, 본 `docs/`가 단일 진실 원천이다.)
+> 최초 v1 2026-06-16 · 갱신 2026-08-05(v2 M3까지). 본 문서 세트가 잼얘좀의 정식 기획 문서다. (기계 판독용 기획 원본 `plan.json`은 로컬 세션 산출물이라 git에 포함되지 않으며, 본 `docs/`가 단일 진실 원천이다.)
 
 ---
 
@@ -13,13 +13,13 @@
 |---|---|
 | **컨셉** | 셋로그(Setlog)의 폐쇄·날것·알림 참여유도 감성 차용 + 콘텐츠는 "얘기", 핵심 가치는 "그것에 대한 대화" |
 | **플랫폼** | 반응형 PWA 웹 (1차) → 네이티브 앱 + 온디바이스 AI (2차+) |
-| **프론트엔드** | SvelteKit (Svelte 5) + Tailwind v4 + shadcn-svelte · `adapter-static` SPA |
+| **프론트엔드** | SvelteKit (Svelte 5) + Tailwind v4 + daisyUI · `adapter-static` SPA |
 | **백엔드** | Python FastAPI (REST + native WebSocket) · `router→service→repository` |
 | **데이터·저장** | PostgreSQL · MinIO (S3 호환) |
-| **실시간** | FastAPI native WebSocket ↔ `partysocket` |
+| **실시간** | FastAPI native WebSocket ↔ 브라우저 표준 `WebSocket` |
 | **인증** | 자체 카카오·구글 OAuth + JWT (httpOnly 쿠키) |
 | **AI** | WASM 온디바이스 (자동 태깅 + 비생성 후속질문 추천) — 서버·외부 API 의존 0 |
-| **배포** | NixOS 홈랩 하이브리드 (인프라 = nix native services, 앱 = podman OCI) |
+| **배포** | NixOS 홈랩 — 인프라·앱 전부 nix native (uv2nix + 정적 SPA) |
 
 **v1 핵심 기능**: 폐쇄 그룹 · 잼얘 시드→enrich(텍스트+사진) · 일별 타임라인 · 주제별/그룹 메인 2층 실시간 채팅 · 리마인드 · Web Push · 온디바이스 AI · PWA
 
@@ -37,10 +37,10 @@
 | 문서 | 내용 |
 |---|---|
 | [tech-stack.md](architecture/tech-stack.md) | 전체 기술 스택 + 결정 근거(ADR 요약 6건) |
-| [data-model.md](architecture/data-model.md) | 데이터 모델 — 11개 테이블, ERD, 권한 모델 |
-| [api-contract.md](architecture/api-contract.md) | REST 24개 엔드포인트 + WebSocket 프로토콜 |
+| [data-model.md](architecture/data-model.md) | 데이터 모델 — 13개 테이블, ERD, 권한 모델 |
+| [api-contract.md](architecture/api-contract.md) | REST 엔드포인트 + WebSocket 프로토콜 계약 |
 | [on-device-ai.md](architecture/on-device-ai.md) | WASM 온디바이스 AI — 태깅·비생성 추천, 모델·라이선스 |
-| [deployment.md](architecture/deployment.md) | NixOS 하이브리드 배포 — nix 모듈·podman·시크릿·flake |
+| [deployment.md](architecture/deployment.md) | NixOS 배포 설계 — nix 모듈·시크릿·flake |
 
 ### 🗂️ 실행 (`planning/`)
 | 문서 | 내용 |
@@ -59,13 +59,13 @@
 
 ## 진행 상태
 
-> 갱신 2026-08-04
+> 갱신 2026-08-05
 
 - ✅ **디스커버리 · 기술 스택 · 정식 기획 · 문서화** — 위 문서 세트로 확정
 - ✅ **v1 구현 완료**
 - ✅ **배포 완료** — NixOS 홈랩(alfheim), `https://jamye-plz.ridewithmin.com` 운영 중
-- 🔄 **v2 진행 중** — M0 스토리지 · M1 Web Push · M2 그룹 관리 완료.
-  다음은 **M3 채팅 미디어 첨부** → M4a 음성 메시지(STT 프로바이더 미확정).
+- 🔄 **v2 진행 중** — M0 스토리지 · M1 Web Push · M2 그룹 관리 · **M3 채팅 미디어 완료**.
+  남은 것은 **M4a 음성 메시지 + STT** 하나(엔진은 faster-whisper로 확정). M4b WebRTC는 vNext.
   상세: [002-v2-roadmap.md](planning/002-v2-roadmap.md)
 
 ---

@@ -2,7 +2,10 @@
 
 잼얘좀(jamye-plz)은 홈랩에서 self-host하는 FE/BE 분리형 PWA다. 프론트는 SvelteKit SPA, 백엔드는 FastAPI, AI는 브라우저 안에서 WASM으로 돈다.
 
-> 버전 v1 · 2026-06-16 · SSOT: plan.json
+> 갱신 2026-08-05 (v2 M3까지 반영) · 최초 v1 2026-06-16
+>
+> **v1 기획 이후 실제로 달라진 선택은 각 항목에 명시했다.** 계획대로 가지 않은 것이
+> 셋 있다 — UI 킷(shadcn→daisyUI), 앱 배포 방식(podman→Nix native), WS 클라이언트(partysocket 미사용).
 
 ---
 
@@ -10,15 +13,15 @@
 
 | 영역 | 선택 | 핵심 |
 |------|------|------|
-| Frontend | SvelteKit (Svelte 5) + Tailwind v4 + shadcn-svelte 1.2.x | `adapter-static` SPA (`ssr=false`) |
+| Frontend | SvelteKit (Svelte 5) + Tailwind v4 + **daisyUI v5** | `adapter-static` SPA (`ssr=false`). shadcn-svelte에서 교체(PR #13) |
 | Backend | Python FastAPI | REST + native WebSocket, router→service→repository |
 | Database | PostgreSQL | Alembic 마이그레이션 |
 | Storage | MinIO | S3 호환, presigned PUT 업로드 |
-| Realtime | FastAPI native WebSocket ↔ partysocket | 재연결·백오프 + 직접 heartbeat |
+| Realtime | FastAPI native WebSocket ↔ **브라우저 표준 `WebSocket`** | `partysocket`은 의존성에 남아 있으나 미사용 — 재연결은 `ChatRoom.svelte`가 직접 처리 |
 | Auth | 자체 카카오·구글 OAuth + JWT | httpOnly 쿠키, 클라 가드 + FastAPI 검증 2중 |
 | AI | WASM 온디바이스 | Transformers.js + multilingual-e5-small(int8 ~118MB) |
 | Push | Web Push (VAPID) | 자체 키 생성, pywebpush 발송, vite-pwa injectManifest |
-| Deploy | NixOS 홈랩 하이브리드 | 인프라=nix native services / 앱=podman OCI |
+| Deploy | NixOS 홈랩 | 인프라·앱 **전부 nix native** (uv2nix venv + 정적 SPA). podman OCI는 미채택 |
 | Repo | 단일 모노레포 | `frontend/` + `backend/` + `nix/` |
 
 ---
@@ -30,7 +33,7 @@
 | `@vite-pwa/sveltekit` | PWA manifest + service worker(injectManifest 커스텀 SW) |
 | `@tanstack/svelte-query` v6 | 서버 상태·캐싱·무한 스크롤 |
 | `zod` (→ `sveltekit-superforms`) | 폼·입력 검증 |
-| `partysocket` | WebSocket 재연결·백오프 클라이언트 |
+| ~~`partysocket`~~ | 도입 예정이었으나 **미사용**(표준 `WebSocket` 직접 사용). 의존성만 잔존 |
 | `svelte-easy-crop` v5 | 이미지 크롭 |
 | `browser-image-compression` | 업로드 전 클라 압축 |
 | `@lucide/svelte` | 아이콘 |
@@ -66,7 +69,7 @@ AI 런타임은 별도 Web Worker에서 Transformers.js(`@huggingface/transforme
 - **선택**: SvelteKit(Svelte 5), `adapter-static`로 SPA 빌드(`ssr=false`).
 - **이유**:
   - 사전 조사 결과 GO. 백엔드가 별도 API이므로 SSR 서버가 불필요 → 정적 SPA로 단순화하고 CDN/정적 서빙에 얹는다.
-  - 실시간은 **`socket.io-client` 금지** — FastAPI native WebSocket과 프로토콜이 호환되지 않는다. 대신 표준 WebSocket 위에서 재연결·백오프를 주는 `partysocket`을 쓴다.
+  - 실시간은 **`socket.io-client` 금지** — FastAPI native WebSocket과 프로토콜이 호환되지 않는다. 표준 `WebSocket`을 직접 쓴다(`partysocket`을 쓰려 했으나 결국 도입하지 않았고, 재연결·백오프는 `ChatRoom.svelte`가 직접 관리한다).
 
 ### ADR-4. 인증 2중화 (클라 가드 + 서버 검증)
 
@@ -86,8 +89,13 @@ AI 런타임은 별도 Web Worker에서 Transformers.js(`@huggingface/transforme
 ### ADR-6. NixOS 하이브리드 배포
 
 - **대안**: 전부 컨테이너, 혹은 전부 nix 패키징.
-- **선택**: 인프라(PostgreSQL/MinIO/Caddy/Redis)는 NixOS native services, 앱(FastAPI/SvelteKit)은 podman OCI 컨테이너.
-- **이유**: 인프라는 nix 모듈이 성숙하고 선언적 백업·ACME를 그대로 누린다. 앱은 nix 패키징 시 `uv.lock`/`npmDepsHash` 재해시 마찰이 커 컨테이너로 우회한다. 상세 [`./deployment.md`](./deployment.md).
+- **선택(당시)**: 인프라(PostgreSQL/MinIO/Caddy/Redis)는 NixOS native services, 앱은 podman OCI 컨테이너.
+- **이유(당시)**: 앱을 nix로 패키징하면 `uv.lock`/`npmDepsHash` 재해시 마찰이 클 것으로 봤다.
+- **⚠️ 실제 결과 — 앱도 nix native로 갔다.** `uv2nix`(uv.lock을 그대로 읽음)와 bun FOD로 마찰이
+  예상보다 작았고, podman 레이어를 없애 배포 단순성을 얻었다. 남은 마찰은 **bun.lock이 바뀔 때마다
+  FOD 해시를 Linux 빌더에서 재생성**해야 한다는 점 하나다(`infra/frontend.nix`).
+  `docker-compose.yml`은 로컬 개발용으로만 남아 있다. 상세 [`./deployment.md`](./deployment.md).
+- **Redis는 아직 미도입** — M4a(음성 STT)에서 arq와 함께 들어올 예정이다(D8).
 
 ---
 
