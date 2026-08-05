@@ -473,7 +473,8 @@ large-v3 한국어 CER 정확값, large-v3-turbo의 한국어 품질. 공개 CPU
   명시적 트랜잭션. 모델 변경 시 **alembic 마이그레이션 필수**(up/down 검증).
   게이트: `uv run pytest` · **`uv run ruff check/format`** · `npx pyright --project pyrightconfig.json` = 0.
   > `uvx ruff`는 **프로젝트 핀을 무시하고 최신 ruff를 받아** 기존 파일까지 무더기로 지적한다.
-  > 반드시 `uv run`(락파일 버전)으로 돌릴 것 — [tech-debt-tracker.md](./tech-debt-tracker.md) #7.
+  > 반드시 `uv run`(락파일 버전)으로 돌릴 것. `uv run poe lint` / `uv run poe format`이 정식 경로다
+  > — [tech-debt-tracker.md](./tech-debt-tracker.md) #7.
 - **Frontend**: Svelte 5 runes · Tailwind v4 + daisyUI · 내부 네비 `resolve()`(`$app/paths`) · bulk-suppression 금지.
   게이트: `bunx eslint .` = 0 · `bun run check` = 0/0 · `bunx prettier --check .` · `bun run build` = 0.
 - **공통**: Conventional Commits(scope별 분리) · UI 문자열 한국어(i18n 규칙) · `bun.lock` 변경 시
