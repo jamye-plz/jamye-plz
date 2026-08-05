@@ -33,6 +33,10 @@ class MessageMedia(Base):
     byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Seconds. Video only; null for images.
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Order within the message. created_at is identical across a message's
+    # attachments (one transaction, stable now()), so without this the ordering
+    # tiebreak is a random uuid and reloaded history reshuffles the set.
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # relationships

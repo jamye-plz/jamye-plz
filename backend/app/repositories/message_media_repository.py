@@ -32,8 +32,11 @@ class MessageMediaRepository:
                 height=item.get("height"),
                 byte_size=item.get("byte_size"),
                 duration=item.get("duration"),
+                # Sender's pick order. Stored, because created_at ties within
+                # the transaction and the uuid tiebreak is random.
+                position=i,
             )
-            for item in items
+            for i, item in enumerate(items)
         ]
         self._db.add_all(rows)
         await self._db.flush()
@@ -50,7 +53,7 @@ class MessageMediaRepository:
         result = await self._db.execute(
             select(MessageMedia)
             .where(MessageMedia.message_id.in_(message_ids))
-            .order_by(MessageMedia.created_at, MessageMedia.id)
+            .order_by(MessageMedia.message_id, MessageMedia.position)
         )
         return list(result.scalars().all())
 
@@ -72,6 +75,6 @@ class MessageMediaRepository:
         result = await self._db.execute(
             select(MessageMedia)
             .where(MessageMedia.message_id == message_id)
-            .order_by(MessageMedia.created_at, MessageMedia.id)
+            .order_by(MessageMedia.position)
         )
         return list(result.scalars().all())

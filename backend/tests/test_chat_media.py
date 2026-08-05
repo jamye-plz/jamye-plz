@@ -365,6 +365,60 @@ async def test_download_returns_a_url_for_own_chatroom() -> None:
     assert url
 
 
+async def test_refresh_url_rejects_media_from_another_chatroom() -> None:
+    svc = make_download_service()
+    with pytest.raises(NotFoundError):
+        await svc.presign_media_view(OTHER_CHATROOM_ID, "media-1")
+
+
+async def test_refresh_url_returns_media_with_a_url() -> None:
+    svc = make_download_service()
+    out = await svc.presign_media_view(CHATROOM_ID, "media-1")
+    assert out.id == "media-1"
+    assert out.url
+
+
+# ── Attachment order ──────────────────────────────────────────────────────────
+# created_at ties across a message's attachments (one transaction, stable
+# now()), so without a stored ordinal the tiebreak is a random uuid and
+# reloaded history reshuffles what the sender picked.
+
+
+async def test_attachment_positions_follow_pick_order() -> None:
+    svc = ChatService(FakeDb())
+    svc._message_repo = FakeMessageRepo()  # type: ignore[attr-defined]
+    captured: list[dict[str, object]] = []
+
+    class RecordingMediaRepo:
+        async def create_many(
+            self, message_id: str, items: list[dict[str, object]]
+        ) -> list[MessageMedia]:
+            captured.extend(items)
+            return [
+                MessageMedia(
+                    id=f"media-{i}",
+                    message_id=message_id,
+                    type=str(item["content_type"]),
+                    object_key=str(item["object_key"]),
+                    position=i,
+                )
+                for i, item in enumerate(items)
+            ]
+
+    svc._media_repo = RecordingMediaRepo()  # type: ignore[attr-defined]
+    keys = [key_for(CHATROOM_ID, f"0000000{i}-0000-4000-8000-000000000000") for i in range(3)]
+    _, rows, _ = await svc.send_message(
+        chatroom_id=CHATROOM_ID,
+        sender_id=USER_ID,
+        body="",
+        media=[media_in(k) for k in keys],
+    )
+    # The service must hand the repo the items in the order the sender picked;
+    # the repo stamps position from that order.
+    assert [str(item["object_key"]) for item in captured] == keys
+    assert [r.position for r in rows] == [0, 1, 2]
+
+
 def test_download_filename_uses_extension_from_mime() -> None:
     assert storage.download_filename_for("abc", "image/jpeg").endswith(".jpg")
     assert storage.download_filename_for("abc", "video/mp4").endswith(".mp4")
