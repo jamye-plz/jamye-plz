@@ -68,9 +68,14 @@
 
 | 메서드 | 경로 | 설명 | 인증 |
 |---|---|---|---|
-| GET | `/api/chatrooms/{id}/messages?cursor=` | 채팅방 메시지 히스토리 (cursor 페이지네이션) | 필요 (멤버) |
+| GET | `/api/groups/{gid}/chatrooms/{cid}/messages?cursor=` | 채팅방 메시지 히스토리 (cursor 페이지네이션). 각 메시지에 `media[]` 포함 | 필요 (멤버) |
+| POST | `/api/groups/{gid}/chatrooms/{cid}/read` | 읽음 처리 (`up_to`까지) | 필요 (멤버) |
+| POST | `/api/groups/{gid}/chatrooms/{cid}/media/presign` | 채팅 첨부 업로드 URL 발급 (사진·동영상) | 필요 (멤버) |
+| GET | `/api/groups/{gid}/chatrooms/{cid}/media/{mid}/url` | 만료된 첨부의 조회 URL 재발급 (단건) | 필요 (멤버) |
+| GET | `/api/groups/{gid}/chatrooms/{cid}/media/{mid}/download` | 첨부 다운로드 — 서명된 URL로 **307 리다이렉트** | 필요 (멤버) |
 
 > 실시간 메시지 송수신은 REST가 아니라 WebSocket으로 처리한다. 이 엔드포인트는 입장 시점의 과거 메시지 로딩과 재연결 후 재동기화 용도다.
+> 첨부는 presign만 REST이고, **confirm 단계는 없다** — 업로드 후 메타데이터를 WS `send_message` 프레임에 실어 보낸다(아래 "채팅 미디어 첨부 흐름").
 
 ### push — 푸시 구독
 
@@ -203,13 +208,13 @@ REST와 **동일하게 httpOnly 쿠키의 JWT로 인증한다**. WebSocket 핸�
 |---|---|---|
 | `join_room` | `{ chatroom_id }` | 채팅방 입장 (구독 시작) |
 | `leave_room` | `{ chatroom_id }` | 채팅방 퇴장 |
-| `send_message` | `{ chatroom_id, body, client_msg_id }` | 메시지 전송. `client_msg_id`는 클라이언트가 생성하는 멱등 키로, 낙관적 렌더링과 ack 매칭·중복 방지에 쓴다. 서버는 이 값을 `messages`에 저장하고 unique 제약으로 멱등성을 강제한다([data-model](./data-model.md)) |
+| `send_message` | `{ chatroom_id, body, client_msg_id, media? }` | 메시지 전송. `client_msg_id`는 클라이언트가 생성하는 멱등 키로, 낙관적 렌더링과 ack 매칭·중복 방지에 쓴다. 서버는 이 값을 `messages`에 저장하고 unique 제약으로 멱등성을 강제한다([data-model](./data-model.md)). **`media`가 있으면 `body`는 빈 문자열이어도 된다**(이미지 단독 메시지). 둘 다 비면 거부 |
 
 ### server → client
 
 | 메시지 | 페이로드 | 설명 |
 |---|---|---|
-| `message` | `{ id, chatroom_id, sender_id, body, type, created_at }` | 방의 다른 멤버에게 브로드캐스트되는 일반 메시지 |
+| `message` | `{ id, chatroom_id, sender_id, body, type, created_at, media[] }` | 방의 다른 멤버에게 브로드캐스트되는 일반 메시지. `media`는 첨부가 없으면 빈 배열 |
 | `message_ack` | `{ client_msg_id, message_id }` | 전송한 메시지의 영속 완료 확인. `client_msg_id`로 낙관적 메시지를 확정 처리. 재전송이 중복으로 거부되면 기존 `message_id`를 그대로 반환한다 |
 | `system` | `{ chatroom_id, body }` | 시스템 메시지 (새 주제·첫 채팅 리마인드). `sender_id`는 null |
 | `error` | `{ code, detail }` | 처리 실패 (권한 없음, 잘못된 방 등) |
@@ -234,6 +239,77 @@ sequenceDiagram
 ```
 
 > 재연결 후 ack를 못 받아 같은 `client_msg_id`로 재전송하면, DB unique 제약에 걸려 기존 행을 그대로 쓰고 중복 영속을 막는다. 서버는 재전송에도 동일한 `message_ack`를 돌려준다.
+
+### 흐름 3 — 채팅 미디어 첨부 (사진·동영상)
+
+주제 미디어(presign → PUT → **confirm**)와 달리, 채팅 첨부는 **confirm이 없다**. `message_media.message_id`가
+FK라 confirm 시점에 메시지가 아직 없어 고아 행이 생기기 때문이다. 대신 업로드 후 메타데이터를
+`send_message` 프레임에 실어 보내고, 서버가 메시지 행과 미디어 행을 **한 트랜잭션**에서 만든다.
+
+```mermaid
+sequenceDiagram
+    participant C as 클라이언트
+    participant API as FastAPI (REST)
+    participant S as MinIO
+    participant WS as FastAPI (WebSocket)
+
+    C->>API: POST /api/groups/{gid}/chatrooms/{cid}/media/presign {content_type, byte_size}
+    API-->>C: {object_key: "chat/{id}/{uuid4}", upload_url, expires_in}
+    C->>S: PUT upload_url (Content-Type은 presign과 동일해야 함)
+    C->>WS: send_message{chatroom_id, body:"", client_msg_id, media:[{object_key, ...}]}
+    WS->>WS: BOLA 가드 + content_type/byte_size 재검증
+    WS-->>C: message{..., media:[{id, url(presigned GET), ...}]}
+```
+
+**요청 — `POST /api/groups/{gid}/chatrooms/{cid}/media/presign`**
+
+```json
+{ "content_type": "image/jpeg", "byte_size": 234567 }
+```
+
+**응답 201**
+
+```json
+{ "object_key": "chat/9f2c.../3b1e...", "upload_url": "https://minio.../...", "expires_in": 900 }
+```
+
+**WS `send_message`의 `media` 항목**
+
+```json
+{ "object_key": "chat/9f2c.../3b1e...", "content_type": "image/jpeg",
+  "width": 1024, "height": 768, "byte_size": 234567, "duration": null }
+```
+
+**제약**
+
+| 항목 | 값 |
+|---|---|
+| 허용 MIME | `image/jpeg` · `image/png` · `image/webp` · `image/gif` · `video/mp4` |
+| 이미지 최대 | 10 MiB |
+| 동영상 최대 | **50 MiB** (presigned PUT이 통과하는 Cloudflare 무료 플랜 100MB 본문 제한 고려) |
+| 메시지당 개수 | 최대 4 |
+| 위반 시 | presign은 422, WS는 `{"type":"error","detail":...}` |
+
+- **BOLA 가드**: `object_key`는 `chat/{chatroom_id}/{uuid4}` 형식(단일 세그먼트)이어야 한다. 타 채팅방에서
+  발급된 키를 첨부하려는 시도는 거부된다.
+- 클라이언트가 보낸 `content_type`·`byte_size`는 **서버가 재검증**한다.
+- 조회 URL은 접근 정책 B의 단기 presigned GET(600초)이다. 채팅 화면은 오래 열려 있어 세션 도중 만료되므로,
+  클라이언트는 로드 실패 시 `GET .../media/{mid}/url`로 **해당 첨부 하나만** 재발급받는다.
+  히스토리 페이지 재조회로는 안 된다 — 스크롤로 불러온 옛 메시지는 최신 페이지에 없어서 영영 복구되지 않는다.
+  첨부당 재시도 횟수는 제한한다(객체가 실제로 사라진 경우 무한 루프 방지).
+- 한 메시지의 첨부 순서는 `position` 컬럼으로 보존한다. 같은 트랜잭션에서 삽입돼 `created_at`이 동일하므로,
+  이 컬럼이 없으면 정렬이 랜덤 uuid로 넘어가 **히스토리를 다시 불러올 때마다 순서가 뒤바뀐다**.
+
+**다운로드 — `GET .../media/{mid}/download`**
+
+미디어는 앱과 다른 오리진(MinIO)에 있어 HTML `download` 속성이 무시된다. 그래서 저장을 강제하려면
+**서명에 `response-content-disposition: attachment`를 넣어야** 한다. 이를 히스토리 응답마다 URL 2개로
+내려보내는 대신 리다이렉트 엔드포인트로 처리한다 — payload가 늘지 않고, **클릭 시점에 권한을 다시 검증**한다.
+
+- 멤버십 + 채팅방-그룹 소속 확인 후, `media_id`가 **이 채팅방의 메시지에 속하는지 조인으로 재확인**한다.
+  이 조인이 인가 그 자체다. 없으면 `media_id` 추측만으로 아무 그룹의 첨부나 받아갈 수 있다(IDOR).
+- 파일명은 원본을 저장하지 않으므로 `jamye-{media_id}.{ext}`로 생성한다.
+- **307**을 쓴다(캐시되지 않음). 대상 URL은 수 분 내 만료되므로 재사용되면 안 된다.
 
 ### 흐름 2 — 새 주제 → 리마인드 시스템 메시지
 

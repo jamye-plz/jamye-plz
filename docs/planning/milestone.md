@@ -2,11 +2,21 @@
 
 v1 구현을 **마일스톤** 기준으로 재정비한 진행 문서다. 구 `tasks.md`(T1~T16)를 흡수·대체하며, 구현 순서의 SSOT 역할을 한다.
 
-> 버전 v1 · 갱신 2026-06-17
+> 버전 v1 · 갱신 2026-08-04
+>
+> **v1은 종료되고 배포까지 끝났다.** 이 문서는 v1 실행 기록으로 보존한다.
+> 진행 중인 작업은 [002-v2-roadmap.md](./002-v2-roadmap.md)를 따른다.
 
 제품 개요는 [README](../README.md), 기능 명세는 [features](../product/features.md), API·AI 설계는 [architecture](../architecture/) 디렉터리를 참고한다.
 
-## 현재 상태 (2026-06-17)
+## 현재 상태 (2026-08-04)
+
+- **v1 완료 + alfheim 배포 완료.** `https://jamye-plz.ridewithmin.com` 운영 중.
+- **v2 진행 중** — M0(스토리지, #16) · M1(Web Push, #17) · M2(그룹 관리, #18) 완료,
+  인프라 배선(#19 MinIO · #20 버킷 프로비저닝) 완료. 다음은 M3(채팅 미디어).
+  상세는 [002-v2-roadmap.md](./002-v2-roadmap.md).
+
+### v1 기록 (2026-06-17 시점)
 
 - **PR #1** (기획 docs) 머지 — 기획·아키텍처 문서 확정.
 - **PR #2** (v1 백본) 머지 — FastAPI(router/service/repository) + 모델 11개 + 그룹/멤버십/초대/권한 + 토픽 시드·enrich + 주제별/메인 채팅방·실시간 WS·메시지 영속·히스토리 + 새 주제 리마인드 + OAuth 골격(dev 스텁) + push 구독 엔드포인트. 리뷰 29 스레드 반영.
@@ -22,14 +32,16 @@ v1 구현을 **마일스톤** 기준으로 재정비한 진행 문서다. 구 `t
 
 ## 마일스톤 개요
 
+> ⚠️ 아래 M0~M4는 **v1 마일스톤**이다. v2 로드맵의 M0~M4와 번호가 겹치지만 별개다.
+
 | 마일스톤 | 목표 | 관련 태스크 | 상태 |
 |---|---|---|---|
-| **M0** | 1차 기능 완성 & QA (+실 OAuth) | T2·T3·T4·T5·T6·T7·T10·T14(인앱) | 진행 예정 |
-| **M1** | 사진 업로드 | T8 | 대기 |
-| **M2** | 알림 완성 | T11·T14(발송) | 대기 |
-| **M3** | 온디바이스 AI | T12·T13 | 대기 |
-| **M4** | 마감·품질 → ✋ 사용성 테스트 | T16(핵심) | 대기 |
-| **배포** | NixOS 배포 (테스트 통과 후) | T15·T16(E2E) | 대기 |
+| **M0** | 1차 기능 완성 & QA (+실 OAuth) | T2·T3·T4·T5·T6·T7·T10·T14(인앱) | ✅ 완료 |
+| **M1** | 사진 업로드 | T8 | 🟡 백엔드 완료(v2 M0 #16) / FE 크롭·압축 미구현 |
+| **M2** | 알림 완성 | T11·T14(발송) | 🟡 Web Push 발송 완료(v2 M1 #17) / 첫 채팅 리마인드 미구현 |
+| **M3** | 온디바이스 AI | T12·T13 | 🔴 미착수 — `@huggingface/transformers` 의존성도 제거됨(기술부채 #4) |
+| **M4** | 마감·품질 → ✋ 사용성 테스트 | T16(핵심) | 🟡 사용성 테스트 통과(배포됨) / 자동 E2E 없음 |
+| **배포** | NixOS 배포 (테스트 통과 후) | T15·T16(E2E) | ✅ 완료 — alfheim 운영 중 |
 
 ---
 
@@ -89,22 +101,22 @@ v1 구현을 **마일스톤** 기준으로 재정비한 진행 문서다. 구 `t
 
 | id | 에픽 | 제목 | 마일스톤 | 상태 |
 |---|---|---|---|---|
-| T1 | 기반 | 모노레포 + nix flake devshell + podman 이미지 | 배포 | 🟡 모노레포✅ / flake·앱이미지❌ |
-| T2 | 기반 | FastAPI 구조 + Postgres + Alembic | M0 | 🟡 구조·DB✅ / Alembic❌ |
-| T3 | 기반 | 데이터 모델 마이그레이션(전체 엔티티) | M0 | 🟡 모델✅ / 마이그레이션❌ |
-| T4 | E1 | 카카오·구글 OAuth + JWT 쿠키 + `/api/me` + 프로필 | M0 | 🟡 골격·스텁✅ / 실 OAuth❌ |
-| T5 | 기반 | SvelteKit SPA + Tailwind + shadcn-svelte + PWA + 인증가드 | M0 | 🟡 SPA·Tailwind·가드✅ / shadcn·PWA❌ |
-| T6 | E2 | 그룹 CRUD + 멤버십 + 초대코드/링크 + 권한 | M0 | 🟢 백엔드✅ / 초대 참여 UI❌ |
-| T7 | E3 | 잼얘 시드 + enrich(텍스트) + 일별 타임라인(무한스크롤) | M0 | 🟡 시드·enrich✅ / 타임라인 FE❌ |
-| T8 | E3 | 사진 업로드(MinIO presigned PUT + 크롭/압축) | M1 | 🔴 |
+| T1 | 기반 | 모노레포 + nix flake devshell + podman 이미지 | 배포 | 🟡 모노레포·flake✅ / **podman OCI 미채택** — Nix native(uv2nix venv + 정적 SPA)로 배포 |
+| T2 | 기반 | FastAPI 구조 + Postgres + Alembic | M0 | 🟢 |
+| T3 | 기반 | 데이터 모델 마이그레이션(전체 엔티티) | M0 | 🟢 |
+| T4 | E1 | 카카오·구글 OAuth + JWT 쿠키 + `/api/me` + 프로필 | M0 | 🟢 프로덕션 실 로그인 동작 |
+| T5 | 기반 | SvelteKit SPA + Tailwind + shadcn-svelte + PWA + 인증가드 | M0 | 🟡 SPA·Tailwind·가드·PWA✅ / **shadcn 대신 daisyUI 채택**(PR #13) |
+| T6 | E2 | 그룹 CRUD + 멤버십 + 초대코드/링크 + 권한 | M0 | 🟢 초대 참여 UI(`/invite/[code]`) 포함 |
+| T7 | E3 | 잼얘 시드 + enrich(텍스트) + 일별 타임라인(무한스크롤) | M0 | 🟢 |
+| T8 | E3 | 사진 업로드(MinIO presigned PUT + 크롭/압축) | M1 | 🟡 presign 실경로✅ (v2 M0 #16) / 크롭·압축 FE❌ |
 | T9 | E5 | WebSocket 인프라(FastAPI WS + 방참여/메시지/ack) | — | 🟢 (partysocket 미사용, native WS) |
-| T10 | E5 | 주제별 + 그룹 메인 채팅방 + 메시지 영속·히스토리 | M0 | 🟢 / 발신자 표시 잔여 |
-| T11 | E5 | 리마인드(새 주제/첫 채팅 → 시스템 메시지 + 알림) | M2 | 🟡 새 주제✅ / 첫 채팅❌ |
+| T10 | E5 | 주제별 + 그룹 메인 채팅방 + 메시지 영속·히스토리 | M0 | 🟢 발신자 표시 포함 |
+| T11 | E5 | 리마인드(새 주제/첫 채팅 → 시스템 메시지 + 알림) | M2 | 🟡 새 주제✅ / 첫 채팅❌ (`chat_started` 생산자 없음) |
 | T12 | E3 | WASM 자동 태깅(Transformers.js + e5-small, Worker) | M3 | 🔴 |
 | T13 | E5 | WASM 살 붙이기 비생성 추천(질문뱅크 + e5) | M3 | 🔴 |
-| T14 | E6 | Web Push(VAPID, pywebpush) + 인앱 알림 + iOS 설치유도 | M0(인앱)·M2(발송) | 🟡 구독·인앱·발송✅ (v2 M1) / iOS❌ |
-| T15 | 배포 | NixOS flake + 시크릿 + Caddy + cloudflared | 배포 | 🔴 |
-| T16 | QA | 통합 테스트 + 핵심 E2E + 배포 검증 | M4·배포 | 🔴 |
+| T14 | E6 | Web Push(VAPID, pywebpush) + 인앱 알림 + iOS 설치유도 | M0(인앱)·M2(발송) | 🟢 **발송 완료** (v2 M1 #17, 배포 후 실기기 수신 검증) / iOS 설치유도❌ |
+| T15 | 배포 | NixOS flake + 시크릿 + Caddy + cloudflared | 배포 | 🟢 alfheim 운영 중 (+MinIO #19·#20) |
+| T16 | QA | 통합 테스트 + 핵심 E2E + 배포 검증 | M4·배포 | 🟡 백엔드 pytest·배포 수동 검증✅ / 자동 E2E❌ |
 
 ## 부록 B — 의존성·트랙·동기 지점
 

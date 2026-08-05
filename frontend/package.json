@@ -48,6 +48,7 @@
 		"dompurify": "^3.4.11",
 		"embla-carousel-svelte": "^8.6.0",
 		"embla-carousel-wheel-gestures": "^8.1.0",
+		"heic-to": "^1.5.2",
 		"marked": "^18.0.5",
 		"partysocket": "^1.2.0",
 		"svelte-easy-crop": "^5.0.1",

@@ -4,18 +4,26 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, MessageIdempotencyError, NotFoundError
+from app.core import storage
+from app.core.exceptions import (
+    ForbiddenError,
+    MessageIdempotencyError,
+    NotFoundError,
+    ValidationError,
+)
 from app.models.chatroom import Chatroom
 from app.models.message import Message
+from app.models.message_media import MessageMedia
 from app.repositories.chatroom_read_repository import ChatroomReadRepository
 from app.repositories.group_repository import (
     ChatroomRepository,
     GroupRepository,
     MembershipRepository,
 )
+from app.repositories.message_media_repository import MessageMediaRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.chat import MessageOut
+from app.schemas.chat import MessageMediaIn, MessageMediaOut, MessageOut
 
 
 class ChatService:
@@ -27,6 +35,7 @@ class ChatService:
         self._group_repo = GroupRepository(db)
         self._user_repo = UserRepository(db)
         self._chatroom_read_repo = ChatroomReadRepository(db)
+        self._media_repo = MessageMediaRepository(db)
 
     async def get_chatroom_or_404(self, chatroom_id: str) -> Chatroom:
         chatroom = await self._chatroom_repo.get_by_id(chatroom_id)
@@ -59,14 +68,84 @@ class ChatService:
             raise ForbiddenError("You are not a member of this group")
         return chatroom
 
+    @staticmethod
+    def validate_object_key_for_chatroom(chatroom_id: str, object_key: str) -> None:
+        """Reject object keys that were not minted for this chatroom (BOLA guard).
+
+        The presign endpoint always mints keys shaped `chat/{chatroom_id}/{uuid4}`.
+        Without this check a member of group B could attach an object_key they
+        merely observed (from group A's presign response, or from a message they
+        once had access to), and the presigned GET issued for their own message
+        would hand their groupmates read access to an object they were never
+        authorized to see. Same threat and same shape as
+        TopicService.validate_object_key_for_topic.
+        """
+        prefix = f"chat/{chatroom_id}/"
+        if not object_key.startswith(prefix):
+            raise ValidationError("object_key does not belong to this chatroom")
+        suffix = object_key[len(prefix) :]
+        if not suffix or "/" in suffix:
+            raise ValidationError("object_key must be a single path segment under this chatroom")
+
+    def _validate_media(
+        self, chatroom_id: str, media: list[MessageMediaIn]
+    ) -> list[dict[str, object]]:
+        """Re-validate client-claimed attachments and normalise them for the repo.
+
+        Everything on the WS frame is client-supplied. The pydantic model already
+        checked the MIME allowlist and the per-kind cap; this adds the count limit
+        and the per-chatroom key guard, which need context the schema lacks.
+        """
+        if len(media) > storage.MAX_MEDIA_PER_MESSAGE:
+            raise ValidationError(
+                f"a message may carry at most {storage.MAX_MEDIA_PER_MESSAGE} attachments"
+            )
+        seen: set[str] = set()
+        items: list[dict[str, object]] = []
+        for m in media:
+            self.validate_object_key_for_chatroom(chatroom_id, m.object_key)
+            # Two rows pointing at the same object would render the same picture
+            # twice and double-count against the limit.
+            if m.object_key in seen:
+                raise ValidationError("duplicate object_key in media")
+            seen.add(m.object_key)
+            items.append(
+                {
+                    "object_key": m.object_key,
+                    "content_type": m.content_type,
+                    "width": m.width,
+                    "height": m.height,
+                    "byte_size": m.byte_size,
+                    # duration only makes sense for video; drop a stray value on
+                    # an image so the row can't claim a bogus length.
+                    "duration": m.duration if m.content_type in storage.VIDEO_MIME_TYPES else None,
+                }
+            )
+        return items
+
     async def send_message(
         self,
         chatroom_id: str,
         sender_id: str,
         body: str,
         client_msg_id: str | None = None,
-    ) -> tuple[Message, bool]:
-        """Return (message, is_new). Raises MessageIdempotencyError on duplicate."""
+        media: list[MessageMediaIn] | None = None,
+    ) -> tuple[Message, list[MessageMedia], bool]:
+        """Return (message, media_rows, is_new).
+
+        Raises MessageIdempotencyError on duplicate, ValidationError when the
+        payload carries neither text nor attachments, or when an attachment
+        fails the allowlist/cap/key checks.
+
+        The message row and its media rows are written in ONE transaction: there
+        is no confirm endpoint, so a partial write would leave a message that
+        renders as blank text with no picture.
+        """
+        media = media or []
+        if not body and not media:
+            raise ValidationError("message must have a body or at least one attachment")
+        media_values = self._validate_media(chatroom_id, media)
+
         if client_msg_id:
             existing = await self._message_repo.get_by_client_msg_id(sender_id, client_msg_id)
             if existing:
@@ -77,9 +156,56 @@ class ChatService:
             sender_id=sender_id,
             client_msg_id=client_msg_id,
         )
+        media_rows: list[MessageMedia] = []
+        if media_values:
+            media_rows = await self._media_repo.create_many(message.id, media_values)
         await self._db.commit()
         await self._db.refresh(message)
-        return message, True
+        return message, media_rows, True
+
+    async def presign_media_view(self, chatroom_id: str, media_id: str) -> MessageMediaOut:
+        """Reissue the inline (viewing) URL for one attachment.
+
+        History pages in older messages as the user scrolls, and those URLs
+        expire independently. Refetching the newest page would not contain an
+        older message at all, so its picture would stay broken forever — hence
+        a per-attachment refresh rather than a page reload.
+        """
+        media = await self._media_repo.get_in_chatroom(media_id, chatroom_id)
+        if media is None:
+            raise NotFoundError("Media", media_id)
+        return self.media_out([media])[0]
+
+    async def presign_media_download(self, chatroom_id: str, media_id: str) -> str:
+        """Signed URL that saves the attachment instead of opening it.
+
+        Caller must have already passed the membership gate. The repository
+        join re-checks that this attachment really belongs to this chatroom, so
+        a guessed media_id from another group cannot be downloaded.
+        """
+        media = await self._media_repo.get_in_chatroom(media_id, chatroom_id)
+        if media is None:
+            raise NotFoundError("Media", media_id)
+        return storage.presign_get(
+            media.object_key,
+            download_filename=storage.download_filename_for(media.id, media.type),
+        )
+
+    @staticmethod
+    def media_out(rows: list[MessageMedia]) -> list[MessageMediaOut]:
+        """Attach a short-TTL presigned GET to each row (access policy B)."""
+        return [
+            MessageMediaOut(
+                id=r.id,
+                url=storage.presign_get(r.object_key),
+                content_type=r.type,
+                width=r.width,
+                height=r.height,
+                byte_size=r.byte_size,
+                duration=r.duration,
+            )
+            for r in rows
+        ]
 
     async def get_main_chatroom(self, group_id: str) -> Chatroom:
         chatroom = await self._chatroom_repo.get_main_by_group(group_id)
@@ -123,7 +249,7 @@ class ChatService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> tuple[list[MessageOut], str | None]:
-        """History enriched with each message's sender nickname."""
+        """History enriched with each message's sender nickname and attachments."""
         messages, next_cursor = await self._message_repo.list_by_chatroom(
             chatroom_id, cursor=cursor, limit=limit
         )
@@ -134,6 +260,13 @@ class ChatService:
             if user:
                 nicknames[sid] = user.nickname
                 avatars[sid] = user.avatar_url
+
+        # One query for the whole page, then group in memory — a per-message
+        # lookup here would be an N+1 on every history load and every scroll.
+        media_by_message: dict[str, list[MessageMedia]] = {}
+        for row in await self._media_repo.list_by_message_ids([m.id for m in messages]):
+            media_by_message.setdefault(row.message_id, []).append(row)
+
         out = [
             MessageOut(
                 id=m.id,
@@ -145,6 +278,7 @@ class ChatService:
                 body=m.body,
                 type=m.type,
                 created_at=m.created_at,
+                media=self.media_out(media_by_message.get(m.id, [])),
             )
             for m in messages
         ]

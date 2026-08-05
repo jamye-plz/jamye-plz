@@ -27,9 +27,25 @@ from app.core.config import get_settings
 IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"})
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB
 
-# Extension point for M4a voice messages — not wired into any validator yet.
+# Wired into chat media validation (M3). Kept to mp4 only per decision D5
+# (direct playback, no thumbnailing or transcoding).
 VIDEO_MIME_TYPES = frozenset({"video/mp4"})
-MAX_VIDEO_BYTES = 100 * 1024 * 1024  # 100 MiB
+# 50 MiB, NOT 100: the browser PUTs straight to MINIO_ENDPOINT, which in
+# production is a Cloudflare-tunnelled hostname. Cloudflare's free plan caps a
+# request body at 100 MB, so a 100 MiB (104,857,600 B) upload would be rejected
+# at the edge — before it ever reaches MinIO — with an error the presign flow
+# cannot explain to the user.
+MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MiB
+
+# Everything a chat message may carry (M3: photos + video).
+CHAT_MEDIA_MIME_TYPES = IMAGE_MIME_TYPES | VIDEO_MIME_TYPES
+MAX_MEDIA_PER_MESSAGE = 4
+
+
+def max_bytes_for(content_type: str) -> int:
+    """Per-kind upload cap. Raises KeyError-free: caller validates the MIME first."""
+    return MAX_VIDEO_BYTES if content_type in VIDEO_MIME_TYPES else MAX_IMAGE_BYTES
+
 
 PRESIGN_PUT_EXPIRES_IN = 3600  # 1 hour to complete an upload
 PRESIGN_GET_EXPIRES_IN = 600  # 10 minutes to read (short-TTL per policy B)
@@ -81,18 +97,47 @@ def presign_put(object_key: str, content_type: str, byte_size: int) -> tuple[str
     return url, PRESIGN_PUT_EXPIRES_IN
 
 
-def presign_get(object_key: str) -> str:
-    """Return a short-TTL presigned GET URL for reading private media."""
+def presign_get(object_key: str, *, download_filename: str | None = None) -> str:
+    """Return a short-TTL presigned GET URL for reading private media.
+
+    With `download_filename`, the signature also binds
+    `response-content-disposition: attachment`, so the browser saves the file
+    instead of navigating to it. This is the only way to force a download from
+    here: the object lives on a different origin (MINIO_ENDPOINT), and the HTML
+    `download` attribute is ignored cross-origin.
+    """
     settings = get_settings()
     if not settings.minio_enabled:
         return _fallback_url(object_key)
 
+    params: dict[str, str] = {"Bucket": settings.minio_bucket, "Key": object_key}
+    if download_filename:
+        # Quote-escape so a crafted filename cannot break out of the header.
+        safe = download_filename.replace('"', "")
+        params["ResponseContentDisposition"] = f'attachment; filename="{safe}"'
+
     client = get_s3_client()
     return client.generate_presigned_url(
         "get_object",
-        Params={"Bucket": settings.minio_bucket, "Key": object_key},
+        Params=params,
         ExpiresIn=PRESIGN_GET_EXPIRES_IN,
     )
+
+
+# Extension used for the download filename; the original name is not stored.
+_EXT_BY_MIME = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+}
+
+
+def download_filename_for(media_id: str, content_type: str) -> str:
+    """A stable, safe filename for a saved attachment."""
+    ext = _EXT_BY_MIME.get(content_type, "bin")
+    return f"jamye-{media_id}.{ext}"
 
 
 def ensure_bucket() -> None:
