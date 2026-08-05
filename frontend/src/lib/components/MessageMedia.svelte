@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { isVideo, type ChatMedia, type PendingMedia } from '$lib/types/chat.types';
+	import { isAudio, isVideo, type ChatMedia, type PendingMedia } from '$lib/types/chat.types';
 
 	interface Props {
 		/** Real attachments with signed URLs. Empty/omitted while `pending` is set. */
@@ -63,7 +63,7 @@
 		{#each pending as item, i (i)}
 			<div
 				class="flex w-full skeleton items-center justify-center rounded-lg"
-				style={ratio(item.width, item.height)}
+				style={item.content_type.startsWith('audio/') ? 'height:3.5rem' : ratio(item.width, item.height)}
 				role="status"
 				aria-label="전송 중"
 			>
@@ -75,7 +75,7 @@
 	<div class="mb-1 grid max-w-xs gap-1 {gridClass(media.length)}">
 		{#each media as item, i (item.id)}
 			<div class="relative w-full overflow-hidden rounded-lg">
-				{#if !loaded[item.url]}
+				{#if !loaded[item.url] && !isAudio(item.content_type)}
 					<div
 						class="absolute inset-0 flex skeleton items-center justify-center"
 						style={ratio(item.width, item.height)}
@@ -85,7 +85,34 @@
 						<span class="loading loading-sm loading-spinner text-base-content/40"></span>
 					</div>
 				{/if}
-				{#if isVideo(item.content_type)}
+				{#if isAudio(item.content_type)}
+					<!--
+						Voice message: compact player + async transcript. No skeleton —
+						an <audio> element has no intrinsic frame to reserve; browsers
+						render controls immediately while metadata streams in.
+					-->
+					<div class="w-64 max-w-full rounded-xl bg-base-200 p-2">
+						<audio
+							src={item.url}
+							controls
+							preload="metadata"
+							onerror={() => handleError(item)}
+							onloadedmetadata={() => handleLoad(item)}
+							class="h-10 w-full"
+							aria-label="음성 메시지"
+						></audio>
+						{#if item.transcript_status === 'pending'}
+							<p class="mt-1 flex items-center gap-1.5 px-1 text-xs text-base-content/50" role="status">
+								<span class="loading loading-xs loading-spinner"></span>
+								받아쓰는 중...
+							</p>
+						{:else if item.transcript_status === 'done' && item.transcript}
+							<p class="mt-1 px-1 text-xs break-keep text-base-content/70">{item.transcript}</p>
+						{:else if item.transcript_status === 'failed'}
+							<p class="mt-1 px-1 text-xs text-base-content/40">받아쓰기에 실패했어요</p>
+						{/if}
+					</div>
+				{:else if isVideo(item.content_type)}
 					<!--
 						Skeleton lifts on `loadedmetadata`, NOT `loadeddata`: with
 						preload="metadata" a browser may never fetch a frame until

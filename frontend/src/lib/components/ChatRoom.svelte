@@ -346,6 +346,22 @@
 						}
 					];
 					if (stick) tick().then(scrollToBottom);
+				} else if (data.type === 'transcript') {
+					// Async STT finished for a voice message (possibly one sent
+					// minutes ago) — patch the media entry in place. No scroll:
+					// the bubble grows a caption, the log must not jump.
+					messages = messages.map((m) =>
+						m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
+							? {
+									...m,
+									media: m.media.map((x) =>
+										x.id === data.media_id
+											? { ...x, transcript: data.transcript, transcript_status: data.status }
+											: x
+									)
+								}
+							: m
+					);
 				}
 			} catch {
 				// ignore parse errors

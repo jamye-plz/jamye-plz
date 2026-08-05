@@ -69,7 +69,9 @@ export async function uploadChatMedia(
 		width: dimensions?.width ?? null,
 		height: dimensions?.height ?? null,
 		byte_size: file.size,
-		duration: dimensions?.duration ?? null
+		duration: dimensions?.duration ?? null,
+		// Original name — the server stores it and restores it on download.
+		filename: file.name || null
 	};
 }
 

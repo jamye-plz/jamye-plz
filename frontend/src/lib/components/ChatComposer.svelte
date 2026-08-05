@@ -1,11 +1,14 @@
 <script lang="ts">
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import Mic from '@lucide/svelte/icons/mic';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import Square from '@lucide/svelte/icons/square';
 	import X from '@lucide/svelte/icons/x';
 	import { uploadChatMedia } from '$lib/api/chat.api';
 	import {
 		CHAT_MEDIA_MIME_TYPES,
 		MAX_MEDIA_PER_MESSAGE,
+		MAX_RECORDING_SECONDS,
 		isVideo,
 		maxBytesFor,
 		type ChatMediaInput
@@ -41,10 +44,126 @@
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let inputEl = $state<HTMLTextAreaElement | null>(null);
 
+	interface VoiceClip {
+		file: File;
+		/** Object URL for the preview player — revoked when removed or sent. */
+		previewUrl: string;
+		/** Seconds, measured while recording (metadata duration on a fresh
+		 *  MediaRecorder blob is unreliable — Chrome reports Infinity). */
+		duration: number;
+	}
+
+	let recording = $state(false);
+	let recordSeconds = $state(0);
+	let voiceClip = $state<VoiceClip | null>(null);
+	let recorder: MediaRecorder | null = null;
+	let recordTimer: ReturnType<typeof setInterval> | null = null;
+	// Cancel and stop share MediaRecorder.stop(); this flag tells onstop
+	// whether to keep the clip or throw it away.
+	let discardRecording = false;
+
 	const busy = $derived(uploading || converting);
 	const canSend = $derived(
-		connected && !busy && (inputText.trim().length > 0 || attachments.length > 0)
+		connected &&
+			!busy &&
+			!recording &&
+			(inputText.trim().length > 0 || attachments.length > 0 || voiceClip !== null)
 	);
+
+	// One per browser family; first supported wins. Chrome/Edge take webm/opus,
+	// iOS Safari only mp4 (AAC), Firefox ogg/opus.
+	const RECORDER_MIME_CANDIDATES = [
+		'audio/webm;codecs=opus',
+		'audio/webm',
+		'audio/mp4',
+		'audio/ogg;codecs=opus'
+	];
+
+	function fmtSeconds(total: number): string {
+		const m = Math.floor(total / 60);
+		const sec = total % 60;
+		return `${m}:${String(sec).padStart(2, '0')}`;
+	}
+
+	function stopRecordTimer() {
+		if (recordTimer) {
+			clearInterval(recordTimer);
+			recordTimer = null;
+		}
+	}
+
+	async function startRecording() {
+		errorText = '';
+		if (typeof MediaRecorder === 'undefined') {
+			errorText = '이 브라우저는 음성 녹음을 지원하지 않아요.';
+			return;
+		}
+		let stream: MediaStream;
+		try {
+			stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		} catch {
+			errorText = '마이크를 사용할 수 없어요. 브라우저 설정에서 권한을 허용해 주세요.';
+			return;
+		}
+		const mimeType = RECORDER_MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t));
+		const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+		const chunks: Blob[] = [];
+		discardRecording = false;
+		rec.ondataavailable = (e) => {
+			if (e.data.size > 0) chunks.push(e.data);
+		};
+		rec.onstop = () => {
+			// The tab indicator (red dot) only clears once the tracks stop.
+			stream.getTracks().forEach((t) => t.stop());
+			stopRecordTimer();
+			const seconds = recordSeconds;
+			recording = false;
+			recordSeconds = 0;
+			recorder = null;
+			if (discardRecording) return;
+			// Strip any codecs suffix — the server allowlist and the presign
+			// signature both use the bare type.
+			const contentType = (rec.mimeType || 'audio/webm').split(';')[0];
+			const blob = new Blob(chunks, { type: contentType });
+			if (blob.size === 0) return;
+			const ext = contentType === 'audio/mp4' ? 'm4a' : contentType.split('/')[1];
+			const file = new File([blob], `voice-${seconds}s.${ext}`, { type: contentType });
+			voiceClip = { file, previewUrl: URL.createObjectURL(file), duration: seconds };
+		};
+		recorder = rec;
+		recording = true;
+		recordSeconds = 0;
+		rec.start();
+		recordTimer = setInterval(() => {
+			recordSeconds += 1;
+			// Hard cap: opus at voice bitrate keeps 5 min around 1 MB, and the
+			// cap also bounds worker transcription time.
+			if (recordSeconds >= MAX_RECORDING_SECONDS) stopRecording();
+		}, 1000);
+	}
+
+	function stopRecording() {
+		if (recorder && recorder.state !== 'inactive') recorder.stop();
+	}
+
+	function cancelRecording() {
+		discardRecording = true;
+		stopRecording();
+	}
+
+	function removeVoiceClip() {
+		if (voiceClip) URL.revokeObjectURL(voiceClip.previewUrl);
+		voiceClip = null;
+		errorText = '';
+	}
+
+	// Leaving the room mid-recording must release the microphone — a live
+	// MediaStream keeps the browser's recording indicator on.
+	$effect(() => () => {
+		discardRecording = true;
+		stopRecording();
+		if (voiceClip) URL.revokeObjectURL(voiceClip.previewUrl);
+	});
 
 	function humanSize(bytes: number): string {
 		return `${Math.round(bytes / (1024 * 1024))}MB`;
@@ -176,6 +295,34 @@
 	async function send() {
 		if (!canSend) return;
 		const body = inputText.trim();
+
+		// Voice path: exactly one audio attachment, nothing else (server rule).
+		if (voiceClip) {
+			const problem = validate(voiceClip.file);
+			if (problem) {
+				errorText = problem;
+				return;
+			}
+			uploading = true;
+			errorText = '';
+			try {
+				const uploaded = await uploadChatMedia(groupId, chatroomId, voiceClip.file, {
+					duration: voiceClip.duration
+				});
+				if (!onsend(body, [uploaded])) {
+					errorText = '연결이 끊겨 전송하지 못했어요. 잠시 후 다시 시도해 주세요.';
+					return;
+				}
+				inputText = '';
+				removeVoiceClip();
+			} catch {
+				errorText = '음성 메시지를 업로드하지 못했어요. 다시 시도해 주세요.';
+			} finally {
+				uploading = false;
+			}
+			return;
+		}
+
 		const pending = attachments;
 
 		if (pending.length === 0) {
@@ -243,6 +390,44 @@
 		: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
 >
 	<div class="mx-auto max-w-2xl">
+		{#if voiceClip}
+			<div class="mb-2 flex items-center gap-2 rounded-xl bg-base-200 px-3 py-2">
+				<audio src={voiceClip.previewUrl} controls preload="metadata" class="h-10 min-w-0 flex-1"
+				></audio>
+				<span class="shrink-0 text-xs text-base-content/60">{fmtSeconds(voiceClip.duration)}</span>
+				<button
+					type="button"
+					onclick={removeVoiceClip}
+					disabled={busy}
+					class="btn btn-square shrink-0 btn-ghost btn-sm"
+					aria-label="녹음 삭제"
+				>
+					<X class="h-4 w-4" />
+				</button>
+			</div>
+		{/if}
+
+		{#if recording}
+			<div class="mb-2 flex items-center gap-3 rounded-xl bg-base-200 px-3 py-2" role="status">
+				<span class="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-error" aria-hidden="true"
+				></span>
+				<span class="text-sm text-base-content">녹음 중 {fmtSeconds(recordSeconds)}</span>
+				<span class="flex-1"></span>
+				<button type="button" onclick={cancelRecording} class="btn btn-ghost btn-sm" aria-label="녹음 취소">
+					취소
+				</button>
+				<button
+					type="button"
+					onclick={stopRecording}
+					class="btn btn-sm btn-error"
+					aria-label="녹음 종료"
+				>
+					<Square class="h-3.5 w-3.5" />
+					종료
+				</button>
+			</div>
+		{/if}
+
 		{#if attachments.length > 0}
 			<div class="mb-2 flex flex-wrap gap-2">
 				{#each attachments as a, i (a.previewUrl)}
@@ -298,11 +483,23 @@
 			<button
 				type="button"
 				onclick={() => fileInput?.click()}
-				disabled={busy || attachments.length >= MAX_MEDIA_PER_MESSAGE}
+				disabled={busy || recording || voiceClip !== null || attachments.length >= MAX_MEDIA_PER_MESSAGE}
 				class="btn btn-square shrink-0 btn-ghost"
 				aria-label="사진 또는 동영상 첨부"
 			>
 				<Paperclip class="h-5 w-5" />
+			</button>
+			<!-- Tap-to-toggle recording. Disabled with photo attachments present:
+			     the server enforces that audio rides alone on a message. -->
+			<button
+				type="button"
+				onclick={() => (recording ? stopRecording() : startRecording())}
+				disabled={busy || voiceClip !== null || attachments.length > 0}
+				class="btn btn-square shrink-0 {recording ? 'btn-error' : 'btn-ghost'}"
+				aria-label={recording ? '녹음 종료' : '음성 메시지 녹음'}
+				aria-pressed={recording}
+			>
+				<Mic class="h-5 w-5" />
 			</button>
 			<textarea
 				bind:this={inputEl}
