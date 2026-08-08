@@ -8,6 +8,8 @@
 	import { getMe } from '$lib/api/auth.api';
 	import { ApiError } from '$lib/api/client';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import { fly } from 'svelte/transition';
+	import { prefersReducedMotion } from 'svelte/motion';
 
 	// Always defined for the [id] route; assert so dependent calls stay typed.
 	const groupId = $derived(page.params.id!);
@@ -121,14 +123,19 @@
 			goto(resolve('/groups'));
 		}
 	}));
+
+	const toastFlyParams = $derived({
+		y: prefersReducedMotion.current ? 0 : 8,
+		duration: prefersReducedMotion.current ? 0 : 200
+	});
 </script>
 
-<div class="min-h-screen bg-base-100">
+<div class="min-h-dvh bg-base-100">
 	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto(resolve(`/groups/${groupId}`))}
-				class="btn -ml-2 btn-square btn-ghost btn-sm"
+				class="btn -ml-2 btn-square btn-ghost"
 				aria-label="뒤로 가기"
 			>
 				<ArrowLeft class="h-5 w-5" />
@@ -137,13 +144,16 @@
 		</div>
 	</AppHeader>
 
-	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
+	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
 		{#if groupQuery.isPending}
-			<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
 		{:else if groupQuery.isError}
 			<p class="py-8 text-center text-sm text-error">그룹 정보를 불러올 수 없습니다.</p>
 		{:else if groupQuery.data}
-			<form onsubmit={onSaveName} class="space-y-2">
+			<form
+				onsubmit={onSaveName}
+				class="elevation-1 space-y-2 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+			>
 				<fieldset class="fieldset" disabled={!isOwner}>
 					<legend class="fieldset-legend">그룹 이름</legend>
 					<div class="join w-full">
@@ -155,27 +165,36 @@
 							maxlength={128}
 							required
 							aria-label="그룹 이름"
-							class="validator input join-item flex-1 focus:border-primary focus:outline-none!"
+							class="validator input join-item min-w-0 flex-1 rounded-l-lg"
 						/>
 						<button
 							type="submit"
 							disabled={!groupName.trim() ||
 								groupName.trim() === groupQuery.data.name ||
 								rename.isPending}
-							class="btn join-item shrink-0 btn-primary"
+							class="btn join-item shrink-0 rounded-r-lg btn-primary"
 						>
 							{rename.isPending ? '저장 중...' : '저장'}
 						</button>
 					</div>
 				</fieldset>
 				{#if !isOwner}
-					<p class="px-1 text-xs text-base-content/50">그룹장만 이름을 수정할 수 있어요.</p>
+					<p class="px-1 text-xs text-[var(--color-text-muted)]">
+						그룹장만 이름을 수정할 수 있어요.
+					</p>
 				{/if}
 				{#if rename.isError}
 					<p class="px-1 text-xs text-error" role="alert">{renameErrorText(rename.error)}</p>
 				{/if}
 				{#if saved}
-					<div class="toast toast-center toast-bottom z-50">
+					<div
+						class="toast toast-center toast-bottom"
+						in:fly={toastFlyParams}
+						out:fly={{
+							y: prefersReducedMotion.current ? 0 : 8,
+							duration: prefersReducedMotion.current ? 0 : 150
+						}}
+					>
 						<div class="alert alert-success" role="status">
 							<span>저장되었어요.</span>
 						</div>
@@ -183,11 +202,11 @@
 				{/if}
 			</form>
 
-			<section class="space-y-2 border-t border-base-300 pt-4">
-				<h2 class="px-1 text-xs text-base-content/50">멤버십</h2>
+			<section class="space-y-2">
+				<h2 class="px-1 text-sm font-semibold text-base-content">멤버십</h2>
 				{#if isOwner}
 					<div
-						class="rounded-xl border border-base-300 bg-base-200 px-4 py-3 text-sm text-base-content/70"
+						class="rounded-xl bg-[var(--color-surface-raised)] px-4 py-3 text-sm text-[var(--color-text-muted)]"
 					>
 						소유권을 이양한 후 나갈 수 있어요.
 						<a href={resolve(`/groups/${groupId}/invite`)} class="link link-primary">
@@ -197,7 +216,7 @@
 				{:else}
 					<button
 						onclick={() => leaveDialog?.showModal()}
-						class="btn btn-block btn-outline"
+						class="btn btn-block rounded-lg btn-outline"
 						aria-label="그룹 나가기"
 					>
 						그룹 나가기
@@ -207,10 +226,10 @@
 
 			{#if isOwner}
 				<section class="space-y-2 border-t border-error/30 pt-4">
-					<h2 class="px-1 text-xs text-error">위험 구역</h2>
+					<h2 class="px-1 text-sm font-semibold text-error">위험 구역</h2>
 					<button
 						onclick={() => deleteDialog?.showModal()}
-						class="btn btn-block btn-outline btn-error"
+						class="btn btn-block rounded-lg btn-outline btn-error"
 						aria-label="그룹 삭제"
 					>
 						그룹 삭제
@@ -231,7 +250,7 @@
 		<h2 id="delete-group-title" class="text-base font-semibold text-base-content">
 			그룹을 삭제할까요?
 		</h2>
-		<p class="text-sm text-base-content/70">
+		<p class="text-sm text-[var(--color-text-muted)]">
 			삭제하면 이 그룹의 대화와 멤버 기록에 더 이상 접근할 수 없어요. 이 작업은 되돌릴 수 없어요.
 		</p>
 		{#if del.isError}
@@ -249,7 +268,7 @@
 			</button>
 		</div>
 	</div>
-	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">close</button></form>
+	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">닫기</button></form>
 </dialog>
 
 <dialog
@@ -262,7 +281,7 @@
 		<h2 id="leave-group-title" class="text-base font-semibold text-base-content">
 			그룹을 나갈까요?
 		</h2>
-		<p class="text-sm text-base-content/70">
+		<p class="text-sm text-[var(--color-text-muted)]">
 			나가면 다시 초대받기 전까지 이 그룹에 접근할 수 없어요.
 		</p>
 		{#if leave.isError}
@@ -280,5 +299,5 @@
 			</button>
 		</div>
 	</div>
-	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">close</button></form>
+	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">닫기</button></form>
 </dialog>

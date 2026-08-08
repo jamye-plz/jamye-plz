@@ -422,26 +422,28 @@
 		if (!el) return;
 		void inputText;
 		el.style.height = 'auto';
-		el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+		el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
 	});
 </script>
 
 <footer
-	class="shrink-0 border-t border-base-300 bg-base-100 px-4 pt-3 {keyboardOpen
+	class="elevation-2 shrink-0 border-t border-base-300 bg-[var(--color-surface-raised)] px-4 pt-3 {keyboardOpen
 		? 'pb-3'
 		: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
 >
-	<div class="mx-auto max-w-2xl">
+	<div class="mx-auto max-w-[720px]">
 		{#if voiceClip}
-			<div class="mb-2 flex items-center gap-2 rounded-xl bg-base-200 px-3 py-2">
+			<div class="mb-2 flex items-center gap-2 rounded-md bg-base-200 px-3 py-2">
 				<audio src={voiceClip.previewUrl} controls preload="metadata" class="h-10 min-w-0 flex-1"
 				></audio>
-				<span class="shrink-0 text-xs text-base-content/60">{fmtSeconds(voiceClip.duration)}</span>
+				<span class="shrink-0 text-xs text-[var(--color-text-muted)]"
+					>{fmtSeconds(voiceClip.duration)}</span
+				>
 				<button
 					type="button"
 					onclick={removeVoiceClip}
 					disabled={busy}
-					class="btn btn-square shrink-0 btn-ghost btn-sm"
+					class="btn btn-square size-11 min-h-11 shrink-0 btn-ghost"
 					aria-label="녹음 삭제"
 				>
 					<X class="h-4 w-4" />
@@ -450,7 +452,7 @@
 		{/if}
 
 		{#if recording}
-			<div class="mb-2 flex items-center gap-3 rounded-xl bg-base-200 px-3 py-2" role="status">
+			<div class="mb-2 flex items-center gap-3 rounded-md bg-base-200 px-3 py-2" role="status">
 				<span
 					class="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-error"
 					aria-hidden="true"
@@ -460,7 +462,7 @@
 				<button
 					type="button"
 					onclick={cancelRecording}
-					class="btn btn-ghost btn-sm"
+					class="btn min-h-11 btn-ghost px-3"
 					aria-label="녹음 취소"
 				>
 					취소
@@ -468,7 +470,7 @@
 				<button
 					type="button"
 					onclick={stopRecording}
-					class="btn btn-error btn-sm"
+					class="btn min-h-11 px-3 btn-error"
 					aria-label="녹음 종료"
 				>
 					<Square class="h-3.5 w-3.5" />
@@ -480,26 +482,26 @@
 		{#if attachments.length > 0}
 			<div class="mb-2 flex flex-wrap gap-2">
 				{#each attachments as a, i (a.previewUrl)}
-					<div class="relative">
+					<div class="relative m-3">
 						{#if isVideo(a.file.type)}
 							<video
 								src={a.previewUrl}
 								muted
 								preload="metadata"
-								class="h-16 w-16 rounded-lg bg-base-300 object-cover"
+								class="h-16 w-16 rounded-sm bg-base-300 object-cover"
 							></video>
 						{:else}
 							<img
 								src={a.previewUrl}
 								alt="첨부 미리보기"
-								class="h-16 w-16 rounded-lg bg-base-300 object-cover"
+								class="h-16 w-16 rounded-sm bg-base-300 object-cover"
 							/>
 						{/if}
 						<button
 							type="button"
 							onclick={() => removeAt(i)}
 							disabled={busy}
-							class="btn absolute -top-1.5 -right-1.5 btn-circle btn-neutral btn-xs"
+							class="btn absolute -top-2 -right-2 btn-circle size-11 min-h-11 btn-neutral"
 							aria-label="첨부 제거"
 						>
 							<X class="h-3 w-3" />
@@ -510,7 +512,10 @@
 		{/if}
 
 		{#if converting}
-			<p class="mb-2 flex items-center gap-2 px-1 text-xs text-base-content/60" role="status">
+			<p
+				class="mb-2 flex items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]"
+				role="status"
+			>
 				<span class="loading loading-xs loading-spinner"></span>
 				사진을 변환하는 중이에요...
 			</p>
@@ -561,7 +566,7 @@
 				placeholder="메시지 입력..."
 				rows={1}
 				disabled={busy}
-				class="textarea max-h-40 min-h-0 flex-1 resize-none overflow-y-auto focus:border-primary focus:outline-none!"
+				class="textarea max-h-[120px] min-h-[48px] min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border-[var(--color-border-strong)]"
 				aria-label="메시지 입력"></textarea>
 			<button
 				onclick={send}

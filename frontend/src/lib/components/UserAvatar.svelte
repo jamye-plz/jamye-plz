@@ -10,7 +10,7 @@
 	let {
 		url,
 		name,
-		sizeClass = 'w-9',
+		sizeClass = 'w-8',
 		textClass = 'text-sm',
 		class: extraClass = ''
 	}: Props = $props();

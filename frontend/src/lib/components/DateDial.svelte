@@ -246,7 +246,7 @@
 		onwheel={onWheel}
 		use:emblaCarouselSvelte={{ options, plugins }}
 		onemblaInit={onInit}
-		class="scrollbar-none overflow-hidden rounded-xl py-1 transition-opacity duration-150 outline-none [-ms-overflow-style:none] focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
+		class="scrollbar-none overflow-hidden rounded-lg py-1 transition-opacity duration-[var(--duration-fast)] outline-none [-ms-overflow-style:none] focus-visible:outline-3 focus-visible:outline-primary [&::-webkit-scrollbar]:hidden {ready
 			? 'opacity-100'
 			: 'opacity-0'}"
 		style="cursor: {dragging ? 'grabbing' : 'grab'};"
@@ -261,7 +261,7 @@
 						tabindex="-1"
 						data-date={date}
 						onclick={() => pick(date)}
-						class="flex w-full items-center justify-center transition-[opacity,transform] duration-150"
+						class="flex min-h-11 w-full items-center justify-center transition-[opacity,transform] duration-[var(--duration-fast)]"
 						style="opacity: {hidden
 							? 0
 							: Math.max(0.35, 1 - 0.3 * dist(i))}; transform: scale({active
@@ -276,7 +276,7 @@
 						<span
 							class="rounded-full leading-none whitespace-nowrap transition-colors {active
 								? 'bg-primary px-3 py-2 text-[15px] font-semibold text-primary-content'
-								: 'px-2 py-1 text-[13px] font-medium text-base-content/70'}"
+								: 'px-2 py-1 text-[13px] font-medium text-[var(--color-text-muted)]'}"
 						>
 							{label(date)}
 						</span>

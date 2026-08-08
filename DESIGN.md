@@ -78,6 +78,7 @@ Font stack: Pretendard Variable, Pretendard, -apple-system, BlinkMacSystemFont, 
 | Long topic body | Pretendard Variable                           |                     16px |    400 |        1.75 |              0 | normal                | Maximum measure 68ch                 |
 | Chat message    | Pretendard Variable                           |                     16px |    400 |        1.55 |              0 | normal                | Preserve natural line wrapping       |
 | UI label        | Pretendard Variable                           |                     14px |    600 |         1.4 |              0 | normal                | Buttons, tabs, and compact labels    |
+| Dock label      | Pretendard Variable                           |                     12px |    600 |         1.2 |              0 | normal                | Always paired with a Lucide icon     |
 | Metadata        | Pretendard Variable                           |                     13px |    500 |        1.45 |              0 | tabular-nums for time | Never use below 12px                 |
 
 Korean body text uses natural tracking and generous line height. Headings may use slightly tighter tracking, but body, chat, input, and button copy never use negative tracking. Dates and times use tabular numerals. Font loading uses swap, and the existing local Fontsource package remains preferred over an additional network font.
@@ -127,8 +128,9 @@ Korean body text uses natural tracking and generous line height. Headings may us
 - Input and textarea minimum height: 48px.
 - Composer textarea grows from 48px to 120px, then scrolls internally.
 - Radius: 16px. Resting interactive border uses Strong Mauve Border/Strong Night Border.
+- Inline topic composers keep the text input and solid action button as separate controls with an 8px gap and independent 16px radii. Do not join their contrasting borders into one segmented pill.
 - Placeholder uses Muted Aubergine/Muted Moon and must remain legible.
-- Focus uses a primary 3px ring. Error uses Clear Red, an inline message, and recovery guidance.
+- Focused inputs, textareas, and selects activate their existing edge with the primary color plus a 1px inset stroke, producing a stable 2px visual border without an outer outline or layout shift. Non-field controls keep the 3px external focus ring. Error uses Clear Red, an inline message, and recovery guidance.
 - Labels remain visible for forms. The chat composer may use an accessible name instead of a persistent visible label when surrounding context is unambiguous.
 - The composer reserves bottom safe-area space and never hides the final message behind fixed UI.
 
@@ -145,10 +147,12 @@ Korean body text uses natural tracking and generous line height. Headings may us
 ### Navigation
 
 - Mobile top app bar: 56px content height plus the top safe-area inset.
-- Desktop group rail: 264px. Optional context panel: 304px.
+- Mobile bottom dock: 64px content height plus the bottom safe-area inset. Reserve the same 64px in page content so the dock never covers the final row.
+- The dock contains exactly three top-level destinations: Groups, Notifications, and Settings. Every destination uses a 20px Lucide icon plus a persistent 12px label in a minimum 44px hit target.
+- Desktop navigation rail: 264px. Optional context panel: 304px. The dock disappears and the rail appears from 1024px.
 - Navigation uses solid or nearly opaque surfaces. Backdrop blur up to 8px is allowed only when needed to separate a sticky app bar from scrolling content.
-- Current location uses weight, surface, and an indicator. Icons always have text labels in persistent desktop navigation.
-- Bottom dock navigation is not part of the system. Groups and topics form a hierarchy, while notifications and settings remain secondary actions.
+- Current location uses weight, semantic color, and an indicator. Icons always have visible text labels; anchors expose `aria-current` without imitating tab semantics.
+- Groups and topics remain hierarchical within the Groups destination and use explicit back navigation. The focused chat route hides the mobile dock so it cannot collide with the software keyboard or composer; its back control remains the exit path.
 
 ### Dialogs and Sheets
 
@@ -204,18 +208,18 @@ Korean body text uses natural tracking and generous line height. Headings may us
 
 #### Product Motion Matrix
 
-| Moment                           | Primitive                | Specification                                                                                                    | Reduced-motion behavior                                                         |
-| -------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Button press                     | CSS                      | scale to 0.98 for 150ms; no layout movement                                                                      | remove scale; keep immediate color or border feedback                           |
-| Reaction added                   | Svelte `scale`           | 0.92 to 1 with its built-in opacity transition for 150ms                                                         | appear immediately with the final selected state                                |
-| Toast or offline banner          | Svelte `fly`             | 8px travel with its built-in opacity transition; 200ms in, 150ms out                                             | zero travel and zero duration; keep status text visible for the same dwell time |
-| Mobile bottom sheet              | Svelte `fly`             | 12-16px vertical travel with its built-in opacity transition; 200ms in, 150ms out                                | open and close immediately; preserve focus management                           |
-| Desktop dialog                   | Svelte `scale`           | 0.98 to 1 with its built-in opacity transition; 200ms in, 150ms out                                              | open and close immediately; preserve focus management                           |
-| Small topic-list reorder         | `animate:flip`           | 200ms on a keyed list with no more than 30 rendered items                                                        | reorder immediately                                                             |
-| New chat message                 | optional Svelte `fade`   | 150ms opacity only; content and status appear immediately                                                        | appear immediately                                                              |
-| Date dial                        | Embla-owned transform    | Embla owns gesture and track transforms; an optional single-value `Spring` may move only the selection indicator | snap the indicator immediately                                                  |
-| Onboarding or empty-state doodle | Svelte `fade` or `scale` | one 300ms entrance, once per view                                                                                | render the final static illustration immediately                                |
-| Route change                     | none by default          | browser navigation, focus, and scroll restoration take priority                                                  | same behavior                                                                   |
+| Moment                           | Primitive                      | Specification                                                                                                     | Reduced-motion behavior                                                         |
+| -------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Button press                     | CSS                            | scale to 0.98 for 150ms; no layout movement                                                                       | remove scale; keep immediate color or border feedback                           |
+| Reaction added                   | Svelte `scale`                 | 0.92 to 1 with its built-in opacity transition for 150ms                                                          | appear immediately with the final selected state                                |
+| Toast or offline banner          | Svelte `fly`                   | 8px travel with its built-in opacity transition; 200ms in, 150ms out                                              | zero travel and zero duration; keep status text visible for the same dwell time |
+| Mobile bottom sheet              | Svelte `fly`                   | 12-16px vertical travel with its built-in opacity transition; 200ms in, 150ms out                                 | open and close immediately; preserve focus management                           |
+| Desktop dialog                   | Svelte `scale`                 | 0.98 to 1 with its built-in opacity transition; 200ms in, 150ms out                                               | open and close immediately; preserve focus management                           |
+| Small topic-list reorder         | `animate:flip`                 | 200ms on a keyed list with no more than 30 rendered items                                                         | reorder immediately                                                             |
+| New chat message                 | optional Svelte `fade`         | 150ms opacity only; content and status appear immediately                                                         | appear immediately                                                              |
+| Date dial                        | Embla-owned transform          | Embla owns gesture and track transforms; an optional single-value `Spring` may move only the selection indicator  | snap the indicator immediately                                                  |
+| Onboarding or empty-state doodle | Svelte `in:fade` or `in:scale` | one 300ms entrance, once per view; conditional empty states have no outro so replacement content is never delayed | render the final static illustration immediately                                |
+| Route change                     | none by default                | browser navigation, focus, and scroll restoration take priority                                                   | same behavior                                                                   |
 
 `animate:flip` is progressive enhancement and handles reorder only; additions and removals need separate transitions. The final order must be correct without animation. Keep it off the unbounded chat log and any virtualized list. `slide` and `blur` are not approved for chat, topic feeds, or large surfaces because they animate layout or paint-heavy properties.
 
@@ -257,16 +261,17 @@ Korean body text uses natural tracking and generous line height. Headings may us
 - Desktop gutters: 24-32px.
 - Application maximum width: 1360px.
 - Primary conversation/topic column: 560-720px, with 720px as the maximum readable width.
-- Desktop group rail: 264px.
+- Desktop navigation rail: 264px.
 - Desktop context panel: 304px.
 - Two-panel gap: 16px. Three-panel gap: 16-24px.
 
 ### Adaptive Conversation Board
 
-- Mobile: one active view at a time, ordered as app bar, date/topic controls, topic list or chat, then composer.
-- Tablet: main content remains dominant; a collapsible or persistent group rail may appear when width permits.
-- Desktop: persistent group rail plus central content.
-- Wide desktop: group rail, central topic/chat column, and contextual member/topic panel.
+- Mobile topic views: one active view at a time, ordered as app bar, date/topic controls, topic list, then the bottom dock.
+- Mobile chat: app bar, messages, then composer. The bottom dock is intentionally absent while the focused conversation is open.
+- Tablet: main content remains dominant and the mobile bottom dock persists until the desktop breakpoint.
+- Desktop: persistent navigation rail plus central content.
+- Wide desktop: navigation rail, central topic/chat column, and contextual member/topic panel.
 - The central conversation column never stretches simply because more viewport width exists.
 
 ### Whitespace
@@ -300,7 +305,7 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 - Base content: 0
 - Sticky app bar and composer: 20
 - Dropdown and desktop rail overlay: 40
-- Drawer overlay and lightbox: 60
+- Full-screen lightbox and temporary overlay: 60
 - Dialog and bottom sheet: 80
 - Toast: 100
 - Tooltip: 120
@@ -347,9 +352,9 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 
 - Mobile: 320-639px; single column, 16px gutters, bottom-sheet dialogs.
 - Large phone and small tablet: 640-767px; single column with wider gutters and centered form content.
-- Tablet: 768-1023px; optional group rail, 24px gutters, centered dialogs.
-- Desktop: 1024-1279px; persistent 248-264px group rail plus central content.
-- Wide desktop: 1280px and above; 264px group rail, 560-720px central column, and optional 304px context panel.
+- Tablet: 768-1023px; single-column content with the bottom dock, 24px gutters, and centered dialogs.
+- Desktop: 1024-1279px; persistent 264px navigation rail plus central content.
+- Wide desktop: 1280px and above; 264px navigation rail, 560-720px central column, and optional 304px context panel.
 
 ### Required Behaviors
 
@@ -358,6 +363,8 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 - Touch targets remain at least 44 by 44px.
 - Body and chat copy remain at least 16px on mobile.
 - App bars, composers, and sheets include safe-area insets.
+- Non-chat authenticated pages reserve 64px above the bottom safe-area for the fixed mobile dock. The dock is hidden from 1024px, when the 264px desktop rail becomes persistent.
+- The focused chat route never renders the mobile dock; its composer owns the bottom safe-area and visual-viewport correction.
 - Lists reserve space for loading media to avoid layout shift.
 - Images and video use explicit aspect ratios and responsive sizing.
 - Dialogs switch from bottom placement to centered placement at 640px.
@@ -393,8 +400,9 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 ### daisyUI Component Selection
 
 - Use navbar for the mobile app bar.
-- Use drawer with menu for the persistent desktop group rail; keep all page content inside drawer-content.
-- Do not add dock unless the product later gains at least three true top-level destinations.
+- Use dock for the mobile Groups, Notifications, and Settings destinations; use native anchor semantics, visible icon labels, and `aria-current` for the active location.
+- Use a fixed aside with menu-like links for the persistent 264px desktop navigation rail. Keep the dock and rail mutually exclusive at the 1024px breakpoint.
+- Do not render the dock on the focused chat route, where the composer and software keyboard own the bottom edge.
 - Use card for topics because each topic is a shareable content object.
 - Use list and list-row for groups, members, and notifications because those screens prioritize scanning.
 - Use chat with chat-start/chat-end for message alignment, avatar for people, badge for reactions and unread labels, and status for connectivity.
@@ -404,13 +412,13 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 
 ### Example Component Prompts
 
-1. Build the adaptive app shell with daisyUI drawer and menu. Use #FAF8F4 light and #1C1920 dark page canvases. Keep a 264px group rail from 1024px, a 560-720px center column, and a 304px context panel from 1280px. Use 16px mobile gutters and 24px desktop gaps. The mobile app bar uses navbar, 56px content height, safe-area padding, a solid semantic surface, and no bottom dock.
+1. Build the adaptive app shell with daisyUI navbar and dock. Use #FAF8F4 light and #1C1920 dark page canvases. On mobile, show a fixed 64px dock plus bottom safe-area with exactly Groups, Notifications, and Settings; pair 20px Lucide icons with visible 12px labels and reserve dock height in page content. Hide the dock on the focused chat route. From 1024px, replace it with a persistent 264px navigation rail; keep a 560-720px center column and add an optional 304px context panel from 1280px. Use 16px mobile gutters and 24px desktop gaps.
 
 2. Build a topic card with daisyUI card. Use #FFFFFF light or #252129 dark, a 1px semantic divider, 24px radius, 16px mobile and 20px desktop padding, and elevation 1. Title uses Pretendard 18px weight 650 line-height 1.45. Metadata uses 13px weight 500. Show author, time, reaction count, and unread state. Use a 2px primary outline plus text for unread or selected state; never use color alone. For a small keyed topic list, use `animate:flip` at 200ms only for reorder and switch to immediate reorder when `prefersReducedMotion.current` is true.
 
 3. Build the conversation with daisyUI chat. Incoming bubbles use a neutral raised surface; outgoing bubbles use #9B3F68 with white text in light mode and #E39BB8 with #2C141F text in dark mode. Use 20px bubble radius with one 8px conversation-side corner, 16px text at line-height 1.55, maximum width 78% mobile and 66% desktop, 4px same-sender gaps, and 12px sender-change gaps. A newly appended message may fade for 150ms, but it appears immediately in state; never stagger history, fly messages vertically, or animate scroll anchoring.
 
-4. Build the composer with daisyUI textarea and button. The textarea grows from 48px to 120px, uses a 16px radius and a 3px semantic focus ring. Icon controls have 20px Lucide icons inside 44px hit targets with aria-labels. The send button is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
+4. Build the composer with daisyUI textarea and button. The textarea grows from 48px to 120px and uses a 16px radius. On focus, recolor its existing border to the primary semantic color and add a 1px inset stroke; do not draw an external field outline. Icon controls have 20px Lucide icons inside 44px hit targets with aria-labels. The send button is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
 
 5. Build a responsive dialog with the native dialog element and daisyUI modal. Use bottom placement below 640px and centered placement at 640px and above. The modal surface is #FFFFFF light or #252129 dark, 24px radius, 20px mobile padding, 24px desktop padding, elevation 3, and a rgba(20,16,22,0.52) scrim. Use Svelte `fly` with 12-16px travel on mobile or `scale` from 0.98 on desktop; both primitives already include opacity. Use 200ms in and 150ms out. Set travel and duration to zero when `prefersReducedMotion.current` is true. Include a clear close path, Escape behavior, focus management, and confirmation before discarding unsaved work.
 
