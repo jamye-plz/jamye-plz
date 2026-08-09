@@ -158,9 +158,6 @@
 	<main id="main-content">
 		<div class="mx-auto max-w-[720px] space-y-4 px-4 py-4 md:px-6">
 			<div class="elevation-1 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5">
-				<label for="new-topic-input" class="mb-2 block text-sm font-semibold text-base-content">
-					새 주제
-				</label>
 				<form onsubmit={submitTopic} class="flex w-full items-stretch gap-2">
 					<input
 						id="new-topic-input"
