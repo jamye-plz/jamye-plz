@@ -83,11 +83,16 @@
 			본문 {topicQuery.data?.body ? '수정' : '추가'}
 		</h2>
 		<form onsubmit={saveBody} class="space-y-3">
+			<label for="topic-body-editor" class="block text-sm font-semibold text-base-content"
+				>본문</label
+			>
 			<textarea
+				id="topic-body-editor"
 				bind:value={editorBody}
 				placeholder="주제에 대한 내용을 적어주세요..."
 				rows={6}
-				class="textarea w-full resize-none focus:border-primary focus:outline-none!"></textarea>
+				class="textarea w-full resize-none rounded-lg border-[var(--color-border-strong)]"
+			></textarea>
 			{#if enrich.isError}
 				<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
 			{/if}
@@ -103,5 +108,5 @@
 			</div>
 		</form>
 	</div>
-	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">close</button></form>
+	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">닫기</button></form>
 </dialog>

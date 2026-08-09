@@ -8,8 +8,17 @@
 	let { children }: { children: Snippet } = $props();
 </script>
 
+<!--
+  Outer header: full-width sticky shell that owns safe-area insets and the
+  backdrop treatment. Inner div: centered to ≤720px, 56px content height.
+  z-(--z-sticky) = 20; backdrop-blur capped at 8px per design contract.
+-->
 <header
-	class="navbar sticky top-0 z-10 shrink-0 border-b border-base-300 bg-base-100/80 pt-[env(safe-area-inset-top)] pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] backdrop-blur"
+	class="sticky top-0 z-(--z-sticky) shrink-0 border-b border-base-300 bg-base-100/95 pt-[env(safe-area-inset-top)] backdrop-blur"
 >
-	{@render children()}
+	<div
+		class="navbar mx-auto h-14 min-h-0 w-full max-w-[720px] pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))]"
+	>
+		{@render children()}
+	</div>
 </header>

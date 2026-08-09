@@ -84,7 +84,7 @@
 -->
 <div
 	bind:this={dialogEl}
-	class="fixed inset-0 z-50 flex flex-col bg-black/95 focus:outline-none"
+	class="fixed inset-0 z-(--z-overlay) flex flex-col bg-black/95 focus:outline-none"
 	role="dialog"
 	aria-modal="true"
 	aria-label="첨부 파일 보기"
@@ -95,7 +95,7 @@
 	<div
 		class="flex shrink-0 items-center justify-between px-2 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-2 text-white"
 	>
-		<button onclick={onclose} class="btn btn-square btn-ghost btn-sm" aria-label="닫기">
+		<button onclick={onclose} class="btn btn-square btn-ghost" aria-label="닫기">
 			<X class="h-5 w-5" />
 		</button>
 		<span class="text-xs opacity-70">
@@ -114,7 +114,7 @@
 		<a
 			href={chatMediaDownloadUrl(groupId, chatroomId, current.id)}
 			data-sveltekit-reload
-			class="btn btn-square btn-ghost btn-sm"
+			class="btn btn-square btn-ghost"
 			aria-label="다운로드"
 		>
 			<Download class="h-5 w-5" />
@@ -154,7 +154,7 @@
 			<button
 				onclick={prev}
 				disabled={!hasPrev}
-				class="btn btn-circle btn-ghost btn-sm disabled:opacity-30"
+				class="btn btn-circle btn-ghost disabled:opacity-30"
 				aria-label="이전"
 			>
 				<ChevronLeft class="h-6 w-6" />
@@ -162,7 +162,7 @@
 			<button
 				onclick={next}
 				disabled={!hasNext}
-				class="btn btn-circle btn-ghost btn-sm disabled:opacity-30"
+				class="btn btn-circle btn-ghost disabled:opacity-30"
 				aria-label="다음"
 			>
 				<ChevronRight class="h-6 w-6" />

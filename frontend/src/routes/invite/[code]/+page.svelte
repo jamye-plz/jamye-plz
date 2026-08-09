@@ -33,14 +33,19 @@
 	});
 </script>
 
-<main class="flex min-h-screen items-center justify-center bg-base-100 px-4">
-	<div class="w-full max-w-sm space-y-4 text-center">
+<main
+	id="main-content"
+	class="flex min-h-dvh items-center justify-center bg-base-100 px-4 py-8 md:px-6"
+>
+	<div
+		class="elevation-1 w-full max-w-md space-y-4 rounded-xl bg-[var(--color-surface-raised)] p-6 text-center md:p-8"
+	>
 		{#if status === 'joining'}
 			<span class="loading mx-auto loading-lg loading-spinner" aria-hidden="true"></span>
-			<p class="text-sm text-base-content/70">그룹에 입장하는 중...</p>
+			<h1 class="text-lg font-semibold text-base-content">그룹에 입장하는 중...</h1>
 		{:else}
-			<p class="font-medium text-base-content">{message}</p>
-			<a href={resolve('/groups')} class="btn btn-primary"> 내 그룹으로 </a>
+			<h1 class="text-lg font-semibold text-base-content">{message}</h1>
+			<a href={resolve('/groups')} class="btn rounded-lg btn-primary"> 내 그룹으로 </a>
 		{/if}
 	</div>
 </main>

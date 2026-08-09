@@ -70,6 +70,16 @@
 
 ---
 
+## 에이전트 스킬 운영 메모
+
+- `.agents/`는 기본적으로 oh-my-agent의 SSOT로 취급한다.
+- 다만 이 저장소는 OMA 기본 배포에 없는 프로젝트 전용 디자인 스킬을 `.agents/skills/` 아래에 함께 벤더링한다.
+- 현재 예외 범위는 `banner-design`, `brand`, `design-system`, `design`, `slides`, `ui-styling`, `ui-ux-pro-max`다.
+- 이 스킬들은 잼얘좀 저장소에서 직접 유지하는 로컬 자산이며, OMA 재생성이나 업그레이드 작업 시 자동 산출물로 간주해 덮어쓰면 안 된다.
+- OMA를 갱신할 때는 위 디렉터리가 보존되는지 확인하고, 필요한 경우 수동으로 재벤더링한다.
+
+---
+
 ## 읽는 순서 (추천)
 
 1. [product/vision-and-scope.md](product/vision-and-scope.md) — 무엇을, 왜 만드는가

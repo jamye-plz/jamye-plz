@@ -23,8 +23,8 @@ export default defineConfig({
 				short_name: '잼얘좀',
 				description: '재밌는 얘기 좀 해봐',
 				lang: 'ko',
-				theme_color: '#ffffff',
-				background_color: '#ffffff',
+				theme_color: '#faf8f4',
+				background_color: '#faf8f4',
 				display: 'standalone',
 				start_url: '/',
 				icons: [

@@ -665,7 +665,7 @@
 	{/if}
 	{#if msg.body}
 		<div
-			class="prose prose-sm max-w-none wrap-anywhere {onPrimary
+			class="chat-message-prose prose max-w-none wrap-anywhere {onPrimary
 				? 'prose-primary-content'
 				: ''} [&_a]:font-normal [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 		>
@@ -677,12 +677,12 @@
 
 <div
 	bind:this={rootEl}
-	class="fixed inset-x-0 top-0 flex flex-col bg-base-100 will-change-transform"
+	class="fixed inset-y-0 right-0 left-0 flex flex-col bg-base-100 will-change-transform lg:left-[var(--rail-width)]"
 	style="height: 100dvh"
 >
 	<AppHeader>
-		<div class="mx-auto flex w-full max-w-2xl items-center gap-3">
-			<button onclick={goBack} class="btn -ml-2 btn-square btn-ghost btn-sm" aria-label="뒤로 가기">
+		<div class="mx-auto flex w-full max-w-[720px] items-center gap-3">
+			<button onclick={goBack} class="btn -ml-2 btn-square btn-ghost" aria-label="뒤로 가기">
 				<ArrowLeft class="h-5 w-5" />
 			</button>
 			<div class="flex min-w-0 flex-1 items-center gap-1">
@@ -693,13 +693,15 @@
 					<button
 						type="button"
 						onclick={() => (bodyOpen = !bodyOpen)}
-						class="btn btn-square shrink-0 btn-ghost btn-xs"
+						class="btn btn-square size-11 min-h-11 shrink-0 btn-ghost"
 						aria-expanded={bodyOpen}
 						aria-controls="topic-body"
 						aria-label={bodyOpen ? '본문 접기' : '본문 펼치기'}
 					>
 						<ChevronDown
-							class="h-4 w-4 transition-transform duration-200 {bodyOpen ? 'rotate-180' : ''}"
+							class="h-4 w-4 transition-transform duration-[var(--duration-standard)] {bodyOpen
+								? 'rotate-180'
+								: ''}"
 						/>
 					</button>
 				{/if}
@@ -708,7 +710,7 @@
 				<button
 					type="button"
 					onclick={onEditPinned}
-					class="btn shrink-0 btn-ghost text-primary btn-xs"
+					class="btn min-h-11 shrink-0 btn-ghost px-3 text-primary"
 					aria-label="본문 추가"
 				>
 					본문 추가
@@ -716,7 +718,9 @@
 			{/if}
 			<div
 				class="status shrink-0 {connected ? 'status-success' : ''}"
+				role="status"
 				aria-label={connected ? '연결됨' : '연결 중'}
+				aria-live="polite"
 				title={connected ? '연결됨' : '연결 중...'}
 			></div>
 		</div>
@@ -728,10 +732,10 @@
 			hidden={!bodyOpen}
 			class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3"
 		>
-			<div class="mx-auto flex w-full max-w-2xl items-start gap-2">
+			<div class="mx-auto flex w-full max-w-[720px] items-start gap-2">
 				<div class="max-h-40 min-w-0 flex-1 overflow-y-auto">
 					<div
-						class="prose prose-sm max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+						class="prose max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
 					>
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -- output sanitized by renderMarkdown (DOMPurify) -->
 						{@html renderMarkdown(pinnedBody)}
@@ -740,7 +744,7 @@
 				{#if canEditPinned}
 					<button
 						onclick={onEditPinned}
-						class="btn shrink-0 btn-ghost text-primary btn-xs"
+						class="btn min-h-11 shrink-0 btn-ghost px-3 text-primary"
 						aria-label="본문 수정"
 					>
 						수정
@@ -750,54 +754,65 @@
 		</div>
 	{/if}
 
-	<section
+	<main
+		id="main-content"
 		bind:this={messagesEl}
 		onscroll={handleScroll}
-		class="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
+		class="flex-1 overflow-y-auto overscroll-contain px-4 py-4 md:px-6"
 		aria-label="채팅 메시지"
 		aria-live="polite"
 		aria-atomic="false"
+		tabindex="-1"
 	>
 		<div
-			class="mx-auto w-full max-w-2xl space-y-3 {messages.length > 0 && !initialReady
+			class="mx-auto w-full max-w-[720px] space-y-3 {messages.length > 0 && !initialReady
 				? 'opacity-0'
 				: ''}"
 		>
 			{#if loadingOlder}
-				<p class="py-1 text-center text-xs text-base-content/50">이전 메시지 불러오는 중...</p>
+				<p class="py-1 text-center text-xs text-[var(--color-text-muted)]">
+					이전 메시지 불러오는 중...
+				</p>
 			{/if}
 			{#if messagesQuery.isPending && messages.length === 0}
-				<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
+				<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
 			{:else if messages.length === 0}
-				<p class="py-8 text-center text-sm text-base-content/50">첫 메시지를 남겨보세요</p>
+				<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
+					첫 메시지를 남겨보세요
+				</p>
 			{:else}
 				{#each messages as msg, i (msg.id)}
 					{#if showDateDivider(i)}
-						<div class="divider my-1 text-[11px] text-base-content/50">
+						<div class="divider my-1 text-[13px] text-[var(--color-text-muted)] tabular-nums">
 							{dateLabel(msg.created_at)}
 						</div>
 					{/if}
 					{#if msg.type === 'system'}
 						<div class="text-center">
-							<span class="badge badge-ghost badge-sm">{msg.body}</span>
+							<span class="badge h-6 badge-ghost text-[13px]">{msg.body}</span>
 						</div>
 					{:else if isMine(msg)}
-						<div class="chat-end chat {!showHeader(i) ? '-mt-3' : ''}">
+						<div class="chat-end chat py-0 {!showHeader(i) ? '-mt-2' : ''}">
 							<div
-								class="chat-bubble-primary-readable chat-bubble chat-bubble-primary text-sm {msg.pending
-									? 'opacity-60'
-									: ''}"
+								class="chat-bubble-primary-readable chat-bubble max-w-[78%] rounded-[20px_20px_8px_20px] chat-bubble-primary text-base leading-[1.55] before:hidden lg:max-w-[66%]"
 							>
 								{@render messageBody(msg, true)}
 							</div>
-							{#if showTime(i)}
-								<div class="chat-footer text-[10px] text-base-content/50">
+							{#if msg.pending}
+								<div
+									class="chat-footer text-[13px] text-[var(--color-text-muted)] tabular-nums"
+									aria-live="polite"
+								>
+									전송 중
+								</div>
+							{:else if showTime(i)}
+								<div class="chat-footer text-[13px] text-[var(--color-text-muted)] tabular-nums">
 									{hm(msg.created_at)}
 								</div>
 							{/if}
 						</div>
 					{:else}
-						<div class="chat-start chat {!showHeader(i) ? '-mt-3' : ''}">
+						<div class="chat-start chat py-0 {!showHeader(i) ? '-mt-2' : ''}">
 							<div
 								class="avatar chat-image {msg.sender_avatar_url ? '' : 'avatar-placeholder'} w-8"
 							>
@@ -814,15 +829,17 @@
 								{/if}
 							</div>
 							{#if showHeader(i) && msg.sender_nickname}
-								<div class="chat-header text-xs text-base-content/50">
+								<div class="chat-header text-[13px] text-[var(--color-text-muted)]">
 									{msg.sender_nickname}
 								</div>
 							{/if}
-							<div class="chat-bubble text-sm">
+							<div
+								class="chat-bubble max-w-[78%] rounded-[20px_20px_20px_8px] bg-[var(--color-surface-raised)] text-base leading-[1.55] text-base-content before:hidden lg:max-w-[66%]"
+							>
 								{@render messageBody(msg, false)}
 							</div>
 							{#if showTime(i)}
-								<div class="chat-footer text-[10px] text-base-content/50">
+								<div class="chat-footer text-[13px] text-[var(--color-text-muted)] tabular-nums">
 									{hm(msg.created_at)}
 								</div>
 							{/if}
@@ -831,7 +848,7 @@
 				{/each}
 			{/if}
 		</div>
-	</section>
+	</main>
 
 	<ChatComposer {groupId} {chatroomId} {connected} {keyboardOpen} onsend={sendMessage} />
 </div>

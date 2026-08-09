@@ -15,6 +15,8 @@
 	} from '$lib/api/push.api';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
+	import { fly } from 'svelte/transition';
+	import { prefersReducedMotion } from 'svelte/motion';
 
 	const queryClient = useQueryClient();
 	const meQuery = createQuery(() => ({ queryKey: ['me'], queryFn: getMe }));
@@ -149,14 +151,19 @@
 	}
 
 	const PROVIDER_LABEL: Record<string, string> = { kakao: '카카오', google: '구글' };
+
+	const toastFlyParams = $derived({
+		y: prefersReducedMotion.current ? 0 : 8,
+		duration: prefersReducedMotion.current ? 0 : 200
+	});
 </script>
 
-<div class="min-h-screen bg-base-100">
+<div class="min-h-dvh bg-base-100">
 	<AppHeader>
 		<div class="flex w-full items-center gap-3">
 			<button
 				onclick={() => goto(resolve('/groups'))}
-				class="btn -ml-2 btn-square btn-ghost btn-sm"
+				class="btn -ml-2 btn-square btn-ghost"
 				aria-label="뒤로 가기"
 			>
 				<ArrowLeft class="h-5 w-5" />
@@ -165,19 +172,21 @@
 		</div>
 	</AppHeader>
 
-	<main class="mx-auto max-w-lg space-y-6 px-4 py-6">
+	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
 		{#if meQuery.isPending}
-			<p class="py-8 text-center text-sm text-base-content/70">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
 		{:else if meQuery.isError}
 			<p class="py-8 text-center text-sm text-error">정보를 불러올 수 없습니다.</p>
 		{:else if meQuery.data}
 			{@const me = meQuery.data}
 
-			<section class="flex items-center gap-4">
+			<section
+				class="elevation-1 flex items-center gap-4 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+			>
 				<UserAvatar url={me.avatar_url} name={me.nickname} sizeClass="w-16" textClass="text-2xl" />
 				<div class="min-w-0">
 					<p class="truncate font-semibold text-base-content">{me.nickname}</p>
-					<p class="text-xs text-base-content/50">
+					<p class="text-[13px] text-[var(--color-text-muted)] tabular-nums">
 						{PROVIDER_LABEL[me.provider] ?? me.provider} 로그인 ·
 						{new Date(me.created_at).toLocaleDateString('ko-KR', {
 							year: 'numeric',
@@ -188,10 +197,13 @@
 				</div>
 			</section>
 
-			<form onsubmit={onSave} class="space-y-2">
+			<form
+				onsubmit={onSave}
+				class="elevation-1 space-y-2 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+			>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">닉네임</legend>
-					<div class="join w-full">
+					<div class="flex w-full items-stretch gap-2">
 						<input
 							id="nickname"
 							type="text"
@@ -200,12 +212,12 @@
 							maxlength={64}
 							required
 							aria-label="닉네임"
-							class="validator input join-item flex-1 focus:border-primary focus:outline-none!"
+							class="validator input min-w-0 flex-1 rounded-lg"
 						/>
 						<button
 							type="submit"
 							disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
-							class="btn join-item shrink-0 btn-primary"
+							class="btn shrink-0 rounded-lg px-5 btn-primary"
 						>
 							{save.isPending ? '저장 중...' : '저장'}
 						</button>
@@ -215,23 +227,34 @@
 					<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
 				{/if}
 				{#if saved}
-					<div class="toast toast-center toast-bottom z-50">
+					<div
+						class="toast toast-center toast-bottom"
+						in:fly={toastFlyParams}
+						out:fly={{
+							y: prefersReducedMotion.current ? 0 : 8,
+							duration: prefersReducedMotion.current ? 0 : 150
+						}}
+					>
 						<div class="alert alert-success" role="status">
 							<span>저장되었어요.</span>
 						</div>
 					</div>
 				{/if}
-				<p class="text-xs text-base-content/50">프로필 사진 변경은 곧 지원될 예정이에요.</p>
+				<p class="text-xs text-[var(--color-text-muted)]">
+					프로필 사진 변경은 곧 지원될 예정이에요.
+				</p>
 			</form>
 
 			{#if pushSectionVisible}
-				<section class="space-y-2 border-t border-base-300 pt-4">
+				<section
+					class="elevation-1 space-y-2 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+				>
 					<div class="flex items-center justify-between gap-3">
 						<div class="min-w-0">
 							<label for="push-toggle" class="block text-sm font-medium text-base-content">
 								푸시 알림
 							</label>
-							<p class="text-xs text-base-content/50">새 게시글과 채팅 알림을 받아요.</p>
+							<p class="text-xs text-[var(--color-text-muted)]">새 게시글과 채팅 알림을 받아요.</p>
 						</div>
 						<input
 							id="push-toggle"
@@ -254,7 +277,7 @@
 				<button
 					onclick={doLogout}
 					disabled={loggingOut}
-					class="btn btn-block btn-outline btn-error"
+					class="btn btn-block rounded-lg btn-outline btn-error"
 				>
 					{loggingOut ? '로그아웃 중...' : '로그아웃'}
 				</button>

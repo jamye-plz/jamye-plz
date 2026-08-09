@@ -3,7 +3,9 @@
 	import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 	import { onDestroy, onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { afterNavigate } from '$app/navigation';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import AppNavigation from '$lib/components/AppNavigation.svelte';
 	import PushReconciler from '$lib/components/PushReconciler.svelte';
 
 	let { children } = $props();
@@ -99,6 +101,32 @@
 	});
 
 	const ptrReady = $derived(pullY >= PTR_TRIGGER);
+
+	// ── Adaptive app navigation ────────────────────────────────────────────────
+	// Public routes (login, onboarding, invite landing) do not render the nav shell.
+	const isPublicRoute = $derived(
+		page.route.id == null ||
+			page.route.id === '/' ||
+			page.route.id === '/login' ||
+			page.route.id === '/onboarding' ||
+			(page.route.id?.startsWith('/invite') ?? false)
+	);
+
+	// Move keyboard and screen-reader focus into the new screen without changing
+	// browser scroll restoration. Prefer the page heading when it lives inside
+	// the main landmark; chat and app-header screens fall back to the landmark.
+	afterNavigate(({ from, to }) => {
+		if (from && to && from.route.id === to.route.id && from.url.pathname === to.url.pathname) {
+			return;
+		}
+
+		const main = document.getElementById('main-content');
+		if (!main) return;
+		main.setAttribute('tabindex', '-1');
+		const target = main.querySelector<HTMLElement>('h1') ?? main;
+		target.setAttribute('tabindex', '-1');
+		target.focus({ preventScroll: true });
+	});
 </script>
 
 <svelte:head>
@@ -106,17 +134,25 @@
 	<meta name="description" content="재밌는 얘기 좀 해봐" />
 </svelte:head>
 
+<!-- Keyboard-visible skip link: the redirect-only root has no rendered main. -->
+{#if page.route.id && page.route.id !== '/'}
+	<a href="#main-content" class="skip-link">메인 콘텐츠로 건너뛰기</a>
+{/if}
+
 {#if pullY > 0 || refreshing}
 	<div
-		class="pointer-events-none fixed left-1/2 z-50 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-base-300 bg-base-300 shadow-md"
-		style="top: calc({Math.max(8, pullY - 28)}px + env(safe-area-inset-top)); opacity: {refreshing
+		class="elevation-2 pointer-events-none fixed left-1/2 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-base-300 bg-base-300"
+		style="top: calc({Math.max(
+			8,
+			pullY - 28
+		)}px + env(safe-area-inset-top)); z-index: var(--z-toast); opacity: {refreshing
 			? 1
 			: Math.min(1, pullY / PTR_TRIGGER)}"
 	>
 		<RefreshCw
-			class="h-4 w-4 {ptrReady || refreshing ? 'text-primary' : 'text-base-content/50'} {refreshing
-				? 'animate-spin'
-				: ''}"
+			class="h-4 w-4 {ptrReady || refreshing
+				? 'text-primary'
+				: 'text-[var(--color-text-muted)]'} {refreshing ? 'animate-spin' : ''}"
 			style={refreshing ? '' : `transform: rotate(${(pullY / PTR_TRIGGER) * 180}deg)`}
 		/>
 	</div>
@@ -124,5 +160,27 @@
 
 <QueryClientProvider client={queryClient}>
 	<PushReconciler />
-	{@render children()}
+
+	{#if !isPublicRoute}
+		<!--
+		  Mobile uses a three-destination dock; desktop keeps the 264px rail.
+		  Chat is a focused keyboard/composer surface, so it keeps the rail on
+		  desktop but omits the mobile dock and relies on its explicit back path.
+		-->
+		<div class="min-h-dvh lg:pl-[var(--rail-width)]">
+			<div
+				class="flex min-h-dvh flex-col {isChatRoute
+					? ''
+					: 'pb-[var(--mobile-dock-height)]'} lg:pb-0"
+			>
+				{@render children()}
+				{#if !isChatRoute}
+					<AppNavigation variant="dock" />
+				{/if}
+			</div>
+			<AppNavigation variant="rail" />
+		</div>
+	{:else}
+		{@render children()}
+	{/if}
 </QueryClientProvider>

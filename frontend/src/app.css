@@ -1,13 +1,122 @@
 @import 'tailwindcss';
 @import '@fontsource/pretendard/index.css';
 @plugin '@tailwindcss/typography';
+
+/* ── daisyUI base — component library; custom themes supplied below ───────── */
 @plugin 'daisyui' {
-	themes:
-		light --default,
-		dark --prefersdark;
+	themes: false;
 	logs: false;
 }
 
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+@plugin 'daisyui/theme' {
+	name: 'jamye-light';
+	default: true;
+	color-scheme: light;
+
+	/* Base surfaces */
+	--color-base-100: #faf8f4; /* Warm Paper — page canvas */
+	--color-base-200: #f5f1ec; /* Raised Paper — secondary surfaces, hover fills */
+	--color-base-300: #e8e0d8; /* Divider Clay — decorative borders */
+	--color-base-content: #29252d; /* Ink Plum — headings, body, primary icons */
+
+	/* Brand */
+	--color-primary: #9b3f68; /* Conversation Berry */
+	--color-primary-content: #ffffff;
+	--color-secondary: #5c5595; /* Friend Grape */
+	--color-secondary-content: #ffffff;
+	--color-accent: #237667; /* Connection Teal */
+	--color-accent-content: #ffffff;
+	--color-neutral: #29252d;
+	--color-neutral-content: #faf8f4;
+
+	/* Status */
+	--color-info: #2f6f9f;
+	--color-info-content: #ffffff;
+	--color-success: #237667;
+	--color-success-content: #ffffff;
+	--color-warning: #8b6316;
+	--color-warning-content: #ffffff;
+	--color-error: #b33c48;
+	--color-error-content: #ffffff;
+
+	/* Raised canvas above base-100: Clean Sheet */
+	--color-surface-raised: #ffffff;
+	--color-text-muted: #665f6b;
+	--color-border-strong: #918693;
+	--color-surface-blush: #f8e8ee;
+	--color-surface-lilac: #f0ecf8;
+	--color-surface-mint: #e3f1ed;
+	--color-surface-butter: #fbf3d6;
+	--color-scrim: rgba(20, 16, 22, 0.52);
+
+	/* Component radius per design ladder */
+	--radius-box: 1.5rem; /* 24px — cards, dialogs, sheets */
+	--radius-field: 1rem; /* 16px — inputs, textareas */
+	--radius-selector: 1rem; /* 16px — buttons */
+	--radius-badge: 9999px; /* full — pills, reactions */
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+/* ── Dark theme ───────────────────────────────────────────────────────────── */
+@plugin 'daisyui/theme' {
+	name: 'jamye-dark';
+	prefersdark: true;
+	color-scheme: dark;
+
+	/* Base surfaces */
+	--color-base-100: #1c1920; /* Night Paper — page canvas */
+	--color-base-200: #252129; /* Raised Night — cards, rows */
+	--color-base-300: #322c36; /* Night Divider — borders */
+	--color-base-content: #f4eef2; /* Moon Ink — headings, body, primary icons */
+
+	/* Brand */
+	--color-primary: #e39bb8; /* Petal Berry */
+	--color-primary-content: #2c141f; /* Deep Berry Ink */
+	--color-secondary: #b7a8e2; /* Lavender Friend */
+	--color-secondary-content: #201a32; /* Deep Grape Ink */
+	--color-accent: #83cdbe; /* Seafoam Connection */
+	--color-accent-content: #102a25; /* Deep Teal Ink */
+	--color-neutral: #252129;
+	--color-neutral-content: #f4eef2;
+
+	/* Status */
+	--color-info: #91bfe4;
+	--color-info-content: #0a1a2a;
+	--color-success: #83cdbe;
+	--color-success-content: #102a25;
+	--color-warning: #e8c77a;
+	--color-warning-content: #2a1f04;
+	--color-error: #f2a0a8;
+	--color-error-content: #2a0a0e;
+
+	/* Raised canvas above base-100: Raised Night */
+	--color-surface-raised: #252129;
+	--color-text-muted: #a9a0ae;
+	--color-border-strong: #776d7c;
+	--color-surface-blush: #3c2932;
+	--color-surface-lilac: #302a42;
+	--color-surface-mint: #223a34;
+	--color-surface-butter: #3d351f;
+	--color-scrim: rgba(20, 16, 22, 0.52);
+
+	/* Component radius per design ladder */
+	--radius-box: 1.5rem;
+	--radius-field: 1rem;
+	--radius-selector: 1rem;
+	--radius-badge: 9999px;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+/* ── Design tokens ────────────────────────────────────────────────────────── */
 @theme {
 	/* Typography */
 	--font-sans:
@@ -27,21 +136,57 @@
 	--spacing-12: 48px;
 	--spacing-16: 64px;
 
-	/* Radius */
-	--radius-sm: 4px;
-	--radius-md: 8px;
-	--radius-lg: 12px;
-	--radius-xl: 16px;
+	/* Radius — canonical design ladder
+	   sm = 8px  media corners / compact inner elements
+	   md = 12px small controls
+	   lg = 16px fields and buttons
+	   xl = 24px cards, dialogs, sheets */
+	--radius-sm: 8px;
+	--radius-md: 12px;
+	--radius-lg: 16px;
+	--radius-xl: 24px;
 	--radius-full: 9999px;
 
-	/* Transitions */
-	--duration-micro: 150ms;
-	--duration-base: 200ms;
-	--duration-slow: 300ms;
-	--ease-default: cubic-bezier(0.16, 1, 0.3, 1);
+	/* Motion — canonical timing tokens (replaces old micro/base/slow scale) */
+	--duration-fast: 150ms; /* press feedback, reaction feedback, exits, simple fades */
+	--duration-standard: 200ms; /* toast, banner, dialog, sheet entrances */
+	--duration-emphasis: 300ms; /* one-time onboarding / empty-state emphasis only */
+	--ease-jamye: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Base styles */
+/* ── Z-index scale ────────────────────────────────────────────────────────── */
+:root {
+	--rail-width: 264px;
+	--mobile-dock-height: 4rem;
+	--z-sticky: 20;
+	--z-dropdown: 40;
+	--z-overlay: 60;
+	--z-dialog: 80;
+	--z-toast: 100;
+	--z-tooltip: 120;
+
+	/* Elevation shadows */
+	--shadow-1: 0 1px 2px rgba(41, 37, 45, 0.06), 0 4px 12px rgba(41, 37, 45, 0.04);
+	--shadow-2: 0 8px 24px rgba(41, 37, 45, 0.1);
+	--shadow-3: 0 16px 40px rgba(20, 16, 22, 0.18);
+}
+
+/* Dark elevation overrides — black at higher opacity */
+[data-theme='jamye-dark'] {
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2);
+	--shadow-2: 0 8px 24px rgba(0, 0, 0, 0.28);
+	--shadow-3: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) {
+		--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.2);
+		--shadow-2: 0 8px 24px rgba(0, 0, 0, 0.28);
+		--shadow-3: 0 16px 40px rgba(0, 0, 0, 0.4);
+	}
+}
+
+/* ── Base styles ──────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -53,6 +198,7 @@ html {
 	scroll-behavior: smooth;
 }
 
+/* ── Reduced-motion contract ──────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
 	html {
 		scroll-behavior: auto;
@@ -70,7 +216,7 @@ html {
 body {
 	font-family: var(--font-sans);
 	font-size: 16px;
-	line-height: 1.6;
+	line-height: 1.65;
 	color: var(--color-base-content);
 	background-color: var(--color-base-100);
 	-webkit-font-smoothing: antialiased;
@@ -83,14 +229,220 @@ body {
 	padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Focus styles — WCAG AA compliant */
+/* ── Non-field focus ring — 3px ring / 2px offset, WCAG AA ──────────────── */
 :focus-visible {
-	outline: 2px solid var(--color-primary);
+	outline: 3px solid var(--color-primary);
 	outline-offset: 2px;
-	border-radius: 2px;
 }
 
-/* Scrollbar */
+/* Keep the global focus ring visible inside clipped media surfaces. */
+.focus-ring-inset:focus-visible {
+	outline-offset: -3px;
+}
+
+/* ── Skip link — keyboard-visible, visually hidden at rest ───────────────── */
+.skip-link {
+	position: fixed;
+	top: max(1rem, env(safe-area-inset-top));
+	left: 1rem;
+	z-index: var(--z-tooltip);
+	padding: 0.5rem 1rem;
+	font-size: 0.875rem;
+	font-weight: 600;
+	background: var(--color-base-100);
+	color: var(--color-base-content);
+	border: 2px solid var(--color-primary);
+	border-radius: var(--radius-md);
+	opacity: 0;
+	transform: translateY(calc(-100% - 2rem));
+	transition:
+		transform var(--duration-fast) var(--ease-jamye),
+		opacity var(--duration-fast) linear;
+}
+.skip-link:focus-visible {
+	opacity: 1;
+	transform: translateY(0);
+	outline: none;
+}
+
+/* ── Safe 44px icon hit-target ────────────────────────────────────────────── */
+.btn-icon {
+	min-width: 2.75rem; /* 44px */
+	min-height: 2.75rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* daisyUI sizing and surface contracts */
+.btn {
+	min-height: 2.75rem;
+	transition-duration: var(--duration-fast);
+}
+
+.btn-square,
+.btn-circle {
+	min-width: 2.75rem;
+}
+
+.badge-sm {
+	min-height: 1.5rem;
+	padding-inline: 0.625rem;
+	font-size: 0.8125rem;
+	font-weight: 600;
+}
+
+.input,
+.textarea,
+.select {
+	min-height: 3rem;
+	border-color: var(--color-border-strong);
+	border-radius: var(--radius-lg);
+}
+
+/* Fields activate their existing edge instead of drawing an outer ring.
+   The inset stroke creates a stable 2px visual edge without moving content. */
+:is(.input, .textarea):is(:focus, :focus-within),
+.select:focus,
+.select:focus-within,
+.select:open {
+	--input-color: var(--color-primary);
+	border-color: var(--input-color);
+	outline: none;
+	outline-offset: 0;
+	box-shadow: inset 0 0 0 1px var(--input-color);
+}
+
+@media (forced-colors: active) {
+	:is(.input, .textarea):is(:focus, :focus-within),
+	.select:focus,
+	.select:focus-within,
+	.select:open {
+		border-color: Highlight;
+		box-shadow: inset 0 0 0 1px Highlight;
+	}
+}
+
+.input::placeholder,
+.textarea::placeholder {
+	color: var(--color-text-muted);
+	opacity: 1;
+}
+
+.modal-box {
+	border-radius: var(--radius-xl);
+	background-color: var(--color-surface-raised);
+	box-shadow: var(--shadow-3);
+	/* Preserve daisyUI's transition properties/allow-discrete behavior while
+	   bringing the visual exit onto Jamye's canonical Fast token. */
+	transition-duration: var(--duration-fast);
+	transition-timing-function: var(--ease-jamye);
+	transition-delay: 0s;
+}
+
+.modal {
+	z-index: var(--z-dialog);
+	transition-duration: var(--duration-fast);
+	transition-timing-function: var(--ease-jamye);
+	transition-delay: 0s;
+}
+
+.modal[open] {
+	/* daisyUI's open-state list is visibility, background-color, opacity. */
+	transition-duration: 0s, var(--duration-standard), var(--duration-standard);
+}
+
+.modal[open] .modal-box {
+	transition-duration: var(--duration-standard);
+}
+
+.modal::backdrop,
+.modal-backdrop {
+	background-color: var(--color-scrim);
+}
+
+@media (max-width: 39.999rem) {
+	.modal-bottom .modal-box {
+		padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+		/* A bottom sheet should explain continuity without travelling a full
+		   viewport. The open rule below restores the final daisyUI position. */
+		translate: 0 1rem;
+	}
+
+	.modal-bottom[open] .modal-box {
+		translate: 0;
+	}
+}
+
+.toast {
+	z-index: var(--z-toast);
+}
+
+.toast-bottom {
+	bottom: calc(var(--mobile-dock-height) + env(safe-area-inset-bottom) + 1rem);
+}
+
+.elevation-1 {
+	box-shadow: var(--shadow-1);
+}
+
+.elevation-2 {
+	box-shadow: var(--shadow-2);
+}
+
+.elevation-3 {
+	box-shadow: var(--shadow-3);
+}
+
+.app-dock {
+	z-index: var(--z-sticky);
+	border-color: var(--color-base-300);
+	background-color: var(--color-surface-raised);
+	box-shadow: var(--shadow-2);
+}
+
+.app-dock > a {
+	min-height: 2.75rem;
+	transition:
+		color var(--duration-fast) linear,
+		opacity var(--duration-fast) linear,
+		transform var(--duration-fast) var(--ease-jamye);
+}
+
+.app-dock > a::after {
+	width: 2.5rem;
+	background-color: currentColor;
+	opacity: 0;
+	transition: opacity var(--duration-fast) linear;
+}
+
+.app-dock > a.dock-active::after {
+	opacity: 1;
+}
+
+.app-dock .dock-label {
+	font-size: 0.75rem;
+	font-weight: 600;
+	line-height: 1.2;
+}
+
+@media (min-width: 64rem) {
+	.toast-bottom {
+		bottom: max(1rem, env(safe-area-inset-bottom));
+	}
+}
+
+/* ── 150ms press feedback — scale to 0.98, no layout shift ───────────────── */
+@media (prefers-reduced-motion: no-preference) {
+	.btn:not(:disabled):active,
+	[role='button']:not([aria-disabled='true']):active,
+	.app-dock > a:active {
+		transform: scale(0.98);
+		transition-duration: var(--duration-fast);
+	}
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
 	width: 4px;
 	height: 4px;
@@ -105,7 +457,7 @@ body {
 	border-radius: var(--radius-full);
 }
 
-/* Typography scale */
+/* ── Typography scale ─────────────────────────────────────────────────────── */
 h1,
 h2,
 h3,
@@ -114,6 +466,13 @@ h5,
 h6 {
 	font-weight: 600;
 	line-height: 1.3;
+}
+
+.navbar h1,
+.modal-box h2 {
+	font-weight: 650;
+	line-height: 1.4;
+	letter-spacing: -0.01em;
 }
 
 /* Links — in @layer base so per-element utility classes (text-primary,
@@ -175,6 +534,11 @@ h6 {
 .prose-primary-content :not(pre) > code {
 	background-color: var(--color-base-200);
 	color: var(--color-base-content);
+}
+
+.chat-message-prose {
+	font-size: 1rem;
+	line-height: 1.55;
 }
 
 /* Keep the primary chat treatment while preserving AA text contrast in both built-in themes. */
