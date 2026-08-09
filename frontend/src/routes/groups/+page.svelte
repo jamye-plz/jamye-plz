@@ -4,7 +4,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { listGroups, createGroup } from '$lib/api/group.api';
-	import type { Group } from '$lib/types/group.types';
 	import Plus from '@lucide/svelte/icons/plus';
 	import { fade } from 'svelte/transition';
 	import { prefersReducedMotion } from 'svelte/motion';
@@ -35,10 +34,6 @@
 			creating = false;
 		}
 	}
-
-	function navigateTo(group: Group) {
-		goto(resolve(`/groups/${group.id}`));
-	}
 </script>
 
 <div class="min-h-dvh bg-base-100">
@@ -48,12 +43,14 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-4 px-4 py-6 md:px-6">
+	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
 		{#if groupsQuery.isPending}
-			<ul class="list" aria-label="그룹 목록을 불러오는 중" aria-busy="true">
+			<ul class="list gap-2" aria-label="그룹 목록을 불러오는 중" aria-busy="true">
 				{#each [1, 2, 3] as row (row)}
-					<li class="list-row min-h-16 border-b border-base-300 p-0 last:border-b-0">
-						<div class="flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3">
+					<li class="list-row min-h-16 p-0 after:hidden">
+						<div
+							class="list-col-grow flex min-h-16 w-full items-center justify-between gap-3 px-4 py-3"
+						>
 							<span class="h-4 w-40 max-w-[65%] skeleton"></span>
 							<span class="h-6 w-14 skeleton rounded-full"></span>
 						</div>
@@ -74,20 +71,20 @@
 				</button>
 			</div>
 		{:else if groupsQuery.data}
-			<ul class="list" role="list" aria-label="그룹 목록">
+			<ul class="list gap-2" role="list" aria-label="그룹 목록">
 				{#each groupsQuery.data as group (group.id)}
-					<li class="list-row min-h-16 border-b border-base-300 p-0 last:border-b-0">
-						<button
-							onclick={() => navigateTo(group)}
-							class="min-h-16 w-full px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary"
+					<li class="list-row min-h-16 p-0 after:hidden">
+						<a
+							href={resolve(`/groups/${group.id}`)}
+							class="list-col-grow flex min-h-16 w-full touch-manipulation items-center rounded-xl px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary active:bg-[var(--color-surface-raised)]"
 						>
-							<div class="flex items-center justify-between gap-3">
+							<div class="flex w-full items-center justify-between gap-3">
 								<span class="font-medium text-base-content">{group.name}</span>
 								<span class="badge shrink-0 badge-ghost badge-sm"
 									>{group.member_count}/{group.max_members}명</span
 								>
 							</div>
-						</button>
+						</a>
 					</li>
 				{/each}
 			</ul>

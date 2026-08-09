@@ -64,7 +64,7 @@
 			<ul class="list" aria-label="알림 목록을 불러오는 중" aria-busy="true">
 				{#each [1, 2, 3] as row (row)}
 					<li class="list-row min-h-16 border-b border-base-300 p-0 last:border-b-0">
-						<div class="min-h-16 w-full space-y-2 px-4 py-3">
+						<div class="list-col-grow min-h-16 w-full space-y-2 px-4 py-3">
 							<span class="block h-4 w-48 max-w-[75%] skeleton"></span>
 							<span class="block h-3 w-32 max-w-[55%] skeleton"></span>
 						</div>
@@ -86,7 +86,7 @@
 					<li class="list-row min-h-16 border-b border-base-300 p-0 last:border-b-0">
 						<button
 							onclick={() => open(n)}
-							class="min-h-16 w-full border-l-2 px-4 py-3 text-left transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary
+							class="list-col-grow min-h-16 w-full border-l-2 px-4 py-3 text-left transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary
 								{n.read
 								? 'border-transparent hover:bg-[var(--color-surface-raised)]'
 								: 'border-primary bg-[var(--color-surface-blush)] hover:bg-base-200'}"
