@@ -137,7 +137,7 @@ Korean body text uses natural tracking and generous line height. Headings may us
 ### Chat
 
 - Incoming messages use neutral raised surfaces; outgoing messages use the primary semantic treatment.
-- Bubble radius: 20px with one 8px conversation-side corner. Bubble width: maximum 78% on mobile and 66% on desktop.
+- Bubble radius: 20px with one 8px conversation-side corner. Bubble width: maximum 78% on mobile and 66% on desktop. Direction comes from alignment and the asymmetric corner; suppress daisyUI's default `::before` tail and do not add arrows.
 - Consecutive messages from one sender use a 4px gap; sender changes use a 12px gap.
 - Avatar size: 32px in the conversation, 40px in member lists.
 - Message body stays at 16px. Timestamp is 13px with tabular numerals.
@@ -416,7 +416,7 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 
 2. Build a topic card with daisyUI card. Use #FFFFFF light or #252129 dark, a 1px semantic divider, 24px radius, 16px mobile and 20px desktop padding, and elevation 1. Title uses Pretendard 18px weight 650 line-height 1.45. Metadata uses 13px weight 500. Show author, time, reaction count, and unread state. Use a 2px primary outline plus text for unread or selected state; never use color alone. For a small keyed topic list, use `animate:flip` at 200ms only for reorder and switch to immediate reorder when `prefersReducedMotion.current` is true.
 
-3. Build the conversation with daisyUI chat. Incoming bubbles use a neutral raised surface; outgoing bubbles use #9B3F68 with white text in light mode and #E39BB8 with #2C141F text in dark mode. Use 20px bubble radius with one 8px conversation-side corner, 16px text at line-height 1.55, maximum width 78% mobile and 66% desktop, 4px same-sender gaps, and 12px sender-change gaps. A newly appended message may fade for 150ms, but it appears immediately in state; never stagger history, fly messages vertically, or animate scroll anchoring.
+3. Build the conversation with daisyUI chat. Incoming bubbles use a neutral raised surface; outgoing bubbles use #9B3F68 with white text in light mode and #E39BB8 with #2C141F text in dark mode. Use 20px bubble radius with one 8px conversation-side corner, suppress the default `::before` tail, and rely on alignment plus the asymmetric corner for direction. Use 16px text at line-height 1.55, maximum width 78% mobile and 66% desktop, 4px same-sender gaps, and 12px sender-change gaps. A newly appended message may fade for 150ms, but it appears immediately in state; never stagger history, fly messages vertically, or animate scroll anchoring.
 
 4. Build the composer with daisyUI textarea and button. The textarea grows from 48px to 120px and uses a 16px radius. On focus, recolor its existing border to the primary semantic color and add a 1px inset stroke; do not draw an external field outline. Icon controls have 20px Lucide icons inside 44px hit targets with aria-labels. The send button is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
 

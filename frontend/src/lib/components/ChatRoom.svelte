@@ -794,7 +794,7 @@
 					{:else if isMine(msg)}
 						<div class="chat-end chat {!showHeader(i) ? '-mt-2' : ''}">
 							<div
-								class="chat-bubble-primary-readable chat-bubble max-w-[78%] rounded-[20px_20px_8px_20px] chat-bubble-primary text-base leading-[1.55] lg:max-w-[66%]"
+								class="chat-bubble-primary-readable chat-bubble max-w-[78%] rounded-[20px_20px_8px_20px] chat-bubble-primary text-base leading-[1.55] before:hidden lg:max-w-[66%]"
 							>
 								{@render messageBody(msg, true)}
 							</div>
@@ -834,7 +834,7 @@
 								</div>
 							{/if}
 							<div
-								class="chat-bubble max-w-[78%] rounded-[20px_20px_20px_8px] bg-[var(--color-surface-raised)] text-base leading-[1.55] text-base-content lg:max-w-[66%]"
+								class="chat-bubble max-w-[78%] rounded-[20px_20px_20px_8px] bg-[var(--color-surface-raised)] text-base leading-[1.55] text-base-content before:hidden lg:max-w-[66%]"
 							>
 								{@render messageBody(msg, false)}
 							</div>
