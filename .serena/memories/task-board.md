@@ -1,43 +1,116 @@
-# Task Board — M4a 음성 메시지 + STT
+# Task Board — Pastel Conversation Board Refactor
 
-- **session**: oma-00msfx7co4nqwu8xaa · **branch**: `feat/m4a-voice-messages` (main 분기, 미푸시 커밋 2개 포함)
-- **결정**: D7=faster-whisper / D8=arq+Redis / 녹음 UX=탭 토글 / 모델 기본=large-v3-turbo int8
+- **session**: session-20260806-223529
+- **branch**: `fix/design-motion-system` (keep; do not create or rename)
+- **workflow**: ultrawork
+- **phase**: COMPLETE — SHIP approved; draft PR #23 opened; manual device matrix documented for review
+- **SSOT**: `DESIGN.md`
+- **baseline**: check 0/0; lint clean; build success with existing chunk/PWA warnings
+- **constraints**: no GSAP, no new dependency, no API/backend/product-logic changes, keep DESIGN.md synchronized, preserve unrelated untracked files
 
-## 계약
+## Authoritative design contracts
 
-### 1. 음성 메시지 = 오디오 첨부 1개를 가진 일반 메시지
-- `messages.type` 신설 없음. 오디오 media가 있으면 음성 메시지
-- **오디오는 다른 첨부와 혼합 불가, 메시지당 1개** (서버 강제)
-- `AUDIO_MIME_TYPES` = {audio/webm, audio/mp4, audio/ogg}, `MAX_AUDIO_BYTES` = 15MiB
+- Keep base `@plugin "daisyui"` with built-in themes disabled, then add `jamye-light` and `jamye-dark` custom theme blocks.
+- `base-100` is Warm/Night Paper canvas. Use a separate `--color-surface-raised` token for Clean Sheet/Raised Night cards, dialogs, and composer.
+- Radius: 8px=`rounded-sm`, 12px=`rounded-md`, 16px=`rounded-lg` fields/buttons, 24px=`rounded-xl` cards/dialogs.
+- Z-index: sticky 20, dropdown 40, full-screen overlay/lightbox 60, dialog 80, toast 100, tooltip 120.
+- Each route owns one `#main-content`; the global navigation shell must not introduce a nested `main`.
+- Below 1024px: fixed daisyUI dock with exactly Groups, Notifications, and Settings, visible icon labels, semantic active location, and 64px page clearance plus the bottom safe area. Focused chat routes omit the dock.
+- From 1024px: 264px persistent navigation rail; center content 560–720px. Chat fixed root offsets by the rail without animating the offset.
+- CSS/daisyUI motion first. Conditional empty states use entrance-only Svelte motion with `prefersReducedMotion.current`; no outro may delay replacement content. No route, initial chat history, composer geometry, safe-area, scroll-anchor, or Embla transform animation.
+- Do not invent data or behavior (unread counts, selected states, hash-based accents, media aspect ratios) that is absent today.
 
-### 2. message_media 확장 (마이그레이션 1건)
-- `transcript TEXT NULL` / `transcript_status VARCHAR(16) NULL` (pending|done|failed, null=비오디오·무전사)
-- `filename VARCHAR(255) NULL` (부채 #8 — 모든 첨부 공통, 다운로드 파일명 복원)
+## Ownership A — foundation-shell (DONE)
 
-### 3. 전사 파이프라인 (env-conditional)
-- REDIS_URL 설정 시: send_message 커밋 후 `transcribe(media_id)` enqueue(arq), status=pending
-- REDIS_URL 없음: status NULL 유지 = 무전사 fallback (음성 자체는 정상 동작)
-- 워커: MinIO fetch → faster-whisper(language="ko", vad_filter=True, int8, to_thread) → DB 갱신
-  → Redis publish `jamye:transcripts` {chatroom_id, message_id, media_id, status, transcript}
-- 백엔드 lifespan 구독자 → `ws_hub.broadcast({type:"transcript", ...})`. 재연결 백오프, 종료 시 취소
+Only:
+- `frontend/src/app.css`
+- `frontend/src/app.html`
+- `frontend/vite.config.ts`
+- `frontend/src/routes/+layout.svelte`
+- `frontend/src/lib/components/AppHeader.svelte`
+- `frontend/src/lib/components/AppNavigation.svelte`
 
-### 4. WS 신규 프레임 (server→client)
-`{ "type": "transcript", "chatroom_id", "message_id", "media_id", "status": "done|failed", "transcript": "..."|null }`
+Deliver:
+- complete custom themes/tokens, raised-surface token, canonical timing/radius/type/elevation/z tokens
+- 3px focus, 44px icon targets where globally safe, 150ms press, reduced-motion CSS
+- PWA/meta colors
+- skip link, adaptive daisyUI mobile dock and desktop rail, semantic current nav, no nested main, and no dock on focused chat routes
+- 56px safe-area-aware header with center max 720px
 
-## 작업
+## Ownership B — non-chat-routes (DONE)
 
-- B1 마이그레이션 (down_revision = e5f6a7b8c9d0)
-- B2 storage.py 오디오 상수 + max_bytes_for 확장
-- B3 config(redis_url/stt_model/stt_compute_type) + deps(arq, faster-whisper) + core/queue.py(pool)
-- B4 서비스: 오디오 검증(단독·1개), filename 배선, pending 마킹, 커밋 후 enqueue(실패 흡수)
-- B5 workers/transcribe.py (모델 lazy 싱글턴, WorkerSettings)
-- B6 lifespan Redis 구독자 브리지
-- B7 테스트
-- F1 types(오디오 상수, transcript 필드, WS 프레임) / F2 composer 녹음(탭 토글, MediaRecorder mimeType 협상, 5분 캡) / F3 오디오 버블+transcript / F4 transcript 프레임 반영 / F5 partysocket 제거(bun은 사용자)
-- I1 docker-compose redis / I2 module.nix (queue.createLocally, stt-worker 유닛, STT_* export)
-- D1 docs (api-contract, data-model, roadmap, .env.example)
+Only:
+- `frontend/src/routes/+page.svelte`
+- `frontend/src/routes/groups/+page.svelte`
+- `frontend/src/routes/groups/[id]/+page.svelte`
+- `frontend/src/routes/groups/[id]/topics/[tid]/+page.svelte`
+- `frontend/src/routes/groups/[id]/settings/+page.svelte`
+- `frontend/src/routes/groups/[id]/invite/+page.svelte`
+- `frontend/src/routes/invite/[code]/+page.svelte`
+- `frontend/src/routes/login/+page.svelte`
+- `frontend/src/routes/onboarding/+page.svelte`
+- `frontend/src/routes/notifications/+page.svelte`
+- `frontend/src/routes/settings/+page.svelte`
 
-## 규칙
-- 편집 전 `git branch --show-current` = feat/m4a-voice-messages 확인
-- bun/podman/uvicorn 실행 금지(사용자 직접). 게이트: uv run pytest/ruff/pyright
-- faster_whisper import는 워커 태스크 내부에서만(lazy) — API 기동에 영향 금지
+Deliver:
+- page landmarks/gutters/max 720px
+- list rows for groups/notifications; 24px raised topic/dialog cards
+- 16px fields/buttons, 13px metadata, visible form labels, one primary action
+- 44px icon controls, accessible states
+- entrance-only guarded empty-state motion and dock-aware toast placement
+- preserve every query, handler, modal lifecycle, route, and API call
+
+## Ownership C — chat-shared (DONE)
+
+Only:
+- `frontend/src/lib/components/ChatRoom.svelte`
+- `frontend/src/lib/components/ChatComposer.svelte`
+- `frontend/src/lib/components/DateDial.svelte`
+- `frontend/src/lib/components/UserAvatar.svelte`
+- `frontend/src/lib/components/MediaLightbox.svelte`
+- `frontend/src/lib/components/MessageMedia.svelte`
+- `frontend/src/lib/components/PushReconciler.svelte`
+- `frontend/src/routes/groups/[id]/chat/+page.svelte`
+- `frontend/src/routes/groups/[id]/topics/[tid]/chat/+page.svelte`
+
+Deliver:
+- rail-aware fixed chat, inner max 720px
+- 78% mobile/66% desktop bubbles, 20px/8px corners, 4/12px grouping, 13px time
+- raised composer, 48–120px textarea, 44px controls, safe area preserved
+- DateDial visual-only changes; Embla owns transforms
+- lightbox z60; dialogs z80; media 8px corners without fabricated aspect ratios
+- PushReconciler audit-only
+- preserve scroll anchoring, optimistic send, IME, WebSocket, visualViewport settling, media/voice behavior
+
+## IMPL gate
+
+- Only owned product files changed
+- `bun run check`: 0 errors/0 warnings
+- `bun run lint`: clean
+- `bun run build`: success
+- old timing tokens: 0
+- raw Svelte hex: only Kakao brand exception
+- no GSAP/new dependency/docs product diff
+
+## VERIFY gate
+
+- Step 6 alignment: PASS
+- Step 7 safety: PASS for the application diff; pre-existing build-chain audit backlog documented separately
+- Step 8 regression: PASS
+- Quality Score: 89.7 (Grade B)
+- Browser/real-device matrix: intentionally open for manual SHIP validation because no browser session is connected
+
+## SHIP gate
+
+- Step 14 build gates: PASS (`check` 0/0, lint clean, build success, diff-check clean)
+- Step 15 static journey trace: PASS; no runtime/browser claim
+- Step 16 cascade review: PASS after canonical modal motion, bottom-dock/rail cascade verification, and visible route-focus remediations
+- Step 17 deployment readiness: PASS; package/lock/API/backend/secrets/migrations unchanged
+- Independent remediation re-review: PASS, no remaining source finding
+- Final technical score: 90.9 (Grade A)
+- User-feedback revision: mobile hamburger/drawer replaced by a three-item dock; desktop rail retained; empty-state outro removed; DESIGN.md resynchronized; all static/build gates re-passed
+- Composer feedback revision: new-topic input and primary button are separate 16px-radius controls with an 8px gap; the contrasting segmented `join` was removed and all gates re-passed
+- Field-focus feedback revision: input/textarea/select focus uses a primary 2px visual edge drawn inside the field; external rings remain only on non-field controls; generated cascade and all gates re-passed
+- Publish: commits `be13420` and `cdcce5e` pushed on `fix/design-motion-system`; draft PR #23 targets `main`
+- Remaining review note: manual viewport/iOS/Android browser and installed-PWA matrix
+- Session status: COMPLETE

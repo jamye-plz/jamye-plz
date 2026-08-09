@@ -94,3 +94,63 @@ Composite N/A → binary checklist fallback (backend 게이트 기준).
 - EA: good_catch 2 (VERIFY 1차 — soft-delete 반경 누수 HIGH, WS 축출 부재 HIGH; 둘 다 impl self-check 미탐 → root-cause 수정+회귀테스트 13건), false_positive 0, missed_stub 0. SHIP에서 MEDIUM 1(성공경로 테스트 공백) → 오케스트레이터 인라인 보완(테스트 2건, 47 passed)
 - Quality: 최종 pytest 47/ruff/format/pyright 0 + frontend 4게이트 clean. group_service 72%→(성공경로 보완), ws_hub 88%(M2 변경분 100%)
 - 특징: QA가 제안한 remediation 스니펫이 실제 픽스처와 거의 일치 — 인라인 적용에 유효
+
+
+---
+
+# Session Metrics — session-20260806-223529 (ultrawork design-system frontend refactor, 2026-08-06)
+
+## Clarification Debt Events
+- 2026-08-06 | orchestrator | correct | +25 | Branch prefix corrected from docs/design-motion-system to fix/design-motion-system before frontend implementation.
+
+## Summary
+- Current CD: 25
+- Threshold breached: NO
+- RCA Required: NO
+
+## Quality Baseline
+- 2026-08-06 | PLAN | `bun run check`: 0 errors, 0 warnings.
+- 2026-08-06 | PLAN | `bun run lint`: clean (Prettier and ESLint).
+- 2026-08-06 | PLAN | `bun run build`: success; pre-existing warnings retained for a 3 MB non-precached chunk and unmatched PWA glob patterns.
+
+## Quality Score Progression
+- IMPL baseline: **89.3 (Grade B)** — correctness 90 estimated, security 90 estimated, performance 95 estimated, coverage 70 estimated, consistency 100.
+- Evidence: `svelte-check` 0/0, Prettier+ESLint clean, production build success, no GSAP/new dependency, only Kakao brand raw Svelte colors, compiled light/dark semantic tokens and PWA manifest verified.
+- Limitation: no frontend behavior/coverage suite and no connected browser or real-device PWA matrix; independent VERIFY remains required.
+
+## Agent Handoff Recovery
+- `frontend-foundation` and `frontend-chat` wrote their owned source files but exited without result memories; orchestrator recovered, corrected, formatted, and validated the changes.
+- `frontend-routes` wrote and formatted its owned files, then remained idle without handoff for 20 minutes; only its spawned process and dedicated MCP children were terminated before orchestrator recovery.
+
+## Post-VERIFY
+- Score: **89.7 (Grade B, +0.4 vs IMPL baseline)** — correctness 95, security 90, performance 88, coverage 70, consistency 100.
+- Checks: `svelte-check` 0 errors/0 warnings; Prettier and ESLint clean; production build successful.
+- Security classification: no new CRITICAL/HIGH issue in the application diff. Existing lockfile audit reports 10 HIGH and 1 MODERATE only through development/build tooling; a production-only install contains none of those packages. DOMPurify remains a LOW direct-runtime advisory, and the affected custom-element option is unused.
+- Runtime limitation: no connected browser session or automated frontend behavior suite; viewport, keyboard, installed-PWA, and real-device validation remain open for SHIP handoff.
+
+## Post-REFINE
+- Score: **90.6 (Grade A, +0.9 vs Post-VERIFY; +1.3 vs IMPL baseline)** — correctness 96, security 90, performance 90, coverage 72, consistency 100.
+- Remediation: added an inset 3px focus treatment for clipped media buttons; tokenized the shared 264px rail width; removed redundant toast z-index utilities; normalized hidden modal-backdrop copy to Korean.
+- Justified exceptions: lightbox stays at z60 because DESIGN.md explicitly assigns lightboxes to the drawer layer; media stays at 8px because DESIGN.md explicitly assigns the small radius to media corners; 44px attachment removal control stays to meet the touch-target contract.
+- Large-file gate: `ChatRoom.svelte` and `ChatComposer.svelte` remain intact because they were pre-existing and tightly couple behavior-critical DOM, IME, scroll, recording, and visualViewport logic. No new function exceeds 50 lines.
+
+## Post-SHIP Technical Review
+- Score: **90.9 (Grade A, +0.3 vs Post-REFINE; +1.6 vs IMPL baseline)** — correctness 97, security 90, performance 90, coverage 72, consistency 100.
+- Final remediation: normalized daisyUI modal/drawer timing to 200ms in and 150ms out, limited mobile sheet travel to 16px, restored visible route-focus treatment, and moved the mobile navigation trigger into shared `AppHeader` ownership.
+- Final gates: `svelte-check` 0 errors/0 warnings; Prettier and ESLint clean; production build successful; `git diff --check` clean; compiled CSS and shared trigger ownership verified.
+- Evaluator accuracy: good_catch 9 (VERIFY 3, REFINE 3, SHIP 3); false_positive 2 (lightbox z80 and media-radius objections contradicted DESIGN.md); missed_stub 0.
+- Runtime limitation: no frontend behavior suite and no connected browser/device session. Manual 320/375/768/1024/1440, 200% zoom, keyboard, reduced-motion, iOS Safari/PWA, and Android Chrome/PWA checks remain open.
+- Session completed after explicit user approval to create draft PR #23.
+
+## SHIP Feedback Revision — 2026-08-08
+- User-directed navigation change: replaced the authenticated mobile hamburger/drawer with a three-destination bottom dock and kept the 264px rail at 1024px and above.
+- Root-cause bug fix: changed the topic empty state from bidirectional `transition:fade` to entrance-only `in:fade`, so replacement topics do not wait for a 300ms outro. Group and notification empty states now follow the same lifecycle contract.
+- Validation: `svelte-check` 0/0, Prettier/ESLint clean, production build successful, `git diff --check` clean, generated CSS inspected, independent source reviews found no blocker.
+- Browser availability: no connected in-app or extension browser; real-device and installed-PWA validation remains open.
+- Final technical score remains **90.9 (Grade A)**. Correctness, performance, and consistency show no measured regression; coverage remains 72 because no automated behavior suite or connected browser was available.
+
+## Publish Completion — 2026-08-08
+- User final approval: explicit request to create the PR.
+- Commits: `be13420`, `cdcce5e`.
+- Draft PR: https://github.com/jamye-plz/jamye-plz/pull/23 (`fix/design-motion-system` → `main`).
+- Ultrawork session status: COMPLETE.
