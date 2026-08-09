@@ -792,7 +792,7 @@
 							<span class="badge h-6 badge-ghost text-[13px]">{msg.body}</span>
 						</div>
 					{:else if isMine(msg)}
-						<div class="chat-end chat {!showHeader(i) ? '-mt-2' : ''}">
+						<div class="chat-end chat py-0 {!showHeader(i) ? '-mt-2' : ''}">
 							<div
 								class="chat-bubble-primary-readable chat-bubble max-w-[78%] rounded-[20px_20px_8px_20px] chat-bubble-primary text-base leading-[1.55] before:hidden lg:max-w-[66%]"
 							>
@@ -812,7 +812,7 @@
 							{/if}
 						</div>
 					{:else}
-						<div class="chat-start chat {!showHeader(i) ? '-mt-2' : ''}">
+						<div class="chat-start chat py-0 {!showHeader(i) ? '-mt-2' : ''}">
 							<div
 								class="avatar chat-image {msg.sender_avatar_url ? '' : 'avatar-placeholder'} w-8"
 							>
