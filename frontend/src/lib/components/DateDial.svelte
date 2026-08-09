@@ -34,7 +34,7 @@
 	const options: EmblaOptionsType = {
 		align: 'center',
 		containScroll: false,
-		skipSnaps: false,
+		skipSnaps: true,
 		dragFree: false,
 		loop: false
 	};
