@@ -74,11 +74,17 @@
 	let disposed = false;
 
 	const busy = $derived(uploading || converting);
-	const canSend = $derived(
-		connected &&
-			!busy &&
-			!recording &&
-			(inputText.trim().length > 0 || attachments.length > 0 || voiceClip !== null)
+	const hasSendableDraft = $derived(
+		inputText.trim().length > 0 || attachments.length > 0 || voiceClip !== null
+	);
+	const canSend = $derived(connected && !busy && !recording && hasSendableDraft);
+	// Recording owns the trailing action until it stops, even if the user types
+	// while recording. Otherwise the same fixed slot becomes Send as soon as a
+	// text or media draft exists. Busy work keeps the slot in its send/loading
+	// state so conversion and upload feedback never shift the composer layout.
+	const showSendAction = $derived(!recording && !requestingMic && (busy || hasSendableDraft));
+	const canUseRecordAction = $derived(
+		recording || (!busy && !requestingMic && voiceClip === null && attachments.length === 0)
 	);
 
 	// One per browser family; first supported wins. Chrome/Edge take webm/opus,
@@ -416,6 +422,15 @@
 		}
 	}
 
+	function activatePrimaryAction() {
+		if (showSendAction) {
+			void send();
+			return;
+		}
+		if (recording) stopRecording();
+		else void startRecording();
+	}
+
 	// Auto-grow the textarea with its content (up to ~6 lines, then it scrolls).
 	$effect(() => {
 		const el = inputEl;
@@ -538,6 +553,7 @@
 				type="button"
 				onclick={() => fileInput?.click()}
 				disabled={busy ||
+					requestingMic ||
 					recording ||
 					voiceClip !== null ||
 					attachments.length >= MAX_MEDIA_PER_MESSAGE}
@@ -545,18 +561,6 @@
 				aria-label="사진 또는 동영상 첨부"
 			>
 				<Paperclip class="h-5 w-5" />
-			</button>
-			<!-- Tap-to-toggle recording. Disabled with photo attachments present:
-			     the server enforces that audio rides alone on a message. -->
-			<button
-				type="button"
-				onclick={() => (recording ? stopRecording() : startRecording())}
-				disabled={busy || requestingMic || voiceClip !== null || attachments.length > 0}
-				class="btn btn-square shrink-0 {recording ? 'btn-error' : 'btn-ghost'}"
-				aria-label={recording ? '녹음 종료' : '음성 메시지 녹음'}
-				aria-pressed={recording}
-			>
-				<Mic class="h-5 w-5" />
 			</button>
 			<textarea
 				bind:this={inputEl}
@@ -569,15 +573,33 @@
 				class="textarea max-h-[120px] min-h-[48px] min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border-[var(--color-border-strong)]"
 				aria-label="메시지 입력"></textarea>
 			<button
-				onclick={send}
-				disabled={!canSend}
-				class="btn btn-square shrink-0 btn-primary"
-				aria-label={busy ? '처리 중' : '메시지 보내기'}
+				type="button"
+				onclick={activatePrimaryAction}
+				disabled={showSendAction ? !canSend : !canUseRecordAction}
+				class="btn btn-square shrink-0 {showSendAction
+					? 'btn-primary'
+					: recording
+						? 'btn-error'
+						: 'btn-ghost'}"
+				aria-label={requestingMic
+					? '마이크 권한 요청 중'
+					: showSendAction
+						? busy
+							? '처리 중'
+							: '메시지 보내기'
+						: recording
+							? '녹음 종료'
+							: '음성 메시지 녹음'}
+				aria-pressed={showSendAction ? undefined : recording}
 			>
-				{#if busy}
+				{#if busy || requestingMic}
 					<span class="loading loading-xs loading-spinner"></span>
-				{:else}
+				{:else if showSendAction}
 					<ArrowUp class="h-5 w-5" />
+				{:else if recording}
+					<Square class="h-4 w-4" />
+				{:else}
+					<Mic class="h-5 w-5" />
 				{/if}
 			</button>
 		</div>

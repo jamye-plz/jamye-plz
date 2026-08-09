@@ -133,6 +133,7 @@ Korean body text uses natural tracking and generous line height. Headings may us
 - Focused inputs, textareas, and selects activate their existing edge with the primary color plus a 1px inset stroke, producing a stable 2px visual border without an outer outline or layout shift. Non-field controls keep the 3px external focus ring. Error uses Clear Red, an inline message, and recovery guidance.
 - Labels remain visible for forms. The chat composer may use an accessible name instead of a persistent visible label when surrounding context is unambiguous.
 - The composer reserves bottom safe-area space and never hides the final message behind fixed UI.
+- The composer has one stable 44px trailing action slot. It is the microphone action while the text and media draft are empty, shows permission progress while requesting the microphone, remains the stop action while recording, and becomes the primary send action when text, attachments, or a recorded clip can be sent. Busy feedback uses the same slot; never render separate microphone and send buttons or shift the textarea when the action changes.
 
 ### Chat
 
@@ -406,7 +407,7 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 - Use card for topics because each topic is a shareable content object.
 - Use list and list-row for groups, members, and notifications because those screens prioritize scanning.
 - Use chat with chat-start/chat-end for message alignment, avatar for people, badge for reactions and unread labels, and status for connectivity.
-- Use textarea plus button for the composer.
+- Use textarea plus one adaptive trailing button for the composer: record when the draft is empty, send when it contains text or media, and show busy feedback in the same fixed slot.
 - Use native dialog with modal-bottom on mobile and centered placement from the small breakpoint upward.
 - Use primary color only for the single most important action; default, ghost, and soft variants carry secondary actions.
 
@@ -418,7 +419,7 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 
 3. Build the conversation with daisyUI chat. Incoming bubbles use a neutral raised surface; outgoing bubbles use #9B3F68 with white text in light mode and #E39BB8 with #2C141F text in dark mode. Use 20px bubble radius with one 8px conversation-side corner, suppress the default `::before` tail, and rely on alignment plus the asymmetric corner for direction. Use 16px text at line-height 1.55, maximum width 78% mobile and 66% desktop, 4px same-sender gaps, and 12px sender-change gaps. A newly appended message may fade for 150ms, but it appears immediately in state; never stagger history, fly messages vertically, or animate scroll anchoring.
 
-4. Build the composer with daisyUI textarea and button. The textarea grows from 48px to 120px and uses a 16px radius. On focus, recolor its existing border to the primary semantic color and add a 1px inset stroke; do not draw an external field outline. Icon controls have 20px Lucide icons inside 44px hit targets with aria-labels. The send button is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
+4. Build the composer with daisyUI textarea and one adaptive trailing button in a stable 44px slot. Show the microphone while the text and media draft are empty, show disabled progress while requesting microphone permission, keep the stop action available throughout recording, then switch the same control to the primary send action once text, attachments, or a recorded clip can be sent. Busy feedback stays in that slot, and the textarea never shifts when the action changes. The textarea grows from 48px to 120px and uses a 16px radius. On focus, recolor its existing border to the primary semantic color and add a 1px inset stroke; do not draw an external field outline. Icon controls use Lucide icons inside 44px hit targets with state-specific aria-labels. The send state is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
 
 5. Build a responsive dialog with the native dialog element and daisyUI modal. Use bottom placement below 640px and centered placement at 640px and above. The modal surface is #FFFFFF light or #252129 dark, 24px radius, 20px mobile padding, 24px desktop padding, elevation 3, and a rgba(20,16,22,0.52) scrim. Use Svelte `fly` with 12-16px travel on mobile or `scale` from 0.98 on desktop; both primitives already include opacity. Use 200ms in and 150ms out. Set travel and duration to zero when `prefersReducedMotion.current` is true. Include a clear close path, Escape behavior, focus management, and confirmation before discarding unsaved work.
 
