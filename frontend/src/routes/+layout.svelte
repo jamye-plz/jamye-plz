@@ -115,7 +115,11 @@
 	// Move keyboard and screen-reader focus into the new screen without changing
 	// browser scroll restoration. Prefer the page heading when it lives inside
 	// the main landmark; chat and app-header screens fall back to the landmark.
-	afterNavigate(() => {
+	afterNavigate(({ from, to }) => {
+		if (from && to && from.route.id === to.route.id && from.url.pathname === to.url.pathname) {
+			return;
+		}
+
 		const main = document.getElementById('main-content');
 		if (!main) return;
 		main.setAttribute('tabindex', '-1');
