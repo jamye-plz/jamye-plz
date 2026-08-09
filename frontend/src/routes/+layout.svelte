@@ -119,8 +119,7 @@
 		const main = document.getElementById('main-content');
 		if (!main) return;
 		main.setAttribute('tabindex', '-1');
-		const target =
-			main.querySelector<HTMLElement>('h1') ?? document.querySelector<HTMLElement>('h1') ?? main;
+		const target = main.querySelector<HTMLElement>('h1') ?? main;
 		target.setAttribute('tabindex', '-1');
 		target.focus({ preventScroll: true });
 	});
