@@ -156,7 +156,7 @@
 			>
 				<fieldset class="fieldset" disabled={!isOwner}>
 					<legend class="fieldset-legend">그룹 이름</legend>
-					<div class="join w-full">
+					<div class="flex w-full items-stretch gap-2">
 						<input
 							id="group-name"
 							type="text"
@@ -165,14 +165,14 @@
 							maxlength={128}
 							required
 							aria-label="그룹 이름"
-							class="validator input join-item min-w-0 flex-1 rounded-l-lg"
+							class="validator input min-w-0 flex-1 rounded-lg"
 						/>
 						<button
 							type="submit"
 							disabled={!groupName.trim() ||
 								groupName.trim() === groupQuery.data.name ||
 								rename.isPending}
-							class="btn join-item shrink-0 rounded-r-lg btn-primary"
+							class="btn shrink-0 rounded-lg px-5 btn-primary"
 						>
 							{rename.isPending ? '저장 중...' : '저장'}
 						</button>

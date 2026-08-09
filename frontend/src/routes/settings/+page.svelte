@@ -203,7 +203,7 @@
 			>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">닉네임</legend>
-					<div class="join w-full">
+					<div class="flex w-full items-stretch gap-2">
 						<input
 							id="nickname"
 							type="text"
@@ -212,12 +212,12 @@
 							maxlength={64}
 							required
 							aria-label="닉네임"
-							class="validator input join-item min-w-0 flex-1 rounded-l-lg"
+							class="validator input min-w-0 flex-1 rounded-lg"
 						/>
 						<button
 							type="submit"
 							disabled={!nickname.trim() || nickname.trim() === me.nickname || save.isPending}
-							class="btn join-item shrink-0 rounded-r-lg btn-primary"
+							class="btn shrink-0 rounded-lg px-5 btn-primary"
 						>
 							{save.isPending ? '저장 중...' : '저장'}
 						</button>

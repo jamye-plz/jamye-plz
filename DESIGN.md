@@ -128,7 +128,7 @@ Korean body text uses natural tracking and generous line height. Headings may us
 - Input and textarea minimum height: 48px.
 - Composer textarea grows from 48px to 120px, then scrolls internally.
 - Radius: 16px. Resting interactive border uses Strong Mauve Border/Strong Night Border.
-- Inline topic composers keep the text input and solid action button as separate controls with an 8px gap and independent 16px radii. Do not join their contrasting borders into one segmented pill.
+- Inline text-and-submit forms keep the input and solid action button as separate controls with an 8px gap and independent 16px radii. This applies to topic creation, nickname changes, and group-name changes; do not join contrasting borders into one segmented pill.
 - Placeholder uses Muted Aubergine/Muted Moon and must remain legible.
 - Focused inputs, textareas, and selects activate their existing edge with the primary color plus a 1px inset stroke, producing a stable 2px visual border without an outer outline or layout shift. Non-field controls keep the 3px external focus ring. Error uses Clear Red, an inline message, and recovery guidance.
 - Labels remain visible for forms. The chat composer may use an accessible name instead of a persistent visible label when surrounding context is unambiguous.
