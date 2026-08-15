@@ -47,14 +47,14 @@
 	let refreshing = $state(false);
 	let startY = 0;
 	let armed = false;
-	let lastInteractionWasKeyboard = false;
+	let pendingNavigationModality: 'keyboard' | 'pointer' | null = null;
 
 	function onKeyboardInteraction() {
-		lastInteractionWasKeyboard = true;
+		pendingNavigationModality = 'keyboard';
 	}
 
 	function onPointerInteraction() {
-		lastInteractionWasKeyboard = false;
+		pendingNavigationModality = 'pointer';
 	}
 
 	// Chat routes own their own scroll; both end in "/chat".
@@ -129,6 +129,9 @@
 	// browser scroll restoration. Prefer the page heading when it lives inside
 	// the main landmark; chat and app-header screens fall back to the landmark.
 	afterNavigate(({ from, to }) => {
+		const navigationModality = pendingNavigationModality;
+		pendingNavigationModality = null;
+
 		if (from && to && from.route.id === to.route.id && from.url.pathname === to.url.pathname) {
 			return;
 		}
@@ -138,7 +141,7 @@
 		main.setAttribute('tabindex', '-1');
 		const target = main.querySelector<HTMLElement>('h1') ?? main;
 		target.setAttribute('tabindex', '-1');
-		if (target === main && !lastInteractionWasKeyboard) {
+		if (target === main && navigationModality === 'pointer') {
 			main.dataset.routeFocus = 'true';
 			main.addEventListener('blur', () => delete main.dataset.routeFocus, { once: true });
 		} else {

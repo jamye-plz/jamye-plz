@@ -53,12 +53,33 @@ test('only pointer-triggered route focus suppresses the viewport-spanning outlin
 	);
 	assert.match(
 		source,
-		/if \(target === main && !lastInteractionWasKeyboard\)/,
-		'only non-keyboard route focus may set the suppression marker'
+		/let pendingNavigationModality: 'keyboard' \| 'pointer' \| null = null/,
+		'unknown navigation modality must remain distinct from pointer input'
+	);
+	assert.match(
+		source,
+		/if \(target === main && navigationModality === 'pointer'\)/,
+		'only observed pointer route focus may set the suppression marker'
 	);
 	assert.match(
 		source,
 		/main\.addEventListener\('blur', \(\) => delete main\.dataset\.routeFocus, \{ once: true \}\)/,
 		'the suppression marker must be removed when focus leaves main'
 	);
+});
+
+test('navigation consumes the observed input modality before any early return', () => {
+	const callbackBody = source.match(
+		/afterNavigate\(\(\{ from, to \}\) => \{([\s\S]*?)\n\t\}\);/
+	)?.[1];
+
+	assert.ok(callbackBody, 'afterNavigate must expose its focus behavior');
+	const readIndex = callbackBody.indexOf('const navigationModality = pendingNavigationModality;');
+	const resetIndex = callbackBody.indexOf('pendingNavigationModality = null;');
+	const returnIndex = callbackBody.indexOf('return;');
+
+	assert.notEqual(readIndex, -1, 'navigation must read the pending modality');
+	assert.notEqual(resetIndex, -1, 'navigation must reset the pending modality');
+	assert.ok(readIndex < resetIndex, 'navigation must capture the modality before resetting it');
+	assert.ok(resetIndex < returnIndex, 'query-only navigation must also consume the modality');
 });

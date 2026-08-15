@@ -3,39 +3,47 @@
 ## Scope
 
 - PR #25 `fix/route-focus-outline`
-- Unresolved thread: `PRRT_kwDOS75RC86ZetM4`
-- Files reviewed: `frontend/src/app.css`, `frontend/src/routes/+layout.svelte`, `frontend/tests/layout-focus.test.mjs`
+- Resolved thread: `PRRT_kwDOS75RC86ZetM4`
+- New unresolved thread reviewed: `PRRT_kwDOS75RC86Ze3KN`
+- Files reviewed: `frontend/src/app.css`, `frontend/src/routes/+layout.svelte`, `frontend/tests/layout-focus.test.mjs`, and the automatic invite redirect in `frontend/src/routes/invite/[code]/+page.svelte`
 
-## Finding
+## Findings
 
-- Severity: MEDIUM (P2 accessibility), valid.
-- The blanket `#main-content:focus-visible { outline: none; }` selector removed the only visible focus indicator when keyboard users activated the skip link or navigated to a route whose heading was outside `main`.
-- This conflicted with the project's WCAG 2.2 AA focus-visible requirement.
+### MEDIUM: blanket focus suppression
 
-## Remediation
+- The original `#main-content:focus-visible { outline: none; }` removed the only visible cue for keyboard route and skip-link focus.
+- Remediated by scoping suppression to `#main-content[data-route-focus]:focus-visible`.
 
-- Track the most recent input modality using capture-phase `keydown` and `pointerdown` listeners.
-- Add `data-route-focus` only when a pointer-triggered route navigation programmatically focuses the main landmark.
-- Scope outline suppression to `#main-content[data-route-focus]:focus-visible`.
-- Remove the temporary marker on blur.
-- Keyboard-triggered route focus and skip-link focus retain the global 3px visible indicator.
+### MEDIUM: unknown modality treated as pointer input
+
+- The first remediation initialized `lastInteractionWasKeyboard` to `false`, so initial page load and automatic redirects with no observed input were incorrectly classified as pointer-triggered.
+- The new review comment is valid and reproducible from the negative boolean condition.
+
+## Final remediation
+
+- Replace the ambiguous boolean with `'keyboard' | 'pointer' | null`; `null` represents unknown or unobserved input.
+- Set the pending modality only from capture-phase `keydown` or `pointerdown`.
+- Capture and reset the pending modality at the start of every `afterNavigate` callback, including query-only early returns.
+- Add `data-route-focus` only when the consumed modality equals `'pointer'`.
+- Initial loads, automatic invite redirects, keyboard navigation, and skip-link focus retain the global 3px visible focus indicator.
+- Remove the pointer-only suppression marker on blur.
 
 ## Verification
 
-- `bun audit --production`: 1 moderate and 1 low pre-existing DOMPurify advisory; no dependency changes in this PR.
-- `bun test`: 5 passed.
+- `bun audit --production`: 1 moderate and 1 low pre-existing DOMPurify advisory; no dependency change in this PR.
+- `bun test`: 6 passed.
 - `bun run check`: 0 errors, 0 warnings.
 - `bun run lint`: passed.
 - `bun run build`: passed with existing large-chunk and PWA glob warnings.
 - `git diff --check`: passed.
 - Local server: `GET /groups` returned 200 and Korean document language was rendered.
-- Interactive browser verification was unavailable because no browser backend was connected; iOS PWA keyboard/skip-link behavior remains a manual check.
+- Interactive browser verification remains unavailable because no browser backend is connected.
 
 ## Re-review
 
-- Security: no new injection, auth, data, or dependency path.
-- Performance: two constant-time global listeners with matching cleanup; no render loop or allocation growth.
-- Accessibility: the reported focus-visible regression is fixed while preserving the original pointer-route visual cleanup.
-- Code quality: input-modality state, temporary marker lifecycle, CSS scoping, and regression coverage are explicit.
+- Security: no new injection, authorization, sensitive-data, or dependency path.
+- Performance: two constant-time global listeners with matching cleanup and one scalar state reset per navigation.
+- Accessibility: only an explicitly observed pointer interaction can suppress the fallback main-landmark outline.
+- Code quality: unknown state, pointer equality, per-navigation consumption, and early-return ordering have regression coverage.
 - Diff-introduced CRITICAL/HIGH/MEDIUM findings after remediation: none.
-- Verdict: PASS with manual-device verification remaining.
+- Verdict: PASS locally; GitHub reply, resolution, commit, and push remain pending.
