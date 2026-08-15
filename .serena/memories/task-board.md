@@ -1,4 +1,27 @@
-# Task Board
+# Task Board — ralph-20260815-162415 (active)
+
+- **session**: ralph-20260815-162415
+- **workflow**: ordered PR merge
+- **phase**: READY — PR #25 and PR #26 awaiting sequential merge
+- **request**: Commit all generated Serena memories, then merge PR #25 followed by PR #26
+
+| Task | Description | Status |
+|------|-------------|--------|
+| T1 | Include ordered-merge memories in PR #25 | COMPLETED |
+| T2 | Merge PR #25 (`fix/route-focus-outline`) | PENDING |
+| T3 | Preserve topic-rename memories in PR #26 | COMPLETED |
+| T4 | Merge PR #26 (`feature/topic-rename`) after #25 | PENDING |
+
+| Criterion | Description | Status |
+|-----------|-------------|--------|
+| C1 | PR #25 merge commit is in `main` before PR #26 | PENDING |
+| C2 | PR #26 contains its topic-rename Serena memories | COMPLETED |
+| C3 | Both PRs are merged in the requested order | PENDING |
+
+---
+
+# Task Board — Topic Rename (completed)
+
 ## Session: session-20260815-151541
 ## Status: COMPLETED
 ## Clarification Debt: 0
