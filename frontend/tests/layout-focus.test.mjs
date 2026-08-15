@@ -29,9 +29,36 @@ test('query-only navigation preserves the current focus target', () => {
 	assert.ok(returnIndex < focusIndex, 'the same-page guard must run before route focus is reset');
 });
 
-test('route focus on main does not render a viewport-spanning outline', () => {
-	const mainFocusRule = styles.match(/#main-content:focus-visible\s*\{([^}]*)\}/)?.[1];
+test('only pointer-triggered route focus suppresses the viewport-spanning outline', () => {
+	const mainFocusRule = styles.match(
+		/#main-content\[data-route-focus\]:focus-visible\s*\{([^}]*)\}/
+	)?.[1];
 
-	assert.ok(mainFocusRule, 'main must override the global focus-visible outline');
-	assert.match(mainFocusRule, /outline:\s*none;/, 'route focus must remain visually neutral');
+	assert.ok(mainFocusRule, 'pointer-triggered route focus must override the global outline');
+	assert.match(mainFocusRule, /outline:\s*none;/, 'pointer route focus must remain neutral');
+	assert.doesNotMatch(
+		styles,
+		/#main-content:focus-visible\s*\{/,
+		'keyboard and skip-link focus must keep the global visible indicator'
+	);
+	assert.match(
+		source,
+		/window\.addEventListener\('keydown', onKeyboardInteraction, true\)/,
+		'keyboard input must be tracked before route focus moves'
+	);
+	assert.match(
+		source,
+		/window\.addEventListener\('pointerdown', onPointerInteraction, true\)/,
+		'pointer input must be tracked before route focus moves'
+	);
+	assert.match(
+		source,
+		/if \(target === main && !lastInteractionWasKeyboard\)/,
+		'only non-keyboard route focus may set the suppression marker'
+	);
+	assert.match(
+		source,
+		/main\.addEventListener\('blur', \(\) => delete main\.dataset\.routeFocus, \{ once: true \}\)/,
+		'the suppression marker must be removed when focus leaves main'
+	);
 });

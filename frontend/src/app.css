@@ -235,9 +235,10 @@ body {
 	outline-offset: 2px;
 }
 
-/* Route changes focus the main landmark for screen-reader context. It is not an
-   interactive control, so suppress the full-width ring while preserving focus. */
-#main-content:focus-visible {
+/* Pointer-triggered route changes focus the main landmark for screen-reader
+   context. Suppress only that full-width ring; keyboard and skip-link focus
+   keep the global visible indicator. */
+#main-content[data-route-focus]:focus-visible {
 	outline: none;
 }
 

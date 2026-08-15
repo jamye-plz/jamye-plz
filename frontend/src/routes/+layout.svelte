@@ -47,6 +47,15 @@
 	let refreshing = $state(false);
 	let startY = 0;
 	let armed = false;
+	let lastInteractionWasKeyboard = false;
+
+	function onKeyboardInteraction() {
+		lastInteractionWasKeyboard = true;
+	}
+
+	function onPointerInteraction() {
+		lastInteractionWasKeyboard = false;
+	}
 
 	// Chat routes own their own scroll; both end in "/chat".
 	const isChatRoute = $derived(page.route.id?.endsWith('/chat') ?? false);
@@ -88,11 +97,15 @@
 	}
 
 	onMount(() => {
+		window.addEventListener('keydown', onKeyboardInteraction, true);
+		window.addEventListener('pointerdown', onPointerInteraction, true);
 		window.addEventListener('touchstart', onTouchStart, { passive: true });
 		window.addEventListener('touchmove', onTouchMove, { passive: false });
 		window.addEventListener('touchend', onTouchEnd, { passive: true });
 		window.addEventListener('touchcancel', onTouchEnd, { passive: true });
 		return () => {
+			window.removeEventListener('keydown', onKeyboardInteraction, true);
+			window.removeEventListener('pointerdown', onPointerInteraction, true);
 			window.removeEventListener('touchstart', onTouchStart);
 			window.removeEventListener('touchmove', onTouchMove);
 			window.removeEventListener('touchend', onTouchEnd);
@@ -125,6 +138,12 @@
 		main.setAttribute('tabindex', '-1');
 		const target = main.querySelector<HTMLElement>('h1') ?? main;
 		target.setAttribute('tabindex', '-1');
+		if (target === main && !lastInteractionWasKeyboard) {
+			main.dataset.routeFocus = 'true';
+			main.addEventListener('blur', () => delete main.dataset.routeFocus, { once: true });
+		} else {
+			delete main.dataset.routeFocus;
+		}
 		target.focus({ preventScroll: true });
 	});
 </script>
