@@ -235,6 +235,13 @@ body {
 	outline-offset: 2px;
 }
 
+/* Pointer-triggered route changes focus the main landmark for screen-reader
+   context. Suppress only that full-width ring; keyboard and skip-link focus
+   keep the global visible indicator. */
+#main-content[data-route-focus]:focus-visible {
+	outline: none;
+}
+
 /* Keep the global focus ring visible inside clipped media surfaces. */
 .focus-ring-inset:focus-visible {
 	outline-offset: -3px;

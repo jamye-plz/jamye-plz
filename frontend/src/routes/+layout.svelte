@@ -47,6 +47,15 @@
 	let refreshing = $state(false);
 	let startY = 0;
 	let armed = false;
+	let pendingNavigationModality: 'keyboard' | 'pointer' | null = null;
+
+	function onKeyboardInteraction() {
+		pendingNavigationModality = 'keyboard';
+	}
+
+	function onPointerInteraction() {
+		pendingNavigationModality = 'pointer';
+	}
 
 	// Chat routes own their own scroll; both end in "/chat".
 	const isChatRoute = $derived(page.route.id?.endsWith('/chat') ?? false);
@@ -88,11 +97,15 @@
 	}
 
 	onMount(() => {
+		window.addEventListener('keydown', onKeyboardInteraction, true);
+		window.addEventListener('pointerdown', onPointerInteraction, true);
 		window.addEventListener('touchstart', onTouchStart, { passive: true });
 		window.addEventListener('touchmove', onTouchMove, { passive: false });
 		window.addEventListener('touchend', onTouchEnd, { passive: true });
 		window.addEventListener('touchcancel', onTouchEnd, { passive: true });
 		return () => {
+			window.removeEventListener('keydown', onKeyboardInteraction, true);
+			window.removeEventListener('pointerdown', onPointerInteraction, true);
 			window.removeEventListener('touchstart', onTouchStart);
 			window.removeEventListener('touchmove', onTouchMove);
 			window.removeEventListener('touchend', onTouchEnd);
@@ -116,6 +129,9 @@
 	// browser scroll restoration. Prefer the page heading when it lives inside
 	// the main landmark; chat and app-header screens fall back to the landmark.
 	afterNavigate(({ from, to }) => {
+		const navigationModality = pendingNavigationModality;
+		pendingNavigationModality = null;
+
 		if (from && to && from.route.id === to.route.id && from.url.pathname === to.url.pathname) {
 			return;
 		}
@@ -125,6 +141,12 @@
 		main.setAttribute('tabindex', '-1');
 		const target = main.querySelector<HTMLElement>('h1') ?? main;
 		target.setAttribute('tabindex', '-1');
+		if (target === main && navigationModality === 'pointer') {
+			main.dataset.routeFocus = 'true';
+			main.addEventListener('blur', () => delete main.dataset.routeFocus, { once: true });
+		} else {
+			delete main.dataset.routeFocus;
+		}
 		target.focus({ preventScroll: true });
 	});
 </script>
