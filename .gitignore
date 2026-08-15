@@ -4,6 +4,7 @@
 **/.agents/state/
 .agents/backup/
 .migration-backup/
+/data/
 
 # Nix build artifacts
 result
