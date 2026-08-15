@@ -15,6 +15,7 @@
 	} from '$lib/types/chat.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import ChatComposer from '$lib/components/ChatComposer.svelte';
 	import MessageMedia from '$lib/components/MessageMedia.svelte';
@@ -30,6 +31,8 @@
 		pinnedBody,
 		canEditPinned = false,
 		onEditPinned,
+		canRenameTitle = false,
+		onRenameTitle,
 		createdAt
 	}: {
 		groupId: string;
@@ -39,6 +42,8 @@
 		pinnedBody?: string | null;
 		canEditPinned?: boolean;
 		onEditPinned?: () => void;
+		canRenameTitle?: boolean;
+		onRenameTitle?: () => void;
 		/** Room (topic/chatroom) creation time — the read bound for an empty room. */
 		createdAt?: string;
 	} = $props();
@@ -689,6 +694,16 @@
 				<h1 class="min-w-0 truncate text-base font-semibold text-base-content">
 					{title}
 				</h1>
+				{#if canRenameTitle}
+					<button
+						type="button"
+						onclick={onRenameTitle}
+						class="btn btn-square size-11 min-h-11 shrink-0 btn-ghost"
+						aria-label="주제 이름 수정"
+					>
+						<Pencil class="h-4 w-4" />
+					</button>
+				{/if}
 				{#if pinnedBody}
 					<button
 						type="button"

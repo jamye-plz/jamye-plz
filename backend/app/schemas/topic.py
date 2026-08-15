@@ -16,6 +16,21 @@ class TopicCreate(BaseModel):
 
 class TopicPatch(BaseModel):
     body: str | None = Field(None, min_length=1)
+    title: str | None = None
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _strip_and_validate_title(cls, v: object) -> object:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("title must not be empty or whitespace-only")
+        if len(stripped) > 256:
+            raise ValueError("title must not exceed 256 characters")
+        return stripped
 
 
 class TopicTagOut(BaseModel):

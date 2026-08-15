@@ -31,6 +31,10 @@ export function enrichTopic(groupId: string, id: string, body: string): Promise<
 	return apiPatch<Topic>(`/groups/${groupId}/topics/${id}`, { body });
 }
 
+export function renameTopic(groupId: string, id: string, title: string): Promise<Topic> {
+	return apiPatch<Topic>(`/groups/${groupId}/topics/${id}`, { title });
+}
+
 export function presignMedia(
 	groupId: string,
 	topicId: string,
