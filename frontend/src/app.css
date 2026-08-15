@@ -235,6 +235,12 @@ body {
 	outline-offset: 2px;
 }
 
+/* Route changes focus the main landmark for screen-reader context. It is not an
+   interactive control, so suppress the full-width ring while preserving focus. */
+#main-content:focus-visible {
+	outline: none;
+}
+
 /* Keep the global focus ring visible inside clipped media surfaces. */
 .focus-ring-inset:focus-visible {
 	outline-offset: -3px;
