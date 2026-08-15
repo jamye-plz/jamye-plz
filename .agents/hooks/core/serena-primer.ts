@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { agyConversationId, isAgyInput, readAgyPrompt } from "./agy-input.ts";
 import { makePromptOutput } from "./hook-output.ts";
+import { normalizePromptInput } from "./prompt-input.ts";
 import type { HandlerCtx, HandlerResult, HookInput, Vendor } from "./types.ts";
 import { getProjectDir, inferVendorFromScriptPath } from "./vendor-detect.ts";
 
@@ -116,6 +117,8 @@ export function primerContext(): string {
     "- Code discovery / reading: `get_symbols_overview`, `find_symbol`, `find_referencing_symbols`, `search_for_pattern`.",
     "- Code edits: `replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `replace_content`.",
     "- Native grep/glob: only for initial filename/path discovery. Do not fall back to grep + Read for code navigation just because Serena's tools aren't loaded yet — load them.",
+    '- Result size: omit `max_answer_chars` on Serena tools (uses the configured default, typically 150000). Never pass small caps like `3000` on broad searches. If a call returns "The answer is too long (N characters)", retry with `max_answer_chars` > N or narrow path/glob — do not keep the low cap.',
+    "- Exception — MCP timeout: if a Serena MCP call times out or hangs (seen mainly in OpenCode Desktop's long-lived sidecar), stop retrying MCP for this session: use native search/read for code, and access `.serena/memories/` files directly (or `serena memories read|write` when Serena CLI ≥ 1.5 is installed) for memory work. A full app relaunch restores Serena MCP.",
   ].join("\n");
 }
 
@@ -135,7 +138,10 @@ export async function run(
   const { cwd: projectDir, sid: sessionId = "unknown" } = ctx;
 
   if (!isSerenaProject(projectDir)) return null;
-  if (!claimSession(projectDir, sessionId)) return null;
+  // Compaction keeps the session id, so the session-once claim would skip
+  // exactly the turn that just lost the primer from context — force re-inject.
+  const forced = input.source === "compact";
+  if (!claimSession(projectDir, sessionId) && !forced) return null;
 
   return { type: "context", additionalContext: primerContext() };
 }
@@ -189,7 +195,7 @@ async function main() {
   const vendor = detectVendor(input);
   const projectDir = getProjectDir(vendor, input);
   const sessionId = getSessionId(input);
-  let prompt = (input.prompt as string) ?? "";
+  let prompt = normalizePromptInput(input.prompt);
 
   // agy's PreInvocation stdin carries no `prompt`; recover it and only act on
   // the first invocation of a turn.

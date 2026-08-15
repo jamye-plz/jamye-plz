@@ -4,6 +4,7 @@
 **/.agents/state/
 .agents/backup/
 .migration-backup/
+/data/
 
 # Nix build artifacts
 result
@@ -12,3 +13,8 @@ result-*
 
 # oma docs generated artifacts
 docs/generated/
+
+.agents/state/
+
+docs/plans/
+.qwen/tmp/
