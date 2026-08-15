@@ -114,3 +114,14 @@ fix/design-motion-system
 
 ## Clarification Debt
 - correct +25: Branch prefix corrected from docs/ to fix/.
+
+
+## Session 20260815-162415 — Ralph ordered PR merge
+
+- PLAN: COMPLETE
+- Plan artifact: `.agents/results/plan-20260815-162415.json`
+- Scope: no application-code edits; verify and merge PR #25, then revalidate and merge PR #26.
+- Serena scope: PR #26 already includes nine topic-rename memories; runtime Ralph session memory committed to PR #25 as `c0c3fe4`.
+- Assumptions: both PRs target `main`; no required CI checks are configured; GitHub reports CLEAN/MERGEABLE.
+- Alternatives: merging #26 first rejected because the user prescribed order; rebasing rejected because there is no file overlap or conflict signal.
+- PLAN_GATE: PASS; user approval is explicit in the merge request.
