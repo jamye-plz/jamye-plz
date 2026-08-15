@@ -24,6 +24,7 @@ import { basename, dirname, join } from "node:path";
 import { agyConversationId, isAgyInput, readAgyPrompt } from "./agy-input.ts";
 import { toPosixPath } from "./fs-utils.ts";
 import { makePromptOutput } from "./hook-output.ts";
+import { isRelayedAgentMessage, normalizePromptInput } from "./prompt-input.ts";
 // triggers.json is imported statically: bundler inlines it into the oma binary;
 // standalone bun runs resolve the sibling file (pi / direct run).
 import embeddedTriggers from "./triggers.json" with { type: "json" };
@@ -187,10 +188,16 @@ export function matchSkills(
     const jsonEntry = config.skills?.[skill.name];
     if (!jsonEntry) continue;
 
+    // All languages merged, never gated by config language: users prompt in
+    // whichever language they think in (`language` controls the RESPONSE
+    // language). A keyword written in language X can only match a prompt
+    // containing X-script text, so merging cannot fire on unrelated prompts.
     const jsonTriggers = [
       ...(jsonEntry.keywords["*"] ?? []),
       ...(jsonEntry.keywords.en ?? []),
-      ...(lang !== "en" ? (jsonEntry.keywords[lang] ?? []) : []),
+      ...Object.entries(jsonEntry.keywords)
+        .filter(([key]) => key !== "*" && key !== "en")
+        .flatMap(([, entries]) => entries),
     ];
 
     const seen = new Set<string>();
@@ -463,6 +470,11 @@ export async function run(
 
   if (!prompt.trim()) return null;
 
+  // Relayed inter-agent messages (teammate reports, idle notifications) are
+  // not user intent — their content routinely contains skill trigger words
+  // and produced false skill suggestions. Same guard as keyword-detector.
+  if (isRelayedAgentMessage(prompt)) return null;
+
   // Claude-specific: slash-skill resolution must run BEFORE the slash early-exit
   // and persistent-workflow guard (same order as the original standalone path).
   if (vendor === "claude") {
@@ -514,7 +526,7 @@ async function main() {
   const vendor = detectVendor(input);
   const projectDir = getProjectDir(vendor, input);
   const sessionId = getSessionId(input);
-  let prompt = (input.prompt as string) ?? "";
+  let prompt = normalizePromptInput(input.prompt);
 
   // agy's PreInvocation stdin carries no `prompt`; recover it from the
   // transcript, and only act on the first invocation of a turn.

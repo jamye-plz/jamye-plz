@@ -146,7 +146,7 @@ docs:
 
 # Built-in: antigravity | claude | codex | qwen | cursor | mixed
 # (custom_presets entries are also valid)
-model_preset: claude
+model_preset: mixed
 
 # Per-agent override (optional) — shallow-merged on top of the preset entry.
 # Agent ids: orchestrator, architecture, qa, pm, backend, frontend, mobile,
@@ -161,12 +161,53 @@ model_preset: claude
 #   thinking: true | false                          (vendor-dependent)
 #   memory:   user | project | local                (per-agent memory tier)
 # Example:
-# agents:
-#   backend:
-#     model: openai/gpt-5.5
-#     effort: high
-#   qa:
-#     model: anthropic/claude-sonnet-4-6
+agents:
+  orchestrator:
+    model: anthropic/claude-opus-5
+    memory: local
+  architecture:
+    model: anthropic/claude-fable-5
+    memory: project
+  qa:
+    model: anthropic/claude-sonnet-5
+    effort: high
+  pm:
+    model: anthropic/claude-opus-5
+    memory: project
+  backend:
+    model: openai/gpt-5.6-terra
+    effort: high
+    memory: local
+  frontend:
+    model: openai/gpt-5.6-terra
+    effort: high
+    memory: local
+  mobile:
+    model: openai/gpt-5.6-terra
+    effort: high
+    memory: local
+  db:
+    model: openai/gpt-5.6-sol
+    effort: high
+    memory: project
+  debug:
+    model: openai/gpt-5.6-terra
+    effort: xhigh
+  tf-infra:
+    model: openai/gpt-5.6-terra
+    effort: xhigh
+    memory: project
+  explore:
+    model: openai/gpt-5.6-luna
+    effort: low
+  refactor:
+    model: openai/gpt-5.6-sol
+    effort: high
+    memory: project
+  docs:
+    model: openai/gpt-5.6-luna
+    effort: medium
+    memory: project
 
 # Inline custom model slugs (optional; replaces the legacy models.yaml file).
 # Example:
@@ -184,7 +225,7 @@ model_preset: claude
 #     extends: claude
 #     description: "Team A — sonnet base, codex backend"
 #     agent_defaults:
-#       backend: { model: openai/gpt-5.5, effort: high }
+#       backend: { model: openai/gpt-5.6-terra, effort: high }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # pi (Earendil) transport runtime
@@ -205,7 +246,7 @@ model_preset: claude
 #     command: pi
 #     prompt_flag: "-p"
 #     model_flag: "--model"
-#     default_model: anthropic/claude-sonnet-4-6
+#     default_model: anthropic/claude-sonnet-5
 #     thinking_flag: "--thinking"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -217,3 +258,38 @@ model_preset: claude
 vendors:
   - claude
   - codex
+
+# Added by oma update — new config keys (template defaults; edit freely)
+scm:
+  conventional_commits: true
+  branching_strategy: github-flow
+  require_pr_for_default_branch: true
+  co_author:
+    enabled: true
+    name: First Fluke
+    email: our.first.fluke@gmail.com
+  forbidden_patterns:
+    - "*.env"
+    - "*.env.*"
+    - credentials.json
+    - secrets.yaml
+    - "*.pem"
+    - "*.key"
+    - .env.local
+    - "*.p12"
+    - "*.pfx"
+    - id_rsa*
+    - id_ed25519*
+    - .npmrc
+    - service-account*.json
+    - "*.keystore"
+    - "*.jks"
+    - "*.tfvars"
+    - "*.tfstate"
+    - "*.tfstate.*"
+    - .netrc
+    - .pypirc
+  allowed_exceptions:
+    - "*.example"
+    - "*.sample"
+    - "*.template"

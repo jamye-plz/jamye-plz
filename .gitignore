@@ -12,3 +12,8 @@ result-*
 
 # oma docs generated artifacts
 docs/generated/
+
+.agents/state/
+
+docs/plans/
+.qwen/tmp/

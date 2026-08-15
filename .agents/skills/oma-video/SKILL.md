@@ -31,6 +31,7 @@ Generate finished `.mp4` videos through a key-optional, 3-tier (CLI-first / MCP 
 - Generating speech audio only (no video) -> use `oma-voice`
 - Non-linear video editing of an existing finished mp4 -> out of scope (OpenCut-MCP deferred)
 - Supervised headed web capture is in-scope (`--source web`); live streaming is out of scope
+- Interactive HTML explainer document (not a video) -> use `oma-explainer`
 
 ### Expected inputs
 - A brief (topic / README path / data) plus optional mode, aspect, locale, captions, visual, voice, music, duration, compositor, capture path, seed
@@ -44,11 +45,31 @@ Generate finished `.mp4` videos through a key-optional, 3-tier (CLI-first / MCP 
 - `audio/`, `visuals/`, `captions.srt` / `captions.vtt`, the rendered `<mode>-<slug>.mp4`
 - `manifest.json` with providers, asset hashes, cost breakdown, and exit code
 
+```yaml
+outputs:
+  - name: video
+    description: rendered <mode>-<slug>.mp4 in the run directory
+    artifact: ".agents/results/videos/*/*.mp4"
+    required: true
+  - name: manifest
+    description: reproducibility record (providers, asset sha256 hashes, cost breakdown, exit code)
+    artifact: ".agents/results/videos/*/manifest.json"
+    required: true
+  - name: render-spec
+    description: deterministic compute boundary consumed by `oma video render <runDir>`
+    artifact: ".agents/results/videos/*/render-spec.json"
+    required: true
+  - name: captions
+    description: key-free caption tracks aligned to timing.json
+    artifact: ".agents/results/videos/*/captions.srt"
+    required: false
+```
+
 ### Dependencies
 - `oma video generate` CLI + central error module (exit codes aligned with `oma search fetch`)
 - oma-voice (Voicebox MCP), oma-image, oma-slide as key-free fallback providers
 - Vendored Remotion project at `resources/remotion/` (compositor)
-- `resources/vendor-matrix.md`, `resources/execution-protocol.md`, `resources/prompt-tips.md`, `config/video-config.yaml`
+- `resources/vendor-matrix.md`, `resources/execution-protocol.md`, `resources/prompt-tips.md`, and the `video:` section of `.agents/oma-config.yaml`
 
 ### Control-flow features
 - Branches by mode (shorts / explainer / demo), aspect, visual strategy, provider availability, cost threshold, capture requirement, and path safety
@@ -61,7 +82,7 @@ Generate finished `.mp4` videos through a key-optional, 3-tier (CLI-first / MCP 
 ### Entry
 1. Validate that the brief carries enough mode/topic signal (or infer the mode from keywords).
 2. For `demo`, confirm a capture path exists (or Cap is available); otherwise enter the guided protocol.
-3. Resolve defaults from `config/video-config.yaml` -> env vars -> CLI flags; check output path safety and limits.
+3. Resolve defaults from shipped code defaults -> the `video:` section of `.agents/oma-config.yaml` -> env vars -> CLI flags; check output path safety and limits.
 
 ### Scenes
 1. **PREPARE**: Resolve mode/aspect/locale, clarify or amplify the brief, choose the visual + compositor strategy.
@@ -79,8 +100,8 @@ Generate finished `.mp4` videos through a key-optional, 3-tier (CLI-first / MCP 
 
 ### Failure and recovery
 - If a provider is unavailable, try the next provider in the capability's `order`; only chain exhaustion is a stage failure.
-- If the Remotion toolchain is not bootstrapped, point the user to `oma video doctor`; fall back to the MPT compositor where applicable.
-- If Voicebox MCP is down, fall back through voicebox-stt -> whisper.cpp -> estimated timing (still produces captions).
+- If the Remotion toolchain is not bootstrapped, point the user to `oma video doctor --install` (one-time: deps + headless shell + Pretendard font); fall back to the MPT compositor where applicable (MPT itself needs a one-time `oma video doctor --install-mpt`).
+- If Voicebox MCP is down, fall back to estimated timing (still produces captions). A whisper.cpp hop between the two is reserved but not yet wired (`TODO(oma-deferred): whisper-cpp`).
 - If the brief locale is non-source, translate via oma-translator (key-free); if absent, warn and keep source text.
 
 ### Exit
@@ -158,13 +179,15 @@ oma video render .agents/results/videos/20260603-143052-ab12cd-shorts
 3. **Cost guardrail**: confirm before runs whose estimated cost is >= `cost.guardrail_usd` (`$0.20`, configurable) or `--max-usd`. `--yes` / `OMA_VIDEO_YES=1` bypass. Local/free paths carry zero cost.
 4. **Path safety**: output paths outside `$PWD` require `--allow-external-out`. `--capture` is absolutized, `$PWD`-guarded, and format-validated; external assets are copied into the run dir and hashed (no URL refs).
 5. **Cancellable**: SIGINT/SIGTERM aborts in-flight provider calls, the render, and the orchestrator.
-6. **Deterministic outputs**: `render-spec.json` + asset files (+ seed + embedded Pretendard font) are the determinism boundary. Re-rendering the same render-spec is byte-stable; `OMA_VIDEO_MOCK=1` replays golden fixtures.
+6. **Deterministic outputs**: `render-spec.json` + asset files (+ seed + embedded Pretendard font) are the determinism boundary. `oma video doctor --install` fetches the Pretendard woff2 once; if offline, the render gracefully falls back to system fonts, and byte-identical output across machines is only guaranteed once the font is present. Re-rendering the same render-spec is byte-stable; `OMA_VIDEO_MOCK=1` replays golden fixtures.
 7. **Limits**: `limits.max_duration_sec` = 180, `limits.max_scenes` = 40 (wall-time + memory bound).
 8. **Community-MCP consent**: Pixelle-MCP is off by default and requires one-time explicit consent + source review before connecting; RunningHub credits gate on `--max-usd`.
 9. **Demo is human-in-the-loop**: capture is performed by a human. For `--source file` the skill guides but does not screen-record autonomously; for `--source web` the tool only opens a headed browser and records while the human drives the entire on-screen flow (interactive ENTER to stop). The mechanism prescribes nothing about what the flow is or what the recording is for.
 10. **Web-capture security**: NO credential automation of any kind — if a flow needs a login, a human performs it. The driver runs as a subprocess under the resolved Playwright (never imported into the CLI). The `--url` and any query tokens are masked in logs and in `manifest.json`; credentials are never stored or printed. Recording and all outputs are confined to the run dir. On-screen sensitive input is captured as-is — the user controls the flow. Multi-page navigation (popup / new tab / redirect) is recorded generically, with no assumption about the flow's shape.
 11. **Web capture is key-optional + non-blocking**: web capture is the real branch; the guided protocol is the fallback when Playwright is unresolvable OR there is no interactive TTY (CI / `-y` / no stdin) — the run falls back to guided and never hangs. Live capture is outside the determinism boundary, so the manifest records `nondeterministic: true`.
-12. **Exit codes align with `oma search fetch`** (0 ok, 1 generic, 2 safety, 3 not-found, 4 invalid-input, 5 auth-required, 6 timeout).
+12. **Headed capture needs a display**: web capture launches a **headed** Chromium so the human can drive the flow. On display-less hosts (CI / Linux without X), pass `--capture-stop duration:<sec>|selector:<css>` — the driver then runs headless (`resources/playwright/record.mjs --headless 1`) — or expect a capture error / guided fallback.
+13. **Run-dir retention**: `.agents/results/videos/<run>/` accumulates one directory per run (assets + mp4 + manifest) and is **never auto-pruned**; the user deletes old run directories manually.
+14. **Exit codes align with `oma search fetch`** (0 ok, 1 generic, 2 safety, 3 not-found, 4 invalid-input, 5 auth-required, 6 timeout).
 
 ### Clarification Protocol
 
@@ -178,9 +201,9 @@ Before invoking `oma video generate`, the calling agent runs this checklist. **I
 **Strongly recommended (ask if absent AND not inferable):**
 - [ ] **Aspect**: `9:16` (shorts/reels), `16:9` (explainer/demo), `1:1`, or `auto` (snaps to the mode default).
 - [ ] **Locale**: narration + caption language (default from config; translated via oma-translator when non-source).
-- [ ] **Captions**: `tiktok` (centered, animated), `lower-third`, or `none`.
+- [ ] **Captions**: `tiktok` (centered, static windowed cues), `lower-third`, or `none`.
 - [ ] **Duration**: target seconds (<= 180) or `auto` (derived from the script).
-- [ ] **Voice / music**: voice profile or `none`; music `upbeat` / `calm` / `none`.
+- [ ] **Voice / music**: voice profile or `none`; music `upbeat` / `calm` / `none`. **The default voice is `none` → a silent video with estimated caption timing.** Pass `--voice <profile>` (a Voicebox profile) whenever narration is expected. Music is rendered offline by Strudel and mixed at −18 dB; it needs a one-time `oma video doctor --install-strudel` and degrades to no music without it.
 
 **Amplification shortcut.** For a one-line brief (e.g. "shorts about Jeju coffee"), do not pop a questionnaire if the request is genuinely simple. Instead **amplify inline and show the user** the inferred plan before invoking:
 
@@ -205,7 +228,7 @@ Skip clarification when the user authored a full brief (mode + topic + aspect + 
 |:---:|---------|-----------|---------|
 | 1 | CLI-first (subprocess, deterministic) | Remotion render, MPT, oma-image, oma-slide, oma-voice | always available (key-free defaults) |
 | 2 | MCP | Voicebox MCP (voice/timing), Pixelle-MCP (AIGC, off by default) | MCP server reachable; Pixelle needs explicit consent + key |
-| 3 | Guided (human-in-the-loop) | Playwright headed web capture (`--source web`, human drives the flow), Cap (capture), openscreen fallback | `demo` mode; web capture needs a resolvable Playwright + a TTY (else guided protocol) |
+| 3 | Guided (human-in-the-loop) | Playwright headed web capture (`--source web`, human drives the flow), Cap (capture), guided protocol fallback | `demo` mode; web capture needs a resolvable Playwright + a TTY (else guided protocol) |
 
 ### Invocation
 
@@ -224,7 +247,7 @@ oma video generate "<brief>" [--mode shorts|explainer|demo] \
                              [--aspect 9:16|16:9|1:1|auto] [--locale <lang>] \
                              [--captions tiktok|lower-third|none] \
                              [--visual auto|generate|stock|aigc|slide] \
-                             [--voice <profile>|none] [--music upbeat|calm|none] \
+                             [--voice <profile>|none] [--music upbeat|calm|cinematic|lofi|piano|none] \
                              [--duration <sec>|auto] [--compositor remotion|mpt] \
                              [--capture <path>] \
                              [--source file|web] [--url <url>] [--device <name>] \
@@ -232,19 +255,25 @@ oma video generate "<brief>" [--mode shorts|explainer|demo] \
                              [--capture-timeout <sec>] [--capture-stop duration:<sec>|selector:<css>] \
                              [--out <dir>] [--allow-external-out] \
                              [--max-usd <n>] [--seed <n>] [--timeout 600] [-y] \
-                             [--dry-run] [--format text|json] [--no-brief-in-manifest]
+                             [--dry-run] [--script <path>] \
+                             [--format text|json] [--no-brief-in-manifest]
+# --script: inject the agent-authored script.json (agent-as-key). Without it the
+#   CLI builds its own skeleton script from the brief — always pass the script
+#   the agent wrote so narration/on-screen text/visual prompts are honored.
 # --source web: headed browser at --url; capture size derived from --aspect/--device (no hardcoded size).
 # A human drives the on-screen flow; press ENTER to stop. NO credential automation. --url/tokens masked.
 # Non-interactive (CI / -y / no TTY) or unresolvable Playwright -> falls back to the guided protocol (no hang).
 # --capture-stop gives CI a non-interactive stop (duration / selector) in place of the ENTER prompt.
-oma video doctor          # Node/Chromium/FFmpeg · Voicebox MCP · oma-image vendors · Pixelle-MCP · Cap · Playwright (web capture)
+oma video doctor          # readiness report only (no install): Node/Chromium/FFmpeg · Remotion project · Pretendard font · MPT · Playwright · Voicebox MCP · oma-image vendors · Pixelle-MCP · Cap
+oma video doctor --install             # one-time: vendored Remotion deps + Chrome Headless Shell + Pretendard font fetch (offline -> warn, system-font fallback)
+oma video doctor --install-mpt         # one-time: MoneyPrinterTurbo checkout (clone + venv + deps) for --compositor mpt
 oma video doctor --install-playwright  # one-time: npm i playwright + chromium (web capture)
 oma video list-providers  # availability + key/fallback status
 oma video render <runDir>  # re-render from render-spec.json (deterministic)
 ```
 
 #### Shared Infrastructure (from other skills)
-Other skills call `oma video generate --format json` and parse the JSON envelope (`{exitCode, runDir, manifestPath, outputs}`) from stdout. The deterministic boundary is `render-spec.json` + assets, so a downstream consumer can re-render via `oma video render <runDir>` without re-running script/voice/visual generation.
+Other skills call `oma video generate --format json` and parse the JSON envelope (`{exitCode, runDir, manifestPath, scriptPath, renderSpecPath, warnings, error}`) from stdout. There is no `outputs` key — read output/asset paths from the manifest at `manifestPath`. The deterministic boundary is `render-spec.json` + assets, so a downstream consumer can re-render via `oma video render <runDir>` without re-running script/voice/visual generation.
 
 ### Output Layout
 
@@ -255,7 +284,7 @@ Other skills call `oma video generate --format json` and parse the JSON envelope
     ├── timing.json
     ├── render-spec.json                   # deterministic compute boundary
     ├── audio/
-    │   └── narration-01.wav …
+    │   └── narration-01.wav               # single narration track (ALL lines joined — not per-scene)
     ├── visuals/
     │   └── scene-01.jpg …
     ├── captions.srt
@@ -264,10 +293,24 @@ Other skills call `oma video generate --format json` and parse the JSON envelope
     └── manifest.json                      # reproducibility record
 ```
 
+### Audio Sync & Captions Format
+
+- **Narration is one wav**: oma-voice joins every scene line into a single `audio/narration-01.wav`, referenced by `render-spec.audio.narration`. There are no per-scene `narration-NN.wav` files.
+- **Timing**: per-line offsets live in `timing.json` (voicebox-stt -> estimated; the `tts-native` and `whisper-cpp` source values are reserved but not yet wired — `TODO(oma-deferred): whisper-cpp`); scene boundaries and caption cues are derived from it.
+- **Captions**: key-free `.srt` (+ `.vtt`) built from `timing.json`; `render-spec.captions.file` points at the `.srt`. The compositor renders **static windowed cues** — the cue active at the current frame, CSS-wrapped (no per-word animation).
+- **Music**: `--music <preset>` renders a BGM bed with **Strudel** and mixes it under narration at `render-spec.audio.musicGainDb` (default −18 dB). The bed is generated offline (headless Chrome + `OfflineAudioContext`), so it needs no key, no network, and no audio device — a 30s bed renders in well under a second.
+  - **Presets**: `calm` (sustained pad + arpeggio), `upbeat` (bright plucks), `cinematic` (drone build to a lead), `lofi` (warm chords, swung ticks), `piano` (neoclassical arpeggio). Each preset picks its key and mode from the run `seed`, so the same preset sounds different run to run without a second pattern.
+  - **Artifacts** in the run dir: `music/bgm.wav` (mixed by the compositor), `music/bgm.mp3` (preview), `music/bgm-raw.wav` (pre-master), and `music/pattern.strudel` — the source that produced them, editable and re-renderable by hand.
+  - **Level**: every bed is normalised to −14 LUFS with a static gain before a peak limiter, so `musicGainDb` means the same thing for every preset. Normalisation is deliberately *not* `loudnorm`'s one-pass mode, which flattens the arrangement arc.
+  - **Opt-in install**: `@strudel/*` is AGPL-3.0-or-later while the oma CLI is MIT, so the deps are never bundled and never installed implicitly. Run `oma video doctor --install-strudel` once. The CLI never imports Strudel — it spawns `resources/strudel/render.mjs` as a subprocess, the same boundary the Remotion / Playwright projects use.
+  - **Fallback**: a missing install, a missing Chrome, or a failed render degrades to *no music* with a warning. The run still succeeds and `audio.music` stays unset (never a dangling `staticFile()` ref).
+  - **Determinism**: the built-in beds are oscillator-only (sine / triangle / square / sawtooth), which render byte-identically on replay. Noise sounds (`white` / `pink` / `brown`) draw from `Math.random()` and would break that, so the templates avoid them.
+
 ## References
 
 Follow `resources/execution-protocol.md` step by step.
 See `resources/vendor-matrix.md` for provider precheck + fallback-chain rules.
+Author `--script` files against `resources/script-schema.md` (full field reference + example; `schemaVersion: "1.0"` is required).
 Use `resources/prompt-tips.md` for writing effective briefs per mode.
 Before submitting, run `resources/checklist.md`.
 The vendored Remotion compositor lives at `resources/remotion/` (see its `README.md`).
@@ -276,7 +319,7 @@ The MPT fallback compositor driver lives at `resources/mpt/driver.py` (consumed 
 
 ### Configuration
 
-Project-specific settings: `config/video-config.yaml`.
+Project-specific settings: the `video:` section of `.agents/oma-config.yaml`, which `oma update` preserves. Shipped defaults live in the CLI (`DEFAULT_VIDEO_CONFIG` in `cli/commands/video/config.ts`) — write only the keys you change. The legacy `config/video-config.yaml` is no longer read by the CLI; migration 022 moves anything you had changed there into oma-config (and deletes the file when it was never edited).
 Env vars: `OMA_VIDEO_DEFAULT_MODE`, `OMA_VIDEO_DEFAULT_OUT`, `OMA_VIDEO_YES`, `PEXELS_API_KEY`, `RUNNINGHUB_API_KEY` (+ `POLLINATIONS_API_KEY` via oma-image), `OMA_VIDEO_MOCK`, `OMA_VIDEO_PLAYWRIGHT_DIR` (web-capture Playwright override), `OMA_VIDEO_PWTEST` (opt-in web-capture e2e).
 
 - Execution steps: `resources/execution-protocol.md`
