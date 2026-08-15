@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
-	import { getTopic, enrichTopic } from '$lib/api/topic.api';
+	import { getTopic, enrichTopic, renameTopic } from '$lib/api/topic.api';
 	import { getMe } from '$lib/api/auth.api';
 	import ChatRoom from '$lib/components/ChatRoom.svelte';
 
@@ -60,6 +60,30 @@
 		if (!body || enrich.isPending) return;
 		enrich.mutate(body);
 	}
+
+	let renameDialog = $state<HTMLDialogElement | null>(null);
+	let draftTitle = $state('');
+
+	function openTitleEditor() {
+		draftTitle = topicQuery.data?.title ?? '';
+		renameDialog?.showModal();
+	}
+
+	const rename = createMutation(() => ({
+		mutationFn: (title: string) => renameTopic(groupId, topicId, title),
+		onSuccess: (topic) => {
+			queryClient.setQueryData(['topic', topicId], topic);
+			queryClient.invalidateQueries({ queryKey: ['topics', groupId] });
+			renameDialog?.close();
+		}
+	}));
+
+	function saveTitle(e: SubmitEvent) {
+		e.preventDefault();
+		const title = draftTitle.trim();
+		if (!title || title === topicQuery.data?.title || rename.isPending) return;
+		rename.mutate(title);
+	}
 </script>
 
 <ChatRoom
@@ -69,6 +93,8 @@
 	pinnedBody={topicQuery.data?.body}
 	canEditPinned={isAuthor}
 	onEditPinned={openEditor}
+	canRenameTitle={isAuthor}
+	onRenameTitle={openTitleEditor}
 	createdAt={topicQuery.data?.created_at}
 	{backHref}
 />
@@ -104,6 +130,49 @@
 					class="btn flex-1 btn-primary"
 				>
 					{enrich.isPending ? '저장 중...' : '저장'}
+				</button>
+			</div>
+		</form>
+	</div>
+	<form method="dialog" class="modal-backdrop"><button aria-label="닫기">닫기</button></form>
+</dialog>
+
+<dialog
+	bind:this={renameDialog}
+	class="modal modal-bottom sm:modal-middle"
+	aria-labelledby="rename-title-heading"
+>
+	<div class="modal-box space-y-4">
+		<h2 id="rename-title-heading" class="text-base font-semibold text-base-content">
+			주제 이름 수정
+		</h2>
+		<form onsubmit={saveTitle} class="space-y-3">
+			<label for="topic-title-editor" class="block text-sm font-semibold text-base-content"
+				>주제 이름</label
+			>
+			<input
+				id="topic-title-editor"
+				type="text"
+				bind:value={draftTitle}
+				placeholder="주제 이름을 입력하세요"
+				maxlength={256}
+				class="input w-full"
+			/>
+			{#if rename.isError}
+				<p class="text-xs text-error" role="alert">저장에 실패했어요. 다시 시도해 주세요.</p>
+			{/if}
+			<div class="modal-action gap-2">
+				<button type="button" onclick={() => renameDialog?.close()} class="btn flex-1">
+					취소
+				</button>
+				<button
+					type="submit"
+					disabled={!draftTitle.trim() ||
+						draftTitle.trim() === topicQuery.data?.title ||
+						rename.isPending}
+					class="btn flex-1 btn-primary"
+				>
+					{rename.isPending ? '저장 중...' : '저장'}
 				</button>
 			</div>
 		</form>

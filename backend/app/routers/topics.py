@@ -175,9 +175,11 @@ async def patch_topic(
     topic_svc = TopicService(db)
     await topic_svc.get_topic_in_group_or_404(topic_id, group_id)
     # Enriching a seed topic with a body marks it enriched (API contract semantics).
+    # Title-only patches do not change status.
     topic = await topic_svc.update_topic(
         topic_id=topic_id,
         user_id=current_user.id,
+        title=body.title,
         body=body.body,
         status="enriched" if body.body is not None else None,
     )

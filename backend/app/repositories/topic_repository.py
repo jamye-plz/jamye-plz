@@ -28,8 +28,14 @@ class TopicRepository:
         return topic
 
     async def update(
-        self, topic: Topic, body: str | None = None, status: str | None = None
+        self,
+        topic: Topic,
+        title: str | None = None,
+        body: str | None = None,
+        status: str | None = None,
     ) -> Topic:
+        if title is not None:
+            topic.title = title
         if body is not None:
             topic.body = body
         if status is not None:

@@ -172,12 +172,13 @@ class TopicService:
         self,
         topic_id: str,
         user_id: str,
+        title: str | None = None,
         body: str | None = None,
         status: str | None = None,
     ) -> Topic:
         topic = await self.get_topic_or_404(topic_id)
         await self.assert_author(topic, user_id)
-        topic = await self._topic_repo.update(topic, body=body, status=status)
+        topic = await self._topic_repo.update(topic, title=title, body=body, status=status)
         await self._db.commit()
         await self._db.refresh(topic)
         return topic
