@@ -52,7 +52,7 @@
 		{/if}
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] px-4 py-6 md:px-6">
+	<main id="main-content" class="mx-auto max-w-(--container-conversation) px-4 py-6 md:px-6">
 		{#if topicQuery.isPending}
 			<p class="py-8 text-center text-sm text-(--color-text-muted)">불러오는 중...</p>
 		{:else if topicQuery.isError}

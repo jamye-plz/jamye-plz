@@ -61,7 +61,7 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] px-4 py-4 md:px-6">
+	<main id="main-content" class="mx-auto max-w-(--container-conversation) px-4 py-4 md:px-6">
 		{#if notifsQuery.isPending}
 			<ul class="list" aria-label="알림 목록을 불러오는 중" aria-busy="true">
 				{#each [1, 2, 3] as row (row)}

@@ -431,13 +431,13 @@
 		else void startRecording();
 	}
 
-	// Auto-grow the textarea with its content (up to ~6 lines, then it scrolls).
+	// Auto-grow with content; the semantic CSS max-height token owns the cap.
 	$effect(() => {
 		const el = inputEl;
 		if (!el) return;
 		void inputText;
 		el.style.height = 'auto';
-		el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+		el.style.height = `${el.scrollHeight}px`;
 	});
 </script>
 
@@ -446,7 +446,7 @@
 		? 'pb-3'
 		: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
 >
-	<div class="mx-auto max-w-[720px]">
+	<div class="mx-auto max-w-(--container-conversation)">
 		{#if voiceClip}
 			<div class="mb-2 flex items-center gap-2 rounded-md bg-base-200 px-3 py-2">
 				<audio src={voiceClip.previewUrl} controls preload="metadata" class="h-10 min-w-0 flex-1"
@@ -567,7 +567,7 @@
 				placeholder="메시지 입력..."
 				rows={1}
 				disabled={busy}
-				class="textarea max-h-[120px] min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border-(--color-border-strong)"
+				class="textarea max-h-(--composer-textarea-max-height) min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border-(--color-border-strong)"
 				aria-label="메시지 입력"></textarea>
 			<button
 				type="button"

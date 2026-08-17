@@ -12,7 +12,7 @@ const daisyChatStyles = readFileSync(
 );
 
 test('chat bubble gaps follow the 4px/12px design-system contract', () => {
-	const listSpacing = source.match(/max-w-\[720px\]\s+space-y-(\d+)/)?.[1];
+	const listSpacing = source.match(/max-w-\(--container-conversation\)\s+space-y-(\d+)/)?.[1];
 	const spacingPixels = { 1: 4, 2: 8, 3: 12 }[listSpacing];
 	const daisyChatPaddingBlockRem = daisyChatStyles.match(
 		/\.chat\{.*?padding-block:(\.\d+)rem/

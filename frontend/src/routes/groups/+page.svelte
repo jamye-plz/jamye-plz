@@ -45,7 +45,10 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
+	<main
+		id="main-content"
+		class="mx-auto max-w-(--container-conversation) space-y-6 px-4 py-6 md:px-6"
+	>
 		{#if groupsQuery.isPending}
 			<ul class="list gap-2" aria-label="그룹 목록을 불러오는 중" aria-busy="true">
 				{#each [1, 2, 3] as row (row)}

@@ -136,6 +136,12 @@
 	--spacing-12: 48px;
 	--spacing-16: 64px;
 
+	/* Semantic layout constraints */
+	--container-conversation: 45rem;
+
+	/* Component constraints */
+	--composer-textarea-max-height: 7.5rem;
+
 	/* Radius — canonical design ladder
 	   sm = 8px  media corners / compact inner elements
 	   md = 12px small controls

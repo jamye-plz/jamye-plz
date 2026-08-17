@@ -146,7 +146,10 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
+	<main
+		id="main-content"
+		class="mx-auto max-w-(--container-conversation) space-y-6 px-4 py-6 md:px-6"
+	>
 		{#if groupQuery.isPending}
 			<p class="py-8 text-center text-sm text-(--color-text-muted)">불러오는 중...</p>
 		{:else if groupQuery.isError}

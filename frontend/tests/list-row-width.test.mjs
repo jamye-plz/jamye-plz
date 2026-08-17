@@ -92,5 +92,5 @@ test('group rows use consistent gap-separated mobile surfaces', () => {
 	);
 
 	assert.doesNotMatch(groupSource, /function navigateTo\b/);
-	assert.match(groupSource, /max-w-\[720px\] space-y-6/);
+	assert.match(groupSource, /max-w-\(--container-conversation\) space-y-6/);
 });

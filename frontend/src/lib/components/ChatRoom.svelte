@@ -686,7 +686,7 @@
 	style="height: 100dvh"
 >
 	<AppHeader>
-		<div class="mx-auto flex w-full max-w-[720px] items-center gap-3">
+		<div class="mx-auto flex w-full max-w-(--container-conversation) items-center gap-3">
 			<button onclick={goBack} class="btn -ml-2 btn-square btn-ghost" aria-label="뒤로 가기">
 				<ArrowLeft class="h-5 w-5" />
 			</button>
@@ -751,7 +751,7 @@
 			hidden={!bodyOpen}
 			class="shrink-0 border-b border-base-300 bg-base-200 px-4 py-3"
 		>
-			<div class="mx-auto flex w-full max-w-[720px] items-start gap-2">
+			<div class="mx-auto flex w-full max-w-(--container-conversation) items-start gap-2">
 				<div class="max-h-40 min-w-0 flex-1 overflow-y-auto">
 					<div
 						class="prose max-w-none [&_pre]:overflow-x-auto [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
@@ -784,7 +784,8 @@
 		tabindex="-1"
 	>
 		<div
-			class="mx-auto w-full max-w-[720px] space-y-3 {messages.length > 0 && !initialReady
+			class="mx-auto w-full max-w-(--container-conversation) space-y-3 {messages.length > 0 &&
+			!initialReady
 				? 'opacity-0'
 				: ''}"
 		>

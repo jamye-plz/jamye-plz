@@ -165,7 +165,7 @@
 	</AppHeader>
 
 	<main id="main-content">
-		<div class="mx-auto max-w-[720px] space-y-4 px-4 py-4 md:px-6">
+		<div class="mx-auto max-w-(--container-conversation) space-y-4 px-4 py-4 md:px-6">
 			<div class="elevation-1 rounded-xl bg-(--color-surface-raised) p-4 md:p-5">
 				<form onsubmit={submitTopic} class="flex w-full items-stretch gap-2">
 					<input

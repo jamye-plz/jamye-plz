@@ -142,7 +142,10 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-4 px-4 py-6 md:px-6">
+	<main
+		id="main-content"
+		class="mx-auto max-w-(--container-conversation) space-y-4 px-4 py-6 md:px-6"
+	>
 		<p class="rounded-lg bg-(--color-surface-butter) p-4 text-sm text-base-content">
 			초대 링크를 만들어 공유하면, 받은 사람이 링크를 열어 바로 그룹에 참여할 수 있어요.
 		</p>
