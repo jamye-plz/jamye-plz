@@ -28,11 +28,18 @@
 			<ArrowLeft class="h-5 w-5" />
 		</button>
 		<div class="min-w-0 flex-1">
-			{#if topicQuery.data}
-				<h1 class="truncate text-base font-semibold text-base-content">{topicQuery.data.title}</h1>
-			{:else}
-				<div class="h-4 w-48 skeleton"></div>
-			{/if}
+			<h1
+				data-route-focus-target
+				tabindex="-1"
+				aria-label={topicQuery.data?.title ?? '주제'}
+				class="truncate text-base font-semibold text-base-content"
+			>
+				{#if topicQuery.data}
+					{topicQuery.data.title}
+				{:else}
+					<span aria-hidden="true" class="block h-4 w-48 skeleton"></span>
+				{/if}
+			</h1>
 		</div>
 		{#if topicQuery.data}
 			<a

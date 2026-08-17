@@ -39,7 +39,9 @@
 <div class="min-h-dvh bg-base-100">
 	<AppHeader>
 		<div class="flex w-full items-center">
-			<h1 class="text-base font-semibold text-base-content">내 그룹</h1>
+			<h1 data-route-focus-target tabindex="-1" class="text-base font-semibold text-base-content">
+				내 그룹
+			</h1>
 		</div>
 	</AppHeader>
 

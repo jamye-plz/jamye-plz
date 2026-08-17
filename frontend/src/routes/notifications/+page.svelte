@@ -49,7 +49,9 @@
 			>
 				<ArrowLeft class="h-5 w-5" />
 			</button>
-			<h1 class="text-base font-semibold text-base-content">알림</h1>
+			<h1 data-route-focus-target tabindex="-1" class="text-base font-semibold text-base-content">
+				알림
+			</h1>
 			{#if notifsQuery.data && notifsQuery.data.unread_count > 0}
 				<span class="badge badge-sm badge-primary">
 					{notifsQuery.data.unread_count}

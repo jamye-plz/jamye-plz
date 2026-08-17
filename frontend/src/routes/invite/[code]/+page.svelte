@@ -42,9 +42,11 @@
 	>
 		{#if status === 'joining'}
 			<span class="loading mx-auto loading-lg loading-spinner" aria-hidden="true"></span>
-			<h1 class="text-lg font-semibold text-base-content">그룹에 입장하는 중...</h1>
-		{:else}
-			<h1 class="text-lg font-semibold text-base-content">{message}</h1>
+		{/if}
+		<h1 data-route-focus-target tabindex="-1" class="text-lg font-semibold text-base-content">
+			{status === 'joining' ? '그룹에 입장하는 중...' : message}
+		</h1>
+		{#if status === 'error'}
 			<a href={resolve('/groups')} class="btn rounded-lg btn-primary"> 내 그룹으로 </a>
 		{/if}
 	</div>

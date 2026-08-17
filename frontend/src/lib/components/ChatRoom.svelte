@@ -691,7 +691,11 @@
 				<ArrowLeft class="h-5 w-5" />
 			</button>
 			<div class="flex min-w-0 flex-1 items-center gap-1">
-				<h1 class="min-w-0 truncate text-base font-semibold text-base-content">
+				<h1
+					data-route-focus-target
+					tabindex="-1"
+					class="min-w-0 truncate text-base font-semibold text-base-content"
+				>
 					{title}
 				</h1>
 				{#if canRenameTitle}
