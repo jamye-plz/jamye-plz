@@ -125,8 +125,8 @@ Korean body text uses natural tracking and generous line height. Headings may us
 
 ### Inputs and Composer
 
-- Input and textarea minimum height: 48px.
-- Composer textarea grows from 48px to 120px, then scrolls internally.
+- Input and textarea minimum height: 48px on the 8px spacing grid.
+- Composer textarea grows from 48px to `--composer-textarea-max-height: 7.5rem` (120px at the default root size), then scrolls internally. CSS owns this cap; autosizing logic measures content height but must not repeat a numeric maximum in JavaScript.
 - Radius: 16px. Resting interactive border uses Strong Mauve Border/Strong Night Border.
 - Inline text-and-submit forms keep the input and solid action button as separate controls with an 8px gap and independent 16px radii. This applies to topic creation, nickname changes, and group-name changes; do not join contrasting borders into one segmented pill.
 - Placeholder uses Muted Aubergine/Muted Moon and must remain legible.
@@ -261,10 +261,17 @@ Korean body text uses natural tracking and generous line height. Headings may us
 - Tablet gutters: 24px.
 - Desktop gutters: 24-32px.
 - Application maximum width: 1360px.
-- Primary conversation/topic column: 560-720px, with 720px as the maximum readable width.
+- Primary conversation/topic column: fluid within the available viewport, with `--container-conversation: 45rem` (720px at the default root size) as its maximum readable width. Use full available width below the cap and center it; this is a cap, not a fixed width.
 - Desktop navigation rail: 264px.
 - Desktop context panel: 304px.
 - Two-panel gap: 16px. Three-panel gap: 16-24px.
+
+### Responsive Size Tokens
+
+- `--container-conversation: 45rem` is a semantic layout token shared by app headers, topic pages, settings pages, message lists, and the composer. It preserves readable line length on desktop while smaller phones and browser windows continue to use the available width minus responsive gutters.
+- `--composer-textarea-max-height: 7.5rem` is a component token. It limits only the growing message textarea; it is not part of the general spacing scale.
+- Use rem-based semantic tokens for readable-width and component caps so browser text scaling remains meaningful. Keep ordinary gaps, padding, and minimum control sizes on the spacing scale.
+- Do not replace these semantic constraints with generic spacing-scale values. Equivalent dimensions do not carry equivalent meaning, and coupling them makes later design-system changes harder to reason about.
 
 ### Adaptive Conversation Board
 
@@ -355,7 +362,7 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 - Large phone and small tablet: 640-767px; single column with wider gutters and centered form content.
 - Tablet: 768-1023px; single-column content with the bottom dock, 24px gutters, and centered dialogs.
 - Desktop: 1024-1279px; persistent 264px navigation rail plus central content.
-- Wide desktop: 1280px and above; 264px navigation rail, 560-720px central column, and optional 304px context panel.
+- Wide desktop: 1280px and above; 264px navigation rail, a fluid central column capped by `--container-conversation: 45rem`, and an optional 304px context panel.
 
 ### Required Behaviors
 
@@ -413,13 +420,13 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 
 ### Example Component Prompts
 
-1. Build the adaptive app shell with daisyUI navbar and dock. Use #FAF8F4 light and #1C1920 dark page canvases. On mobile, show a fixed 64px dock plus bottom safe-area with exactly Groups, Notifications, and Settings; pair 20px Lucide icons with visible 12px labels and reserve dock height in page content. Hide the dock on the focused chat route. From 1024px, replace it with a persistent 264px navigation rail; keep a 560-720px center column and add an optional 304px context panel from 1280px. Use 16px mobile gutters and 24px desktop gaps.
+1. Build the adaptive app shell with daisyUI navbar and dock. Use #FAF8F4 light and #1C1920 dark page canvases. On mobile, show a fixed 64px dock plus bottom safe-area with exactly Groups, Notifications, and Settings; pair 20px Lucide icons with visible 12px labels and reserve dock height in page content. Hide the dock on the focused chat route. From 1024px, replace it with a persistent 264px navigation rail; keep the center column fluid with `w-full max-w-(--container-conversation)`, where `--container-conversation` is 45rem, and add an optional 304px context panel from 1280px. Use 16px mobile gutters and 24px desktop gaps.
 
 2. Build a topic card with daisyUI card. Use #FFFFFF light or #252129 dark, a 1px semantic divider, 24px radius, 16px mobile and 20px desktop padding, and elevation 1. Title uses Pretendard 18px weight 650 line-height 1.45. Metadata uses 13px weight 500. Show author, time, reaction count, and unread state. Use a 2px primary outline plus text for unread or selected state; never use color alone. For a small keyed topic list, use `animate:flip` at 200ms only for reorder and switch to immediate reorder when `prefersReducedMotion.current` is true.
 
 3. Build the conversation with daisyUI chat. Incoming bubbles use a neutral raised surface; outgoing bubbles use #9B3F68 with white text in light mode and #E39BB8 with #2C141F text in dark mode. Use 20px bubble radius with one 8px conversation-side corner, suppress the default `::before` tail, and rely on alignment plus the asymmetric corner for direction. Use 16px text at line-height 1.55, maximum width 78% mobile and 66% desktop, 4px same-sender gaps, and 12px sender-change gaps. A newly appended message may fade for 150ms, but it appears immediately in state; never stagger history, fly messages vertically, or animate scroll anchoring.
 
-4. Build the composer with daisyUI textarea and one adaptive trailing button in a stable 44px slot. Show the microphone while the text and media draft are empty, show disabled progress while requesting microphone permission, keep the stop action available throughout recording, then switch the same control to the primary send action once text, attachments, or a recorded clip can be sent. Busy feedback stays in that slot, and the textarea never shifts when the action changes. The textarea grows from 48px to 120px and uses a 16px radius. On focus, recolor its existing border to the primary semantic color and add a 1px inset stroke; do not draw an external field outline. Icon controls use Lucide icons inside 44px hit targets with state-specific aria-labels. The send state is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
+4. Build the composer with daisyUI textarea and one adaptive trailing button in a stable 44px slot. Show the microphone while the text and media draft are empty, show disabled progress while requesting microphone permission, keep the stop action available throughout recording, then switch the same control to the primary send action once text, attachments, or a recorded clip can be sent. Busy feedback stays in that slot, and the textarea never shifts when the action changes. Use `min-h-12 max-h-(--composer-textarea-max-height)` with `--composer-textarea-max-height: 7.5rem`; let CSS own the cap while JavaScript sets content height without a duplicate numeric maximum. Use a 16px radius. On focus, recolor its existing border to the primary semantic color and add a 1px inset stroke; do not draw an external field outline. Icon controls use Lucide icons inside 44px hit targets with state-specific aria-labels. The send state is the only primary action and may scale to 0.98 for 150ms on press. Reserve bottom safe-area padding and preserve IME composition, optimistic sending, and chat scroll anchoring. Do not animate textarea height, bottom position, safe-area values, or keyboard corrections.
 
 5. Build a responsive dialog with the native dialog element and daisyUI modal. Use bottom placement below 640px and centered placement at 640px and above. The modal surface is #FFFFFF light or #252129 dark, 24px radius, 20px mobile padding, 24px desktop padding, elevation 3, and a rgba(20,16,22,0.52) scrim. Use Svelte `fly` with 12-16px travel on mobile or `scale` from 0.98 on desktop; both primitives already include opacity. Use 200ms in and 150ms out. Set travel and duration to zero when `prefersReducedMotion.current` is true. Include a clear close path, Escape behavior, focus management, and confirmation before discarding unsaved work.
 
@@ -434,4 +441,4 @@ All light is treated as coming from above. Do not use double shadows, inset clay
 5. Use cards for topics and lists for scan-heavy rows; use Lucide for structural icons and never create triple-nested surfaces.
 6. Use CSS and daisyUI first, then Svelte `fade`, `fly`, `scale`, or bounded `animate:flip`; use 150ms Fast, 200ms Standard, and 300ms Emphasis tokens, and do not add GSAP.
 7. Apply `prefersReducedMotion.current` to Svelte-native motion and keep state, focus, keyboard, IME, and scroll behavior independent from animation completion.
-8. Mobile is single-path; desktop expands navigation and context without widening the conversation beyond 720px.
+8. Mobile is single-path; desktop expands navigation and context while `w-full max-w-(--container-conversation)` keeps the conversation fluid and capped at 45rem. Use `--composer-textarea-max-height` for the composer cap; do not substitute generic spacing utilities for either semantic constraint.

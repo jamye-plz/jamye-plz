@@ -142,8 +142,11 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-4 px-4 py-6 md:px-6">
-		<p class="rounded-lg bg-[var(--color-surface-butter)] p-4 text-sm text-base-content">
+	<main
+		id="main-content"
+		class="mx-auto max-w-(--container-conversation) space-y-4 px-4 py-6 md:px-6"
+	>
+		<p class="rounded-lg bg-(--color-surface-butter) p-4 text-sm text-base-content">
 			초대 링크를 만들어 공유하면, 받은 사람이 링크를 열어 바로 그룹에 참여할 수 있어요.
 		</p>
 
@@ -160,9 +163,9 @@
 		{/if}
 
 		{#if invite.data}
-			<div class="elevation-1 card rounded-xl bg-[var(--color-surface-raised)]">
+			<div class="elevation-1 card rounded-xl bg-(--color-surface-raised)">
 				<div class="card-body gap-3 p-4">
-					<span class="text-xs text-[var(--color-text-muted)]">초대 링크</span>
+					<span class="text-xs text-(--color-text-muted)">초대 링크</span>
 					<div class="flex items-center gap-2">
 						<code class="flex-1 font-mono text-sm break-all text-base-content"
 							>{inviteLink(invite.data.code)}</code
@@ -197,11 +200,11 @@
 				{/if}
 			</h2>
 			{#if membersQuery.isPending}
-				<p class="px-1 text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
+				<p class="px-1 text-sm text-(--color-text-muted)">불러오는 중...</p>
 			{:else if membersQuery.isError}
 				<p class="px-1 text-sm text-error" role="alert">멤버를 불러오지 못했어요.</p>
 			{:else if membersQuery.data}
-				<ul class="elevation-1 list overflow-hidden rounded-xl bg-[var(--color-surface-raised)]">
+				<ul class="elevation-1 list overflow-hidden rounded-xl bg-(--color-surface-raised)">
 					{#each membersQuery.data as m (m.user_id)}
 						<li
 							class="list-row flex min-h-16 items-center gap-3 border-b border-base-300 px-4 last:border-b-0"
@@ -211,7 +214,7 @@
 							{#if m.role === 'owner'}
 								<span class="badge shrink-0 badge-soft badge-sm badge-primary">그룹장</span>
 							{:else}
-								<span class="shrink-0 text-[13px] text-[var(--color-text-muted)]">그룹원</span>
+								<span class="shrink-0 text-[13px] text-(--color-text-muted)">그룹원</span>
 							{/if}
 							{#if isOwner && m.role !== 'owner'}
 								<div class="flex shrink-0 items-center gap-1">
@@ -256,7 +259,7 @@
 				{confirmTarget?.nickname}님을 내보낼까요?
 			{/if}
 		</h2>
-		<p class="text-sm text-[var(--color-text-muted)]">
+		<p class="text-sm text-(--color-text-muted)">
 			{#if confirmAction === 'transfer'}
 				이양하면 더 이상 그룹장 권한을 사용할 수 없어요.
 			{:else}

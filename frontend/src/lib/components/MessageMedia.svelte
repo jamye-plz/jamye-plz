@@ -69,7 +69,7 @@
 				role="status"
 				aria-label="전송 중"
 			>
-				<span class="loading loading-sm loading-spinner text-[var(--color-text-muted)]"></span>
+				<span class="loading loading-sm loading-spinner text-(--color-text-muted)"></span>
 			</div>
 		{/each}
 	</div>
@@ -84,7 +84,7 @@
 						role="status"
 						aria-label="불러오는 중"
 					>
-						<span class="loading loading-sm loading-spinner text-[var(--color-text-muted)]"></span>
+						<span class="loading loading-sm loading-spinner text-(--color-text-muted)"></span>
 					</div>
 				{/if}
 				{#if isAudio(item.content_type)}
@@ -105,18 +105,18 @@
 						></audio>
 						{#if item.transcript_status === 'pending'}
 							<p
-								class="mt-1 flex items-center gap-1.5 px-1 text-xs text-[var(--color-text-muted)]"
+								class="mt-1 flex items-center gap-1.5 px-1 text-xs text-(--color-text-muted)"
 								role="status"
 							>
 								<span class="loading loading-xs loading-spinner"></span>
 								받아쓰는 중...
 							</p>
 						{:else if item.transcript_status === 'done' && item.transcript}
-							<p class="mt-1 px-1 text-xs break-keep text-[var(--color-text-muted)]">
+							<p class="mt-1 px-1 text-xs break-keep text-(--color-text-muted)">
 								{item.transcript}
 							</p>
 						{:else if item.transcript_status === 'failed'}
-							<p class="mt-1 px-1 text-xs text-[var(--color-text-muted)]">받아쓰기에 실패했어요</p>
+							<p class="mt-1 px-1 text-xs text-(--color-text-muted)">받아쓰기에 실패했어요</p>
 						{/if}
 					</div>
 				{:else if isVideo(item.content_type)}

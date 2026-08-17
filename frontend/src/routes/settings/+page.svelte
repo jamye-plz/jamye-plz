@@ -174,21 +174,24 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
+	<main
+		id="main-content"
+		class="mx-auto max-w-(--container-conversation) space-y-6 px-4 py-6 md:px-6"
+	>
 		{#if meQuery.isPending}
-			<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-(--color-text-muted)">불러오는 중...</p>
 		{:else if meQuery.isError}
 			<p class="py-8 text-center text-sm text-error">정보를 불러올 수 없습니다.</p>
 		{:else if meQuery.data}
 			{@const me = meQuery.data}
 
 			<section
-				class="elevation-1 flex items-center gap-4 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+				class="elevation-1 flex items-center gap-4 rounded-xl bg-(--color-surface-raised) p-4 md:p-5"
 			>
 				<UserAvatar url={me.avatar_url} name={me.nickname} sizeClass="w-16" textClass="text-2xl" />
 				<div class="min-w-0">
 					<p class="truncate font-semibold text-base-content">{me.nickname}</p>
-					<p class="text-[13px] text-[var(--color-text-muted)] tabular-nums">
+					<p class="text-[13px] text-(--color-text-muted) tabular-nums">
 						{PROVIDER_LABEL[me.provider] ?? me.provider} 로그인 ·
 						{new Date(me.created_at).toLocaleDateString('ko-KR', {
 							year: 'numeric',
@@ -201,7 +204,7 @@
 
 			<form
 				onsubmit={onSave}
-				class="elevation-1 space-y-2 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+				class="elevation-1 space-y-2 rounded-xl bg-(--color-surface-raised) p-4 md:p-5"
 			>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">닉네임</legend>
@@ -242,21 +245,17 @@
 						</div>
 					</div>
 				{/if}
-				<p class="text-xs text-[var(--color-text-muted)]">
-					프로필 사진 변경은 곧 지원될 예정이에요.
-				</p>
+				<p class="text-xs text-(--color-text-muted)">프로필 사진 변경은 곧 지원될 예정이에요.</p>
 			</form>
 
 			{#if pushSectionVisible}
-				<section
-					class="elevation-1 space-y-2 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
-				>
+				<section class="elevation-1 space-y-2 rounded-xl bg-(--color-surface-raised) p-4 md:p-5">
 					<div class="flex items-center justify-between gap-3">
 						<div class="min-w-0">
 							<label for="push-toggle" class="block text-sm font-medium text-base-content">
 								푸시 알림
 							</label>
-							<p class="text-xs text-[var(--color-text-muted)]">새 게시글과 채팅 알림을 받아요.</p>
+							<p class="text-xs text-(--color-text-muted)">새 게시글과 채팅 알림을 받아요.</p>
 						</div>
 						<input
 							id="push-toggle"

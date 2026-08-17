@@ -38,7 +38,7 @@
 	class="flex min-h-dvh items-center justify-center bg-base-100 px-4 py-8 md:px-6"
 >
 	<div
-		class="elevation-1 w-full max-w-md space-y-4 rounded-xl bg-[var(--color-surface-raised)] p-6 text-center md:p-8"
+		class="elevation-1 w-full max-w-md space-y-4 rounded-xl bg-(--color-surface-raised) p-6 text-center md:p-8"
 	>
 		{#if status === 'joining'}
 			<span class="loading mx-auto loading-lg loading-spinner" aria-hidden="true"></span>

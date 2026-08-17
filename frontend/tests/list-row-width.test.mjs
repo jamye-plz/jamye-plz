@@ -77,8 +77,8 @@ test('group rows use consistent gap-separated mobile surfaces', () => {
 		'items-center',
 		'touch-manipulation',
 		'rounded-xl',
-		'hover:bg-[var(--color-surface-raised)]',
-		'active:bg-[var(--color-surface-raised)]'
+		'hover:bg-(--color-surface-raised)',
+		'active:bg-(--color-surface-raised)'
 	]) {
 		assert.ok(linkClasses.includes(requiredClass), `group link must include ${requiredClass}`);
 	}
@@ -92,5 +92,5 @@ test('group rows use consistent gap-separated mobile surfaces', () => {
 	);
 
 	assert.doesNotMatch(groupSource, /function navigateTo\b/);
-	assert.match(groupSource, /max-w-\[720px\] space-y-6/);
+	assert.match(groupSource, /max-w-\(--container-conversation\) space-y-6/);
 });

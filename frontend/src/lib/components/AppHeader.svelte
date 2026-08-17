@@ -17,7 +17,7 @@
 	class="sticky top-0 z-(--z-sticky) shrink-0 border-b border-base-300 bg-base-100/95 pt-[env(safe-area-inset-top)] backdrop-blur"
 >
 	<div
-		class="navbar mx-auto h-14 min-h-0 w-full max-w-[720px] pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))]"
+		class="navbar mx-auto h-14 min-h-0 w-full max-w-(--container-conversation) pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))]"
 	>
 		{@render children()}
 	</div>

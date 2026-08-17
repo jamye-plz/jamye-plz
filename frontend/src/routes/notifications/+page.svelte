@@ -61,7 +61,7 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] px-4 py-4 md:px-6">
+	<main id="main-content" class="mx-auto max-w-(--container-conversation) px-4 py-4 md:px-6">
 		{#if notifsQuery.isPending}
 			<ul class="list" aria-label="알림 목록을 불러오는 중" aria-busy="true">
 				{#each [1, 2, 3] as row (row)}
@@ -77,7 +77,7 @@
 			<p class="py-8 text-center text-sm text-error">알림을 불러올 수 없습니다.</p>
 		{:else if notifsQuery.data && notifsQuery.data.items.length === 0}
 			<p
-				class="py-16 text-center text-sm text-[var(--color-text-muted)]"
+				class="py-16 text-center text-sm text-(--color-text-muted)"
 				in:fade={{ duration: prefersReducedMotion.current ? 0 : 300 }}
 			>
 				아직 알림이 없어요
@@ -90,8 +90,8 @@
 							onclick={() => open(n)}
 							class="list-col-grow min-h-16 w-full border-l-2 px-4 py-3 text-left transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary
 								{n.read
-								? 'border-transparent hover:bg-[var(--color-surface-raised)]'
-								: 'border-primary bg-[var(--color-surface-blush)] hover:bg-base-200'}"
+								? 'border-transparent hover:bg-(--color-surface-raised)'
+								: 'border-primary bg-(--color-surface-blush) hover:bg-base-200'}"
 						>
 							<div class="flex items-start gap-3">
 								<span
@@ -106,9 +106,9 @@
 										{/if}
 									</div>
 									{#if n.body}
-										<p class="truncate text-sm text-[var(--color-text-muted)]">{n.body}</p>
+										<p class="truncate text-sm text-(--color-text-muted)">{n.body}</p>
 									{/if}
-									<p class="text-[13px] text-[var(--color-text-muted)] tabular-nums">
+									<p class="text-[13px] text-(--color-text-muted) tabular-nums">
 										{timeAgo(n.created_at)}
 									</p>
 								</div>

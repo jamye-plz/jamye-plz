@@ -52,22 +52,20 @@
 		{/if}
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] px-4 py-6 md:px-6">
+	<main id="main-content" class="mx-auto max-w-(--container-conversation) px-4 py-6 md:px-6">
 		{#if topicQuery.isPending}
-			<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-(--color-text-muted)">불러오는 중...</p>
 		{:else if topicQuery.isError}
 			<p class="py-8 text-center text-sm text-error">주제를 불러올 수 없습니다.</p>
 		{:else if topicQuery.data}
 			{@const topic = topicQuery.data}
 			<div class="space-y-4">
 				<article
-					class="elevation-1 space-y-4 rounded-xl border border-base-300 bg-[var(--color-surface-raised)] p-4 md:p-5"
+					class="elevation-1 space-y-4 rounded-xl border border-base-300 bg-(--color-surface-raised) p-4 md:p-5"
 				>
 					<header class="space-y-2">
 						<h2 class="text-[18px] leading-[1.45] font-[650] text-base-content">{topic.title}</h2>
-						<div
-							class="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] tabular-nums"
-						>
+						<div class="flex items-center gap-2 text-[13px] text-(--color-text-muted) tabular-nums">
 							<span>{topic.author_nickname}</span>
 							<span aria-hidden="true">·</span>
 							<span
@@ -86,7 +84,7 @@
 							{@html renderMarkdown(topic.body)}
 						</div>
 					{:else}
-						<p class="text-sm text-[var(--color-text-muted)] italic">아직 내용이 없습니다.</p>
+						<p class="text-sm text-(--color-text-muted) italic">아직 내용이 없습니다.</p>
 					{/if}
 
 					{#if topic.tags.length > 0}

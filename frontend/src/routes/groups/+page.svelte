@@ -45,7 +45,10 @@
 		</div>
 	</AppHeader>
 
-	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
+	<main
+		id="main-content"
+		class="mx-auto max-w-(--container-conversation) space-y-6 px-4 py-6 md:px-6"
+	>
 		{#if groupsQuery.isPending}
 			<ul class="list gap-2" aria-label="그룹 목록을 불러오는 중" aria-busy="true">
 				{#each [1, 2, 3] as row (row)}
@@ -66,7 +69,7 @@
 				class="space-y-3 py-16 text-center"
 				in:fade={{ duration: prefersReducedMotion.current ? 0 : 300 }}
 			>
-				<p class="text-[var(--color-text-muted)]">아직 속한 그룹이 없어요</p>
+				<p class="text-(--color-text-muted)">아직 속한 그룹이 없어요</p>
 				<button onclick={() => createDialog?.showModal()} class="btn rounded-lg btn-primary">
 					<Plus class="h-5 w-5" aria-hidden="true" />
 					첫 그룹 만들기
@@ -78,7 +81,7 @@
 					<li class="list-row min-h-16 p-0 after:hidden">
 						<a
 							href={resolve(`/groups/${group.id}`)}
-							class="list-col-grow flex min-h-16 w-full touch-manipulation items-center rounded-xl px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-raised)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary active:bg-[var(--color-surface-raised)]"
+							class="list-col-grow flex min-h-16 w-full touch-manipulation items-center rounded-xl px-4 py-3 text-left transition-colors hover:bg-(--color-surface-raised) focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-primary active:bg-(--color-surface-raised)"
 						>
 							<div class="flex w-full items-center justify-between gap-3">
 								<span class="font-medium text-base-content">{group.name}</span>
