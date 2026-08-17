@@ -135,7 +135,7 @@
 					{/if}
 				</h1>
 				{#if groupQuery.data}
-					<p class="text-xs text-[var(--color-text-muted)]">{groupQuery.data.member_count}명</p>
+					<p class="text-xs text-(--color-text-muted)">{groupQuery.data.member_count}명</p>
 				{/if}
 			</div>
 			<div class="flex items-center gap-1">
@@ -166,7 +166,7 @@
 
 	<main id="main-content">
 		<div class="mx-auto max-w-[720px] space-y-4 px-4 py-4 md:px-6">
-			<div class="elevation-1 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5">
+			<div class="elevation-1 rounded-xl bg-(--color-surface-raised) p-4 md:p-5">
 				<form onsubmit={submitTopic} class="flex w-full items-stretch gap-2">
 					<input
 						id="new-topic-input"
@@ -217,7 +217,7 @@
 					<div class="space-y-3" aria-label="주제 목록을 불러오는 중" aria-busy="true">
 						{#each [1, 2, 3] as card (card)}
 							<div
-								class="elevation-1 space-y-3 rounded-xl border border-base-300 bg-[var(--color-surface-raised)] p-4 md:p-5"
+								class="elevation-1 space-y-3 rounded-xl border border-base-300 bg-(--color-surface-raised) p-4 md:p-5"
 							>
 								<span class="block h-5 w-2/3 skeleton"></span>
 								<span class="block h-3 w-2/5 skeleton"></span>
@@ -231,7 +231,7 @@
 						class="py-16 text-center"
 						in:fade={{ duration: prefersReducedMotion.current ? 0 : 300 }}
 					>
-						<p class="text-[var(--color-text-muted)]">이 날짜엔 주제가 없어요</p>
+						<p class="text-(--color-text-muted)">이 날짜엔 주제가 없어요</p>
 					</div>
 				{:else if allTopics.length > 0}
 					<ul class="space-y-3" role="list" aria-label="주제 목록">
@@ -239,7 +239,7 @@
 							<li>
 								<a
 									href={resolve(`/groups/${groupId}/topics/${topic.id}/chat?date=${selectedDate}`)}
-									class="elevation-1 card rounded-xl border border-base-300 bg-[var(--color-surface-raised)] transition-colors hover:border-primary/40 focus-visible:outline-3 focus-visible:outline-primary {topic.unread
+									class="elevation-1 card rounded-xl border border-base-300 bg-(--color-surface-raised) transition-colors hover:border-primary/40 focus-visible:outline-3 focus-visible:outline-primary {topic.unread
 										? 'ring-2 ring-primary'
 										: ''}"
 									aria-label={topic.unread ? `${topic.title}, 안 읽음` : topic.title}
@@ -255,7 +255,7 @@
 											{/if}
 										</div>
 										<div
-											class="flex items-center gap-2 text-[13px] text-[var(--color-text-muted)] tabular-nums"
+											class="flex items-center gap-2 text-[13px] text-(--color-text-muted) tabular-nums"
 										>
 											<span>{topic.author_nickname}</span>
 											<span aria-hidden="true">·</span>
@@ -269,7 +269,7 @@
 
 					<div bind:this={sentinel} class="h-1"></div>
 					{#if topicsQuery.isFetchingNextPage}
-						<p class="py-3 text-center text-xs text-[var(--color-text-muted)]">더 불러오는 중...</p>
+						<p class="py-3 text-center text-xs text-(--color-text-muted)">더 불러오는 중...</p>
 					{/if}
 				{/if}
 			</div>

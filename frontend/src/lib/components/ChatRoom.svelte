@@ -682,7 +682,7 @@
 
 <div
 	bind:this={rootEl}
-	class="fixed inset-y-0 right-0 left-0 flex flex-col bg-base-100 will-change-transform lg:left-[var(--rail-width)]"
+	class="fixed inset-y-0 right-0 left-0 flex flex-col bg-base-100 will-change-transform lg:left-(--rail-width)"
 	style="height: 100dvh"
 >
 	<AppHeader>
@@ -718,7 +718,7 @@
 						aria-label={bodyOpen ? '본문 접기' : '본문 펼치기'}
 					>
 						<ChevronDown
-							class="h-4 w-4 transition-transform duration-[var(--duration-standard)] {bodyOpen
+							class="h-4 w-4 transition-transform duration-(--duration-standard) {bodyOpen
 								? 'rotate-180'
 								: ''}"
 						/>
@@ -789,20 +789,16 @@
 				: ''}"
 		>
 			{#if loadingOlder}
-				<p class="py-1 text-center text-xs text-[var(--color-text-muted)]">
-					이전 메시지 불러오는 중...
-				</p>
+				<p class="py-1 text-center text-xs text-(--color-text-muted)">이전 메시지 불러오는 중...</p>
 			{/if}
 			{#if messagesQuery.isPending && messages.length === 0}
-				<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
+				<p class="py-8 text-center text-sm text-(--color-text-muted)">불러오는 중...</p>
 			{:else if messages.length === 0}
-				<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">
-					첫 메시지를 남겨보세요
-				</p>
+				<p class="py-8 text-center text-sm text-(--color-text-muted)">첫 메시지를 남겨보세요</p>
 			{:else}
 				{#each messages as msg, i (msg.id)}
 					{#if showDateDivider(i)}
-						<div class="divider my-1 text-[13px] text-[var(--color-text-muted)] tabular-nums">
+						<div class="divider my-1 text-[13px] text-(--color-text-muted) tabular-nums">
 							{dateLabel(msg.created_at)}
 						</div>
 					{/if}
@@ -819,13 +815,13 @@
 							</div>
 							{#if msg.pending}
 								<div
-									class="chat-footer text-[13px] text-[var(--color-text-muted)] tabular-nums"
+									class="chat-footer text-[13px] text-(--color-text-muted) tabular-nums"
 									aria-live="polite"
 								>
 									전송 중
 								</div>
 							{:else if showTime(i)}
-								<div class="chat-footer text-[13px] text-[var(--color-text-muted)] tabular-nums">
+								<div class="chat-footer text-[13px] text-(--color-text-muted) tabular-nums">
 									{hm(msg.created_at)}
 								</div>
 							{/if}
@@ -848,17 +844,17 @@
 								{/if}
 							</div>
 							{#if showHeader(i) && msg.sender_nickname}
-								<div class="chat-header text-[13px] text-[var(--color-text-muted)]">
+								<div class="chat-header text-[13px] text-(--color-text-muted)">
 									{msg.sender_nickname}
 								</div>
 							{/if}
 							<div
-								class="chat-bubble max-w-[78%] rounded-[20px_20px_20px_8px] bg-[var(--color-surface-raised)] text-base leading-[1.55] text-base-content before:hidden lg:max-w-[66%]"
+								class="chat-bubble max-w-[78%] rounded-[20px_20px_20px_8px] bg-(--color-surface-raised) text-base leading-[1.55] text-base-content before:hidden lg:max-w-[66%]"
 							>
 								{@render messageBody(msg, false)}
 							</div>
 							{#if showTime(i)}
-								<div class="chat-footer text-[13px] text-[var(--color-text-muted)] tabular-nums">
+								<div class="chat-footer text-[13px] text-(--color-text-muted) tabular-nums">
 									{hm(msg.created_at)}
 								</div>
 							{/if}

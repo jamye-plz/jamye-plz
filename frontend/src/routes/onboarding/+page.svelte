@@ -29,9 +29,9 @@
 	class="flex min-h-dvh items-center justify-center bg-base-100 px-4 py-8 md:px-6"
 >
 	<div
-		class="elevation-1 w-full max-w-md space-y-8 rounded-xl bg-[var(--color-surface-raised)] p-6 md:p-8"
+		class="elevation-1 w-full max-w-md space-y-8 rounded-xl bg-(--color-surface-raised) p-6 md:p-8"
 	>
-		<div class="space-y-2 rounded-lg bg-[var(--color-surface-lilac)] p-4 text-center">
+		<div class="space-y-2 rounded-lg bg-(--color-surface-lilac) p-4 text-center">
 			<h1 data-route-focus-target tabindex="-1" class="text-2xl font-bold text-base-content">
 				프로필 설정
 			</h1>

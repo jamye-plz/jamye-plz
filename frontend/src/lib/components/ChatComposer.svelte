@@ -442,7 +442,7 @@
 </script>
 
 <footer
-	class="elevation-2 shrink-0 border-t border-base-300 bg-[var(--color-surface-raised)] px-4 pt-3 {keyboardOpen
+	class="elevation-2 shrink-0 border-t border-base-300 bg-(--color-surface-raised) px-4 pt-3 {keyboardOpen
 		? 'pb-3'
 		: 'pb-[calc(0.75rem+env(safe-area-inset-bottom))]'}"
 >
@@ -451,7 +451,7 @@
 			<div class="mb-2 flex items-center gap-2 rounded-md bg-base-200 px-3 py-2">
 				<audio src={voiceClip.previewUrl} controls preload="metadata" class="h-10 min-w-0 flex-1"
 				></audio>
-				<span class="shrink-0 text-xs text-[var(--color-text-muted)]"
+				<span class="shrink-0 text-xs text-(--color-text-muted)"
 					>{fmtSeconds(voiceClip.duration)}</span
 				>
 				<button
@@ -527,10 +527,7 @@
 		{/if}
 
 		{#if converting}
-			<p
-				class="mb-2 flex items-center gap-2 px-1 text-xs text-[var(--color-text-muted)]"
-				role="status"
-			>
+			<p class="mb-2 flex items-center gap-2 px-1 text-xs text-(--color-text-muted)" role="status">
 				<span class="loading loading-xs loading-spinner"></span>
 				사진을 변환하는 중이에요...
 			</p>
@@ -570,7 +567,7 @@
 				placeholder="메시지 입력..."
 				rows={1}
 				disabled={busy}
-				class="textarea max-h-[120px] min-h-[48px] min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border-[var(--color-border-strong)]"
+				class="textarea max-h-[120px] min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-lg border-(--color-border-strong)"
 				aria-label="메시지 입력"></textarea>
 			<button
 				type="button"

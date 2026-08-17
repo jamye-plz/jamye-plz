@@ -148,13 +148,13 @@
 
 	<main id="main-content" class="mx-auto max-w-[720px] space-y-6 px-4 py-6 md:px-6">
 		{#if groupQuery.isPending}
-			<p class="py-8 text-center text-sm text-[var(--color-text-muted)]">불러오는 중...</p>
+			<p class="py-8 text-center text-sm text-(--color-text-muted)">불러오는 중...</p>
 		{:else if groupQuery.isError}
 			<p class="py-8 text-center text-sm text-error">그룹 정보를 불러올 수 없습니다.</p>
 		{:else if groupQuery.data}
 			<form
 				onsubmit={onSaveName}
-				class="elevation-1 space-y-2 rounded-xl bg-[var(--color-surface-raised)] p-4 md:p-5"
+				class="elevation-1 space-y-2 rounded-xl bg-(--color-surface-raised) p-4 md:p-5"
 			>
 				<fieldset class="fieldset" disabled={!isOwner}>
 					<legend class="fieldset-legend">그룹 이름</legend>
@@ -181,9 +181,7 @@
 					</div>
 				</fieldset>
 				{#if !isOwner}
-					<p class="px-1 text-xs text-[var(--color-text-muted)]">
-						그룹장만 이름을 수정할 수 있어요.
-					</p>
+					<p class="px-1 text-xs text-(--color-text-muted)">그룹장만 이름을 수정할 수 있어요.</p>
 				{/if}
 				{#if rename.isError}
 					<p class="px-1 text-xs text-error" role="alert">{renameErrorText(rename.error)}</p>
@@ -208,7 +206,7 @@
 				<h2 class="px-1 text-sm font-semibold text-base-content">멤버십</h2>
 				{#if isOwner}
 					<div
-						class="rounded-xl bg-[var(--color-surface-raised)] px-4 py-3 text-sm text-[var(--color-text-muted)]"
+						class="rounded-xl bg-(--color-surface-raised) px-4 py-3 text-sm text-(--color-text-muted)"
 					>
 						소유권을 이양한 후 나갈 수 있어요.
 						<a href={resolve(`/groups/${groupId}/invite`)} class="link link-primary">
@@ -252,7 +250,7 @@
 		<h2 id="delete-group-title" class="text-base font-semibold text-base-content">
 			그룹을 삭제할까요?
 		</h2>
-		<p class="text-sm text-[var(--color-text-muted)]">
+		<p class="text-sm text-(--color-text-muted)">
 			삭제하면 이 그룹의 대화와 멤버 기록에 더 이상 접근할 수 없어요. 이 작업은 되돌릴 수 없어요.
 		</p>
 		{#if del.isError}
@@ -283,7 +281,7 @@
 		<h2 id="leave-group-title" class="text-base font-semibold text-base-content">
 			그룹을 나갈까요?
 		</h2>
-		<p class="text-sm text-[var(--color-text-muted)]">
+		<p class="text-sm text-(--color-text-muted)">
 			나가면 다시 초대받기 전까지 이 그룹에 접근할 수 없어요.
 		</p>
 		{#if leave.isError}

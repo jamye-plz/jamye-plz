@@ -153,7 +153,7 @@
 		<RefreshCw
 			class="h-4 w-4 {ptrReady || refreshing
 				? 'text-primary'
-				: 'text-[var(--color-text-muted)]'} {refreshing ? 'animate-spin' : ''}"
+				: 'text-(--color-text-muted)'} {refreshing ? 'animate-spin' : ''}"
 			style={refreshing ? '' : `transform: rotate(${(pullY / PTR_TRIGGER) * 180}deg)`}
 		/>
 	</div>
@@ -168,12 +168,8 @@
 		  Chat is a focused keyboard/composer surface, so it keeps the rail on
 		  desktop but omits the mobile dock and relies on its explicit back path.
 		-->
-		<div class="min-h-dvh lg:pl-[var(--rail-width)]">
-			<div
-				class="flex min-h-dvh flex-col {isChatRoute
-					? ''
-					: 'pb-[var(--mobile-dock-height)]'} lg:pb-0"
-			>
+		<div class="min-h-dvh lg:pl-(--rail-width)">
+			<div class="flex min-h-dvh flex-col {isChatRoute ? '' : 'pb-(--mobile-dock-height)'} lg:pb-0">
 				{@render children()}
 				{#if !isChatRoute}
 					<AppNavigation variant="dock" />
