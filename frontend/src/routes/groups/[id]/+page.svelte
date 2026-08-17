@@ -122,11 +122,20 @@
 				<ArrowLeft class="h-5 w-5" />
 			</button>
 			<div class="min-w-0 flex-1">
+				<h1
+					data-route-focus-target
+					tabindex="-1"
+					aria-label={groupQuery.data?.name ?? '그룹'}
+					class="truncate text-base font-semibold text-base-content"
+				>
+					{#if groupQuery.data}
+						{groupQuery.data.name}
+					{:else}
+						<span aria-hidden="true" class="block h-4 w-32 skeleton"></span>
+					{/if}
+				</h1>
 				{#if groupQuery.data}
-					<h1 class="truncate text-base font-semibold text-base-content">{groupQuery.data.name}</h1>
 					<p class="text-xs text-[var(--color-text-muted)]">{groupQuery.data.member_count}명</p>
-				{:else}
-					<div class="h-4 w-32 skeleton"></div>
 				{/if}
 			</div>
 			<div class="flex items-center gap-1">

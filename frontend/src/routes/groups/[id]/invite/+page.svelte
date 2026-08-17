@@ -136,7 +136,9 @@
 			>
 				<ArrowLeft class="h-5 w-5" />
 			</button>
-			<h1 class="text-base font-semibold text-base-content">초대</h1>
+			<h1 data-route-focus-target tabindex="-1" class="text-base font-semibold text-base-content">
+				초대
+			</h1>
 		</div>
 	</AppHeader>
 

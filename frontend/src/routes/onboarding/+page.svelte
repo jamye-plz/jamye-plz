@@ -32,7 +32,9 @@
 		class="elevation-1 w-full max-w-md space-y-8 rounded-xl bg-[var(--color-surface-raised)] p-6 md:p-8"
 	>
 		<div class="space-y-2 rounded-lg bg-[var(--color-surface-lilac)] p-4 text-center">
-			<h1 class="text-2xl font-bold text-base-content">프로필 설정</h1>
+			<h1 data-route-focus-target tabindex="-1" class="text-2xl font-bold text-base-content">
+				프로필 설정
+			</h1>
 			<p class="text-base text-base-content">닉네임을 입력해 시작하세요</p>
 		</div>
 

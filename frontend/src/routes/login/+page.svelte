@@ -13,7 +13,9 @@
 		class="elevation-1 w-full max-w-md space-y-8 rounded-xl bg-[var(--color-surface-raised)] p-6 md:p-8"
 	>
 		<div class="space-y-2 rounded-lg bg-[var(--color-surface-blush)] p-4 text-center">
-			<h1 class="text-3xl font-bold text-base-content">잼얘좀</h1>
+			<h1 data-route-focus-target tabindex="-1" class="text-3xl font-bold text-base-content">
+				잼얘좀
+			</h1>
 			<p class="text-base leading-relaxed text-base-content">
 				폐쇄 그룹에서 주제를 던지고 실시간으로 떠드는 공간
 			</p>
