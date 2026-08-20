@@ -5,10 +5,17 @@
 > 시작할 수 있도록, **각 기능의 "이미 있는 것(EXISTS) vs 새로 만들 것(GAP)"을 파일 앵커와
 > 함께** 정리했다.
 >
-> **작성일** 2026-07-19 · **갱신** 2026-08-04 · **기준 커밋** `main` (PR #15 머지 후)
+> **작성일** 2026-07-19 · **갱신** 2026-08-20 · **기준 커밋** `main` (PR #15 머지 후)
 >
-> **상태** — 🎉 **v2 마일스톤 전부 완료** (M0 #16 · M1 #17 · M2 #18 · M3 #21 · M4a #22, 2026-08-05 머지).
-> **Open Decisions D1~D8 전부 확정.** 남은 것은 배포·실기기 검증뿐이며, M4b(WebRTC)는 vNext(§7 D6).
+> **상태** — **v2 4대 기능 완료** (M0 #16 · M1 #17 · M2 #18 · M3 #21 · M4a #22, 2026-08-05 머지).
+> 이후 운영 중 발견된 **M5(WS 자동 재연결)가 v2 범위로 추가**돼 아직 열려 있다.
+> **Open Decisions D1~D8 전부 확정.** M4b(실시간 음성 **통화**, WebRTC)는 **도입 계획 없음**(§6).
+>
+> **진행 중: M5 — WebSocket 자동 재연결** (§6.5). 모바일에서 앱을 백그라운드로 보냈다 돌아오면
+> 소켓이 끊긴 채 복구되지 않아 채팅을 재개할 수 없는 문제. v2 범위에 포함한다.
+>
+> 그 밖의 작업은 이 로드맵을 따르지 않는다 — UI·기능 다듬기가 PR 단위로 이어지고 있다(#23~#29).
+> 잔여 기술부채는 [tech-debt-tracker.md](./tech-debt-tracker.md) #5·#9 두 건뿐이다.
 >
 > 이 로드맵은 v1 코드베이스 4개 영역 정찰(reconnaissance) 결과에 근거한다. 파일:라인
 > 앵커는 작성 시점 기준이며 구현 전 재확인할 것.
@@ -27,7 +34,7 @@ v1은 놀랄 만큼 많은 부분이 **이미 스캐폴딩**돼 있다. v2의 �
 | **Web Push (VAPID)** | 모델·엔드포인트·SW 핸들러·pywebpush 의존성까지 완비, send 경로만 stub | ✅ **완료 — M1 (PR #17)**. 배포 후 실기기 수신 검증 |
 | **그룹 관리 고도화** | owner 개념·`role` 컬럼·`require_owner` 인가 존재, 멤버 목록 완성. write 경로 전무 | ✅ **완료 — M2 (PR #18)** |
 | **채팅 미디어 첨부** | topic presign→confirm 흐름 존재, 채팅 메시지는 text-only | ✅ **완료 — M3 (PR #21)**. 사진·mp4 + 전체화면 뷰어·다운로드 |
-| **음성 채팅 + STT** | 음성 코드 전무. WS·메시지 `type`·미디어 스캐폴드만 재사용 가능 | ✅ **완료 — M4a (PR #22)**. 데스크톱 E2E 검증(녹음→전송→재생→실시간 전사). M4b는 vNext |
+| **음성 채팅 + STT** | 음성 코드 전무. WS·메시지 `type`·미디어 스캐폴드만 재사용 가능 | ✅ **완료 — M4a (PR #22)**. 데스크톱 E2E 검증(녹음→전송→재생→실시간 전사). **M4b(실시간 통화)는 도입 계획 없음** |
 | *(기반) 오브젝트 스토리지* | boto3 선언만 있고 `import` 0건 (stub) | ✅ **완료 — M0 (PR #16)** + NixOS 배선(PR #19·#20) |
 
 **가장 중요한 통찰 2가지**
@@ -50,7 +57,8 @@ M2  그룹 관리 고도화            ─┘ (독립)          [CRUD·중간]  
 M3  채팅 미디어 첨부 (img/video)  ← M0 필요          [중상]             ✅ 완료 (#21)
 M4  음성 메시지 + STT            ← M0 + 비동기 job   [최대·최고위험 → 분할]
     M4a 비동기 음성 메시지 (v2 범위 확정)                              ✅ 완료 (#22)
-    M4b 실시간 음성 채팅 WebRTC                                       ⏭ vNext (D6에서 제외)
+    M4b 실시간 음성 통화 WebRTC                                       ❌ 도입 계획 없음
+M5  WebSocket 자동 재연결          ← 독립          [작음·고가치]      ◀ 다음
 ```
 
 - **M0 + M1**은 서로 독립이라 병렬 착수 가능. M1은 신규 인프라가 없어 **가장 빠른 win**.
@@ -395,14 +403,80 @@ WS로 결과 broadcast.
     해당**하지만, int8 성능이 기대에 못 미치면 이 지점을 먼저 의심할 것.
 - 프론트: composer에 녹음 버튼(MediaRecorder), 채팅 버블에 `<audio>` 플레이어 + transcript 표시.
 
-### M4b — 실시간 음성 채팅 (WebRTC, 스트레치 / vNext 권장)
-WebRTC 시그널링(기존 WS 재사용)·peer connection·STUN/TURN. 실시간 전사는 스트리밍 STT 필요.
-**M4a 대비 3배+ 범위** → 별도 마일스톤 또는 vNext 권장.
+### M4b — 실시간 음성 **통화** (WebRTC) — ❌ 도입 계획 없음
+
+> **⛔ 보류 (2026-08-20 확정)** — 가까운 미래에 도입할 계획이 **없다**. vNext 후보로도 두지 않는다.
+> 새 세션은 이 절을 **착수 대상이 아닌 기록**으로 읽을 것.
+
+**M4a와 다른 종류의 기능이다.** M4a는 카톡 음성 메시지(녹음→업로드→나중에 재생)이고,
+M4b는 디스코드 음성 채널(**서로 접속해 동시에 말하고 듣기**)이다. 이름이 비슷해 혼동하기 쉬운데
+공유하는 코드가 거의 없다.
+
+필요한 것: WebRTC 시그널링(기존 WS 재사용 가능)·peer connection·**STUN/TURN 서버**(NAT 통과에
+필수, TURN은 릴레이라 대역폭 비용 + 홈랩에 별도 서버)·**스트리밍 STT**(M4a의 배치 faster-whisper로는
+불가). **M4a 대비 3배+ 범위.**
+
+착수한다면 D6·D7을 다시 여는 것부터 해야 한다 — 결정 당시 전제(배치 전사, TURN 불필요)가
+M4b에서는 성립하지 않는다.
 
 ### 수용 기준 (M4a)
 - 음성 녹음·전송 → 오디오 재생 가능 + 잠시 후 transcript 채워짐(WS 갱신). 키 미설정 시 로컬 fallback/무전사.
 
 ### Open Decision → **[D6] 음성 범위(음성 메시지 vs 실시간 WebRTC)**, **[D7] STT 프로바이더**, **[D8] 비동기 인프라(BackgroundTasks vs arq+Redis)** (§7)
+
+---
+
+## 6.5. M5 — WebSocket 자동 재연결 (v2 범위)
+
+**목표**: 소켓이 끊기면 **스스로 다시 붙고**, 끊긴 동안 놓친 메시지를 채워 넣는다.
+
+### 문제 (2026-08-20 사용자 보고)
+
+주제 채팅방을 열어둔 채 휴대폰 화면을 껐다가 나중에 다시 켜면 **소켓이 끊긴 상태로 남아 채팅을
+재개할 수 없다.** 방을 나갔다 다시 들어와야 복구된다.
+
+### 현재 상태 (코드 확인 결과)
+
+- `ChatRoom.svelte:276` — 소켓 생성 `$effect`의 의존성이 **`chatroomId` 하나뿐**이다. 방을 바꾸지
+  않는 한 소켓은 **연결당 한 번만** 만들어진다.
+- `ChatRoom.svelte:390` — `socket.onclose`는 `connected = false`로 표시하고 축출(`4001`)만 처리한다.
+  **재연결 로직이 없다.** `onerror`도 없다.
+- 백오프·재시도·`online`/`offline`·`visibilitychange` 기반 복구 **전무**(`visibilitychange`는 읽음
+  처리에만 쓰인다).
+- **서버에도 ping/pong keepalive가 없다**(`main.py`의 WS 핸들러는 `receive_json()` 루프).
+  모바일에서 흔한 **half-open**(클라는 연결됐다고 믿지만 실제로는 끊김)을 감지할 수단이 없다.
+- 결과: `ChatComposer`의 `canSend`가 `connected`를 요구하므로 **전송이 영구 차단**되고, 헤더
+  인디케이터는 계속 "연결 중"을 표시한다 — 실제로는 연결을 **시도조차 하지 않는** 상태다.
+
+### 작업
+
+- **재연결 루프**: `onclose`/`onerror`에서 지수 백오프(예: 1s → 30s 상한, jitter)로 재연결.
+  **`4001`(축출)은 재연결 금지** — 현재의 캐시 정리 + `/groups` 이동 동작을 유지한다.
+- **복귀 트리거**: `visibilitychange`(가시화 시) + `online` 이벤트에서 **즉시 1회 시도**(백오프 대기
+  건너뜀). 모바일 복귀 시나리오의 핵심이다.
+- **half-open 감지**: 클라 주기적 ping + 서버 응답(또는 서버 주도 ping). 응답이 없으면 소켓을 죽은
+  것으로 간주하고 재연결 루프에 넘긴다.
+- **재동기화**: 재연결 성공 시 `join` 후 **놓친 메시지 병합**. `onopen`의 기존 join-gap 병합 로직
+  (`listMessages` 재조회 후 `have` 집합으로 필터)을 **그대로 재사용**한다 — 이미 정확히 이 일을 한다.
+- **UI**: 인디케이터를 `connected` 불리언에서 **`connecting | connected | disconnected`** 3상태로.
+  "연결 중"이 거짓말이 되지 않게 하고, 재연결 실패가 길어지면 수동 재시도 버튼을 노출한다.
+
+### 수용 기준
+
+- 휴대폰 화면을 껐다 켜면 **방을 나가지 않고도** 채팅이 재개된다.
+- 끊긴 동안 도착한 메시지가 재연결 후 히스토리에 채워지고 중복이 없다.
+- 네트워크를 끊었다 복구하면 자동으로 다시 붙는다.
+- 축출(`4001`)은 **재연결하지 않고** 기존대로 그룹 목록으로 내보낸다.
+- `bunx eslint .` = 0 · `bun run check` = 0/0 · `bun run build` = 0.
+
+### 주의
+
+- **`refetchOnReconnect: false`는 의도된 설정**이다(`ChatRoom.svelte:148`). 재연결 시 `messagesQuery`를
+  통째로 refetch하면 스크롤로 불러온 옛 페이지와 위치가 날아간다. 재동기화는 join-gap 병합 경로로만
+  한다.
+- 재연결마다 `join`을 다시 보내야 한다 — 서버의 `ws_hub`는 소켓 단위로 방 구독을 관리한다.
+- 전사 프레임 버퍼(`pendingTranscripts`)와 상호작용을 확인할 것. 재연결로 들어온 메시지도
+  `applyBufferedTranscripts`를 타야 한다.
 
 ---
 
@@ -417,11 +491,11 @@ WebRTC 시그널링(기존 WS 재사용)·peer connection·STUN/TURN. 실시간 
 | **D1** | ✅ **MinIO + 접근 정책 B**(프라이빗 버킷 + 단기 presigned GET) — 권장안 채택 | M0 (#16), NixOS 배선 (#19·#20) |
 | **D2** | ✅ **요청 비블로킹 fire-and-forget** — 권장(BackgroundTasks)과 동일 계열이되, 동시 4 / in-flight 64 상한을 둔 `push_dispatch.py`로 구현 | M1 (#17) |
 | **D3** | ✅ **즉시 숨김 + `deleted_at` 보존**(하드 purge는 후속) — 권장안 채택 | M2 (#18) |
-| **D4** | ✅ **`message_media` 전용 테이블** — 권장안 채택 | M3 (예정) |
-| **D5** | ✅ **직접 재생(mp4) + 크기 제한**(썸네일·트랜스코딩 후속) — 권장안 채택 | M3 (예정) |
-| **D6** | ✅ **음성 메시지(M4a)만 v2 범위. WebRTC(M4b)는 vNext** — 권장안 채택 | M4a (대기) |
-| **D7** | ✅ **faster-whisper (CTranslate2) self-host** — 2026-08-04 비교 후 확정. 근거는 아래 "D7 비교 결과" | M4a (대기) |
-| **D8** | ✅ **arq + Redis**(내구성 + ws_hub pub/sub 동시 해결) — M4a에서 도입 | M4a (대기) |
+| **D4** | ✅ **`message_media` 전용 테이블** — 권장안 채택 | M3 (#21) |
+| **D5** | ✅ **직접 재생(mp4) + 크기 제한**(썸네일·트랜스코딩 후속) — 권장안 채택 | M3 (#21) |
+| **D6** | ✅ **음성 메시지(M4a)만 v2 범위** — 권장안 채택. 이후 2026-08-20에 **M4b(실시간 통화)는 도입 계획 없음**으로 확정 | M4a (#22), M4b 보류 |
+| **D7** | ✅ **faster-whisper (CTranslate2) self-host** — 2026-08-04 비교 후 확정. 근거는 아래 "D7 비교 결과" | M4a (#22) |
+| **D8** | ✅ **arq + Redis**(내구성 + ws_hub pub/sub 동시 해결) — M4a에서 도입 | M4a (#22) |
 
 ### D7 비교 결과 (2026-08-04)
 
@@ -506,27 +580,33 @@ large-v3 한국어 CER 정확값, large-v3-turbo의 한국어 품질. 공개 CPU
 
 ## 9. Ultrawork Kickoff 프롬프트 (복사용)
 
-새 세션에 아래를 붙여넣어 시작한다:
+> v2 4대 기능(M0~M4a)은 완료됐다. 아래는 **현재 열려 있는 M5** 착수용이다.
+> M0~M4a 착수에 쓰던 원본 프롬프트는 git 히스토리에 남아 있다.
 
 ```
 /ultrawork
 
-docs/planning/002-v2-roadmap.md 를 읽고 v2를 구현한다.
+docs/planning/002-v2-roadmap.md 의 §6.5(M5 — WebSocket 자동 재연결)를 읽고 구현한다.
+
+배경: 주제 채팅방을 열어둔 채 휴대폰 화면을 껐다 켜면 소켓이 끊긴 채 복구되지 않아
+채팅을 재개할 수 없다(방을 나갔다 들어와야 복구). 사용자 실사용에서 보고된 문제다.
 
 시작 전:
-1. §7 Open Decisions(D1~D8)를 나에게 확인받아 확정할 것. 특히 D6(음성 범위)은 규모를
-   좌우하므로 최우선. 권장안이 있으니 이견 없으면 권장안으로 진행.
-2. 확정된 결정에 맞춰 마일스톤 순서를 잡는다. 기본 권장: M0(스토리지)+M1(푸시) 병렬 →
-   M2(그룹 관리) → M3(채팅 미디어) → M4a(음성 메시지). M4b(WebRTC)는 vNext.
+- §6.5의 "현재 상태"에 적힌 파일:라인 앵커를 먼저 재확인할 것(문서는 작성 시점 기준).
+- §6.5 "주의"의 세 항목을 설계에 반영할 것. 특히 refetchOnReconnect: false는 의도된
+  설정이므로 되돌리지 말 것.
+- 상세 계획을 세워 나에게 확인받은 뒤 구현을 시작할 것.
 
 진행 방식:
-- 마일스톤 하나씩 별도 브랜치 + PR. 각 마일스톤의 "현재 상태/작업/수용 기준"을 로드맵에서 따르고,
-  파일:라인 앵커는 착수 시 재확인(문서는 main 기준).
-- §8 품질 게이트를 모든 변경에 적용(backend: pytest/ruff/pyright, frontend: eslint/check/build).
-- deferred 통합은 반드시 env-conditional + 로컬 fallback 유지(키 없어도 데모 동작).
+- 별도 브랜치 + PR. §6.5의 "작업/수용 기준"을 따른다.
+- §8 품질 게이트 적용(backend: pytest/ruff/pyright, frontend: eslint/check/build).
+- 서버 ping/pong을 추가한다면 backend 게이트도 함께 돌릴 것.
 
-먼저 M0부터 상세 계획을 세우고 나에게 확인받은 뒤 구현을 시작할 것.
+검증은 내가 직접 한다(podman/uvicorn/bun 명령은 내가 실행). 실기기 재현 시나리오:
+화면 끄기 → 수 분 대기 → 켜기 → 방을 나가지 않고 전송이 되는지.
 ```
+
+> **M4b(실시간 음성 통화)는 착수 대상이 아니다** — §6 참조. 도입 계획이 없다.
 
 ---
 
@@ -538,4 +618,5 @@ docs/planning/002-v2-roadmap.md 를 읽고 v2를 구현한다.
 | Web Push | `push_subscription`모델, `push.py`, `notification_repository.py:163-195`, `config.py:69-73,98-99`, `service-worker.ts:40-64`, `push.api.ts:17-40`, pywebpush | `send_push` 실경로(`notification_service.py:180-186`), 발송 훅(`:28,:41`), 공개키 엔드포인트, 프론트 호출·`urlBase64ToUint8Array`·권한 UI·`pushsubscriptionchange` |
 | 그룹 관리 | `require_owner`(`group_service.py:65-69`), `role`(`membership.py:24`), 멤버목록(`:74`), 예외체계 | `PATCH/DELETE /groups/*` + members 엔드포인트, `deleted_at` 마이그레이션, `MembershipRepository.delete/update_role`, 프론트 설정/멤버관리 UI, `apiPatch/apiDelete` |
 | 채팅 미디어 | topic presign 흐름, 이미지 렌더(`topics/[tid]/+page.svelte:90-105`), WS broadcast(`main.py:199-222`) | `message_media` 테이블, 메시지 write/read/WS 미디어 필드, 빈 body 규칙 완화(`main.py:182`), composer file picker, `<img>/<video>` 버블 렌더 |
+| WS 재연결 (M5) | `ChatRoom.svelte:276`(소켓 `$effect`, deps=`chatroomId`), `:390`(`onclose`), `:283`(`onopen`의 join-gap 병합 — 재동기화에 재사용), `:148`(`refetchOnReconnect: false`, 의도된 설정) | 백오프 재연결 루프, `visibilitychange`·`online` 즉시 트리거, ping/pong half-open 감지(**서버에도 없음**), 3상태 인디케이터 |
 | 음성/STT | WS(`ws_hub.py`,`main.py:97-244`), 메시지 `type`(`message.py:37`, `String(8)`), M0 스토리지, config 패턴, `httpx` | 비동기 job 인프라(전무), STT 엔진·키, MediaRecorder, `<audio>` 플레이어, transcript 컬럼, (WebRTC 시) 시그널링·STUN/TURN·Redis pub/sub |
