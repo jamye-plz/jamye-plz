@@ -3,7 +3,7 @@
 > **재밌는 얘기 좀** — anything interesting?
 > 지인 폐쇄 그룹에서 일상의 재밌는 얘기(주제)를 가볍게 시드로 던지고, 언제든 살을 붙이며, 그 주제로 실시간 채팅하며 노는 lightweight 소셜 플랫폼.
 
-> 최초 v1 2026-06-16 · 갱신 2026-08-05(v2 M3까지). 본 문서 세트가 잼얘좀의 정식 기획 문서다. (기계 판독용 기획 원본 `plan.json`은 로컬 세션 산출물이라 git에 포함되지 않으며, 본 `docs/`가 단일 진실 원천이다.)
+> 최초 v1 2026-06-16 · 갱신 2026-08-20(v2 전체 완료). 본 문서 세트가 잼얘좀의 정식 기획 문서다. (기계 판독용 기획 원본 `plan.json`은 로컬 세션 산출물이라 git에 포함되지 않으며, 본 `docs/`가 단일 진실 원천이다.)
 
 ---
 
@@ -45,7 +45,7 @@
 ### 🗂️ 실행 (`planning/`)
 | 문서 | 내용 |
 |---|---|
-| [002-v2-roadmap.md](planning/002-v2-roadmap.md) | **v2 로드맵 (현재 진행 중)** — M0~M4 · Open Decisions · 품질 게이트 |
+| [002-v2-roadmap.md](planning/002-v2-roadmap.md) | v2 로드맵 — M0~M4a **전부 완료**, M4b는 vNext. Open Decisions·품질 게이트 |
 | [milestone.md](planning/milestone.md) | v1 마일스톤(M0~M4+배포) + 태스크 매핑(T1~16) — **완료·기록용** |
 | [001-daisyui-migration.md](planning/001-daisyui-migration.md) | shadcn-svelte → daisyUI 마이그레이션 기록 |
 | [tech-debt-tracker.md](planning/tech-debt-tracker.md) | 기술 부채 추적 |
@@ -59,13 +59,19 @@
 
 ## 진행 상태
 
-> 갱신 2026-08-05
+> 갱신 2026-08-20
 
 - ✅ **디스커버리 · 기술 스택 · 정식 기획 · 문서화** — 위 문서 세트로 확정
 - ✅ **v1 구현 완료**
 - ✅ **배포 완료** — NixOS 홈랩(alfheim), `https://jamye-plz.ridewithmin.com` 운영 중
-- 🔄 **v2 진행 중** — M0 스토리지 · M1 Web Push · M2 그룹 관리 · **M3 채팅 미디어 완료**.
-  남은 것은 **M4a 음성 메시지 + STT** 하나(엔진은 faster-whisper로 확정). M4b WebRTC는 vNext.
+- ✅ **v2 4대 기능 완료** — M0 스토리지(#16) · M1 Web Push(#17) · M2 그룹 관리(#18) ·
+  M3 채팅 미디어(#21) · M4a 음성 메시지 + STT(#22). Open Decisions D1~D8 전부 확정.
+  **M4b(실시간 음성 통화, WebRTC)는 도입 계획 없음**.
+- 🔄 **진행 중: M5 — WebSocket 자동 재연결** — 모바일에서 앱을 백그라운드로 보냈다 돌아오면
+  소켓이 끊긴 채 복구되지 않아 채팅을 재개할 수 없다. v2 범위에 포함.
+- 🔄 **그 밖** — 로드맵 밖의 UI·기능 다듬기가 이어지는 중이다(대화 디자인 시스템 #23,
+  토픽 컴포저 단순화 #24, 토픽 이름 변경 #26, 포커스 아웃라인 #25·#28,
+  Tailwind 토큰 정규화 #29). 이 작업들은 별도 로드맵 문서를 두지 않고 PR 단위로 진행한다.
   상세: [002-v2-roadmap.md](planning/002-v2-roadmap.md)
 
 ---
@@ -88,4 +94,4 @@
 4. [architecture/data-model.md](architecture/data-model.md) · [api-contract.md](architecture/api-contract.md) · [on-device-ai.md](architecture/on-device-ai.md) — 어떻게 설계되는가
 5. [architecture/deployment.md](architecture/deployment.md) — 어디에 어떻게 올리는가(설계)
    · [deployment/nixos-alfheim.md](deployment/nixos-alfheim.md) — 실제 배포 절차
-6. [planning/002-v2-roadmap.md](planning/002-v2-roadmap.md) — **지금 무엇을 만들고 있는가**
+6. [planning/002-v2-roadmap.md](planning/002-v2-roadmap.md) — 무엇을 만들었고 무엇이 vNext로 남았는가

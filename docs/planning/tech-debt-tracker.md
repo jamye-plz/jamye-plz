@@ -9,19 +9,16 @@
 | 5 | 백그라운드 구독 등록 실패로 **SW 푸시 구독이 제거되면 자동 복구되지 않음** | v2 M1 (PR #17 리뷰, P2로 defer) | P2 | 🔴 **Open** | `service-worker.ts`의 `pushsubscriptionchange`와 `push.api.ts`의 `requestAndSubscribe`는 등록 POST 실패 시 로컬 구독을 **되돌린다**(유령 구독 방지). 되돌린 뒤에는 사용자가 토글을 다시 켜기 전까지 복구되지 않는다. → "켜져 있었음" 마커를 영속화(`localStorage`/IndexedDB)하고 `PushReconciler`가 그 마커를 보고 재구독하도록 |
 | 6 | `notificationclick`이 **이미 열린 채팅 탭을 못 찾고 새 탭을 연다** | v2 M1 (PR #17 리뷰, P2로 defer) | P2 | ✅ **Resolved** | payload의 `url`은 상대 경로(`/groups/...`)인데 `WindowClient.url`은 절대 URL이라 비교가 항상 실패했다. `new URL(url, self.location.origin).href`로 정규화 후 비교하도록 수정. 더불어 `matchAll`에 `includeUncontrolled: true`를 넣어, **아직 이 SW의 제어를 받지 않는 탭**(SW 갱신 직후 등)이 목록에서 빠져 같은 증상이 나는 경로도 막았다 |
 | 7 | **ruff 실행 방식 불일치** — `uvx ruff`가 프로젝트 핀을 무시하고 최신 버전을 받음 | v2 M1/M2 품질 게이트 실행 중 발견 | P3 | ✅ **Resolved** (문서·태스크로 방어) | 정식 게이트 경로는 `uv run poe lint`/`poe format`(`pyproject.toml`의 poe 태스크)이라 **항상 `uv.lock`의 ruff**를 쓴다. 로드맵 §8도 `uv run ruff`로 통일했고, 저장소 어떤 스크립트도 `uvx ruff`를 호출하지 않는다(문서의 경고 문구뿐). ⚠️ **원래 적어둔 "`ruff==` 상한 핀"은 무효라 적용하지 않았다** — `uvx`는 프로젝트를 아예 무시하므로 `pyproject.toml`에 상한을 걸어도 `uvx ruff`의 동작을 바꾸지 못하고, 향후 ruff 업그레이드만 막는다. 남은 위험은 "사람이 손으로 `uvx ruff`를 친다" 하나뿐이며 이는 문서로만 방어 가능하다 |
-| 8 | 채팅 첨부의 **원본 파일명 미저장** — 다운로드 파일명이 `jamye-{media_id}.{ext}` | v2 M3 (PR #21, 범위에서 제외) | P3 | 🔴 **Open** | `message_media`에 `filename` 컬럼이 없어 서버가 이름을 합성한다. 사용자가 보낸 `IMG_4821.jpg`가 저장 시 의미 없는 이름이 된다. → nullable `filename` 컬럼 + 마이그레이션 1건. 업로드 시점에 `File.name`은 이미 클라가 갖고 있다 |
+| 8 | 채팅 첨부의 **원본 파일명 미저장** — 다운로드 파일명이 `jamye-{media_id}.{ext}` | v2 M3 (PR #21, 범위에서 제외) | P3 | ✅ **Resolved** (PR #22, `6ffe903`) | M4a 마이그레이션(`f6a7b8c9d0e1`)에 **묶어서 해결** — 별도 배포를 아끼려 전사 컬럼과 같은 리비전에 넣었다. nullable `filename` 컬럼 + 업로드 시 `File.name` 전달, 다운로드는 `media.filename or download_filename_for(...)`로 원본명을 복원하고 없으면 합성명으로 폴백한다 |
 | 9 | 채팅 첨부 **orphan 객체 정리 없음** | v2 M3 (PR #21, 구조적) | P3 | 🔴 **Open** | 업로드는 성공했는데 WS 전송이 실패하면 MinIO 객체만 남는다. 메시지 삭제 기능 자체가 없어 지금은 누수 경로가 이것 하나뿐이고 발생 빈도도 낮다. → 메시지 삭제를 만들 때 함께 설계(예: `object_key` 기준 미참조 객체 배치 정리) |
-| 10 | `partysocket` 의존성이 **설치만 되고 미사용** | 기획-구현 드리프트 (tech-stack에 문서화됨) | P3 | 🔴 **Open** | 실시간은 표준 `WebSocket`을 직접 쓰고 재연결도 `ChatRoom.svelte`가 관리한다. 번들에는 안 들어가지만 의존성 목록이 실제와 다르다. → `bun remove partysocket`(bun.lock 변경 시 `infra/frontend.nix` FOD 해시 재생성 필요) |
+| 10 | `partysocket` 의존성이 **설치만 되고 미사용** | 기획-구현 드리프트 (tech-stack에 문서화됨) | P3 | ✅ **Resolved** (PR #22, `6ffe903`) | M4a에 **묶어서 제거** — `bun.lock`이 어차피 바뀌는 김에 FOD 해시 재생성을 1회로 합쳤다. 실시간은 표준 `WebSocket`을 직접 쓰고 재연결은 `ChatRoom.svelte`가 관리한다 |
 
-> **현황**: #1·#3·#4·#6·#7 해소. #2(cookie LOW)는 정적 SPA라 **비취약으로 수용**(문서화) — 프론트가 kit 서버 쿠키 코드를 실행하지 않음. `bun audit` = 1 low (cookie, 비취약) / 0 high.
+> **현황** (갱신 2026-08-20): #1·#3·#4·#6·#7·**#8·#10** 해소 — #8·#10은 M4a(PR #22)에서 함께 정리됐으나 표기가 누락돼 있었다. #2(cookie LOW)는 정적 SPA라 **비취약으로 수용**(문서화) — 프론트가 kit 서버 쿠키 코드를 실행하지 않음. `bun audit` = 1 low (cookie, 비취약) / 0 high.
 >
-> **미해결 4건과 왜 지금 안 하는가**:
+> **미해결 2건과 왜 지금 안 하는가**:
 > - **#5** SW 구독 자동 복구(P2) — 구현은 프론트 국한이라 작지만, "등록 실패 후 복구"를 실기기에서
 >   의도적으로 재현해야 검증된다. 기능 자체는 동작 중이라 급하지 않다.
-> - **#8** 원본 파일명(P3) — DB 스키마 변경이라 배포가 한 번 더 필요하다. **M4a에서 어차피
->   마이그레이션이 들어가므로 그때 묶는다.**
 > - **#9** orphan 객체 정리(P3) — **메시지 삭제 기능이 없는 상태에서 "미참조 객체 삭제" 배치를 만들면,
 >   참조 판정이 틀렸을 때 살아있는 첨부를 지운다.** 되돌릴 수 없는 작업이라 삭제 기능과 함께 설계한다.
 >   현재 누수 경로는 "업로드 성공 + WS 전송 실패" 하나뿐이라 빈도가 낮다.
-> - **#10** partysocket 제거(P3) — 제거는 한 줄이지만 `bun.lock`이 바뀌어 **Linux 빌더에서 FOD 해시
->   재생성**이 필요하다. 번들에 포함되지도 않으므로 **M4a에서 의존성이 바뀔 때 같이 뺀다.**
+
