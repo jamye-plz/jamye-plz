@@ -13,6 +13,8 @@
 		requestAndSubscribe,
 		unsubscribePush
 	} from '$lib/api/push.api';
+	import { clearPushIntent, setPushIntent } from '$lib/push-intent';
+	import { pushRecoverySignal } from '$lib/push-recovery-signal';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
 	import { fly } from 'svelte/transition';
@@ -55,6 +57,25 @@
 	let pushHint = $state('');
 	let vapidPublicKey: string | null = null;
 
+	// Background recovery (recoverIntendedPush, in push.api.ts) can succeed
+	// while this page is already open — without this, the toggle would stay
+	// stale OFF until reload. Track the last-seen pulse so only a genuine
+	// increment (not the initial read) flips the toggle.
+	let lastRecoverySignal = $state($pushRecoverySignal);
+	$effect(() => {
+		const signal = $pushRecoverySignal;
+		if (signal === lastRecoverySignal) return;
+		lastRecoverySignal = signal;
+		// An in-flight user toggle already owns the outcome (its own success
+		// or failure branch decides pushSubscribed and the marker) — letting
+		// a same-moment background pulse also write here would just race it.
+		// Skipping is safe: recovery only fires for an intent marker that
+		// still matches this user, so nothing is lost — a toggle-OFF just
+		// cleared that marker and a toggle-ON is already turning this on.
+		if (pushBusy) return;
+		pushSubscribed = true;
+	});
+
 	onMount(() => {
 		if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 		(async () => {
@@ -71,6 +92,15 @@
 				// owner or no one) — reflect off + a hint so the user can retry.
 				try {
 					pushSubscribed = await reconcileOrRecreate(vapidPublicKey);
+					if (pushSubscribed) {
+						// Backfill for users who enabled push before the intent marker
+						// existed: a subscription reconciled for the current user is
+						// proof they once opted in. onMount is NOT gated on meQuery.data
+						// (unlike the toggle), so it can race the user query — guard on
+						// uid and silently skip; the next settings visit retries.
+						const uid = meQuery.data?.id;
+						if (uid) setPushIntent(uid);
+					}
 				} catch {
 					pushSubscribed = false;
 					pushHint = '알림 상태를 확인하지 못했어요. 다시 켜서 등록해 주세요.';
@@ -96,6 +126,10 @@
 					return;
 				}
 				pushSubscribed = true;
+				// Record intent only on a confirmed subscribe — the reconciler
+				// reads this to silently recover the subscription later.
+				const uid = meQuery.data?.id;
+				if (uid) setPushIntent(uid);
 			} else {
 				// getRegistration (not `.ready`, which never settles without a
 				// registered SW) so this can't hang.
@@ -121,6 +155,9 @@
 					await sub.unsubscribe();
 				}
 				pushSubscribed = false;
+				// Toggle-off is deliberate: clear the intent so the reconciler
+				// never silently re-enables push the user just turned off.
+				clearPushIntent();
 			}
 		} catch (err) {
 			input.checked = !turnOn;

@@ -14,7 +14,7 @@
 		const uid = meQuery.data?.id;
 		if (uid && uid !== lastReclaimed) {
 			lastReclaimed = uid;
-			reclaimPushForCurrentUser();
+			reclaimPushForCurrentUser(uid);
 		}
 	});
 </script>

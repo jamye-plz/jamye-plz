@@ -1,4 +1,6 @@
 import { apiGet, apiPost, apiDelete } from './client';
+import { clearPushIntent, getPushIntent } from '$lib/push-intent';
+import { signalPushRecovered } from '$lib/push-recovery-signal';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
 
 /**
@@ -76,6 +78,51 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
 }
 
 /**
+ * Silently re-subscribe when the CURRENT user previously expressed push
+ * intent (settings toggle ON, or the reconcile backfill) but this browser
+ * now holds no subscription — e.g. a `pushsubscriptionchange` rollback, or a
+ * prior `requestAndSubscribe` whose registration POST failed. Never prompts:
+ * permission is only READ here, never requested, so this can't surface a
+ * permission dialog with no transient activation (iOS Safari would resolve
+ * it 'denied' and burn the grant). Best-effort: every failure is swallowed
+ * so the next authenticated app load simply retries.
+ */
+async function recoverIntendedPush(userId: string): Promise<void> {
+	if (getPushIntent() !== userId) return; // no intent, or another account's
+	// `window` guard first: this module is imported by push.api.ts consumers
+	// that may run in non-browser contexts (SSR, tests) where `window` itself
+	// is undefined — checking `'Notification' in window` there would throw.
+	if (typeof window === 'undefined' || !('Notification' in window)) return;
+	if (Notification.permission !== 'granted') {
+		// Revoked (or never granted) at the browser level — stop retrying
+		// forever. Re-enabling requires a fresh settings toggle, which is a
+		// user gesture and can legitimately prompt.
+		clearPushIntent();
+		return;
+	}
+	try {
+		const { public_key } = await getVapidPublicKey();
+		// Empty key: push disabled/half-configured server-side, not the user
+		// revoking intent — keep the marker so this retries once restored.
+		if (!public_key) return;
+		// Re-check: the user may have toggled push off (clearing the marker)
+		// while we awaited the key — don't resurrect a subscription they just
+		// disabled. The residual gap to requestAndSubscribe's own awaits is
+		// accepted: worst case self-corrects on the next settings visit.
+		if (getPushIntent() !== userId) return;
+		const sub = await requestAndSubscribe(public_key);
+		// Only pulse on an actual subscription: requestAndSubscribe can still
+		// resolve null (permission flipped away between our granted check and
+		// here), and a stale signal would flip an open settings toggle ON
+		// with nothing behind it.
+		if (sub) signalPushRecovered();
+	} catch {
+		// Key fetch, subscribe, or registration POST failed — silent, the
+		// marker stays and the next app load retries.
+	}
+}
+
+/**
  * Re-claim any existing browser push subscription for the CURRENT user.
  * Called on every authenticated app load (not just from Settings) so that when
  * a different account signs in on this browser — via a 401 re-login or the
@@ -83,12 +130,19 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
  * reassigned to them (upsert reassigns user_id), instead of the previous
  * user's pushes continuing to display here. Best-effort: never throws.
  */
-export async function reclaimPushForCurrentUser(): Promise<void> {
+export async function reclaimPushForCurrentUser(userId: string): Promise<void> {
 	try {
 		const reg = await getActiveRegistration();
 		if (!reg) return;
 		const existing = await reg.pushManager.getSubscription();
-		if (!existing) return; // nothing to reclaim
+		if (!existing) {
+			// Auto-recovery path (D4/T3): this is NOT a failed reclaim of an
+			// existing subscription, so it must stay OUTSIDE the inner
+			// try/catch below — a recovery failure must never trigger the
+			// detachPushOnLogout teardown meant for that different case.
+			await recoverIntendedPush(userId);
+			return;
+		}
 		try {
 			// The key fetch is INSIDE this handler: a transient 5xx/network failure
 			// here is itself a failed reclaim and must trigger the same teardown,
