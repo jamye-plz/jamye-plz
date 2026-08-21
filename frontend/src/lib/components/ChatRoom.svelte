@@ -9,6 +9,8 @@
 	import {
 		createChatSocketLifecycle,
 		createReconnectHistoryRecovery,
+		mergeChatMessageRecords,
+		resolveInitialHistoryBoundary,
 		type ChatConnectionState,
 		type ChatSocket,
 		type ChatSocketLifecycle,
@@ -18,6 +20,7 @@
 		ChatMedia,
 		ChatMediaInput,
 		ChatMessage,
+		ChatPage,
 		WsClientMessage,
 		WsServerMessage
 	} from '$lib/types/chat.types';
@@ -310,9 +313,17 @@
 	// for display) and remember the cursor to older history. Mid-session refetch
 	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
-		if (messagesQuery.data) {
-			messages = [...messagesQuery.data.items].reverse().map(applyBufferedTranscripts);
-			nextCursor = messagesQuery.data.next_cursor;
+		const seedPage = messagesQuery.data;
+		if (seedPage) {
+			const currentRoomItems = seedPage.items.filter(
+				(message) => message.chatroom_id === chatroomId
+			);
+			if (currentRoomItems.length !== seedPage.items.length) return;
+			const seededMessages = untrack(() =>
+				[...currentRoomItems].reverse().map(applyBufferedTranscripts)
+			);
+			messages = untrack(() => mergeChatMessageRecords(messages, seededMessages, compareMessages));
+			nextCursor = seedPage.next_cursor;
 			// Pin to the bottom before revealing: scroll after the DOM updates
 			// (tick) and again after layout settles (rAF), then show the list.
 			tick().then(() => {
@@ -326,15 +337,14 @@
 			// message read from messagesQuery.data (NOT the reactive `messages`), so
 			// this effect doesn't depend on `messages` and re-seed it — dropping live
 			// messages / older pages — when it later changes.
-			const newest = messagesQuery.data.items[0]?.created_at;
-			tryMarkRead(newest ?? untrack(() => createdAt));
+			const newest = currentRoomItems[0]?.created_at;
+			untrack(() => tryMarkRead(newest ?? createdAt));
 		}
 	});
 
-	function sortMessages(items: Iterable<ChatMessage>): ChatMessage[] {
-		return [...items].sort((a, b) =>
-			a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id.localeCompare(b.id)
-		);
+	function compareMessages(a: ChatMessage, b: ChatMessage): number {
+		if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+		return a.id.localeCompare(b.id);
 	}
 
 	function mergeJoinGap(
@@ -346,20 +356,15 @@
 		const stick = isNearBottom();
 		const existingIds = new Set(messages.map((message) => message.id));
 		const hasNewRecoveryMessages = pageItems.some((message) => !existingIds.has(message.id));
-		const combined = new SvelteMap(messages.map((message) => [message.id, message]));
 		// Always pass fetched records through the transcript buffer, even when the
 		// message is already present from WS. The fetched canonical record then
-		// replaces it while the final map still guarantees one id per message.
-		for (const message of pageItems.map(applyBufferedTranscripts)) {
-			if (message.client_msg_id) {
-				const optimistic = [...combined.values()].find(
-					(candidate) => candidate.pending && candidate.client_msg_id === message.client_msg_id
-				);
-				if (optimistic) combined.delete(optimistic.id);
-			}
-			combined.set(message.id, message);
-		}
-		messages = sortMessages(combined.values());
+		// replaces it while the common merge keeps one id per message and removes
+		// only a matching optimistic client row.
+		messages = mergeChatMessageRecords(
+			messages,
+			pageItems.map(applyBufferedTranscripts),
+			compareMessages
+		);
 		if (stick && hasNewRecoveryMessages) {
 			tick().then(() => {
 				if (!lifecycle.isCurrent(socket)) return;
@@ -471,6 +476,60 @@
 		let historyRecovery: ReconnectHistoryRecovery | null = null;
 		let lifecycle: ChatSocketLifecycle;
 		let hasJoinedSocket = false;
+		const isRoomSocketCurrent = (socket: ChatSocket) =>
+			lifecycle.isCurrent(socket) && activeRoomKey === `${currentGroupId}:${roomId}`;
+
+		function startHistoryRecovery(socket: ChatSocket, knownIds: ReadonlySet<string>) {
+			if (!isRoomSocketCurrent(socket)) return;
+			historyRecovery?.dispose();
+			historyRecovery = createReconnectHistoryRecovery<ChatMessage>({
+				knownIds,
+				fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
+				applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
+				isCurrent: () => isRoomSocketCurrent(socket),
+				onSuccess: () => {
+					if (!isRoomSocketCurrent(socket)) return;
+					historyRecoveryPending = false;
+					tick().then(() => {
+						if (
+							!isRoomSocketCurrent(socket) ||
+							document.visibilityState !== 'visible' ||
+							!isNearBottom()
+						)
+							return;
+						tryMarkRead();
+					});
+				}
+			});
+			historyRecovery.start();
+		}
+
+		async function startInitialHistoryRecovery(
+			socket: ChatSocket,
+			recoveryBoundaryIds: ReadonlySet<string>
+		) {
+			const cachedPage = queryClient.getQueryData<ChatPage>(['messages', roomId]);
+			const inFlightPage =
+				cachedPage === undefined
+					? queryClient.getQueryCache().find<ChatPage>({
+							queryKey: ['messages', roomId],
+							exact: true
+						})?.promise
+					: undefined;
+			const boundaryIds = await resolveInitialHistoryBoundary({
+				knownIds: recoveryBoundaryIds,
+				cachedPage,
+				inFlightPage,
+				isCurrent: () => isRoomSocketCurrent(socket),
+				selectItems: (items) => items.filter((message) => message.chatroom_id === roomId),
+				applyPage: (items) => {
+					const initialPageItems = items.map(applyBufferedTranscripts);
+					messages = mergeChatMessageRecords(messages, initialPageItems, compareMessages);
+				}
+			});
+			if (!isRoomSocketCurrent(socket) || boundaryIds === null) return;
+			startHistoryRecovery(socket, boundaryIds);
+		}
 		lifecycle = createChatSocketLifecycle({
 			url: `${protocol}://${window.location.host}/api/ws`,
 			createSocket: (url) => new WebSocket(url),
@@ -491,7 +550,7 @@
 				if (!socketLifecycle || socketLifecycle === lifecycle) showManualRetry = visible;
 			},
 			onOpen: (socket) => {
-				if (!lifecycle.isCurrent(socket)) return;
+				if (!isRoomSocketCurrent(socket)) return;
 				historyRecoveryPending = true;
 				recoveryKnownIds = new Set(
 					messages
@@ -502,35 +561,18 @@
 				socket.send(JSON.stringify(joinMsg));
 			},
 			onReady: (socket) => {
-				if (!lifecycle.isCurrent(socket)) return;
+				if (!isRoomSocketCurrent(socket)) return;
 				const isInitialRoomJoin = !hasJoinedSocket;
 				hasJoinedSocket = true;
+				if (isInitialRoomJoin) {
+					void startInitialHistoryRecovery(socket, recoveryKnownIds);
+					return;
+				}
 				// Close the REST/WS gap for every physical socket. Do not refetch the
 				// query: older loaded pages and the reader's scroll position stay local.
 				// The server emits `joined` only after ws_hub subscription, closing the
 				// final delivery gap before this independent REST snapshot begins.
-				historyRecovery?.dispose();
-				historyRecovery = createReconnectHistoryRecovery<ChatMessage>({
-					knownIds: recoveryKnownIds,
-					stopAfterFirstPageWithoutKnownIds: isInitialRoomJoin,
-					fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
-					applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
-					isCurrent: () => lifecycle.isCurrent(socket),
-					onSuccess: () => {
-						if (!lifecycle.isCurrent(socket)) return;
-						historyRecoveryPending = false;
-						tick().then(() => {
-							if (
-								!lifecycle.isCurrent(socket) ||
-								document.visibilityState !== 'visible' ||
-								!isNearBottom()
-							)
-								return;
-							tryMarkRead();
-						});
-					}
-				});
-				historyRecovery.start();
+				startHistoryRecovery(socket, recoveryKnownIds);
 			},
 			onMessage: handleSocketMessage,
 			onTerminalClose: () => {

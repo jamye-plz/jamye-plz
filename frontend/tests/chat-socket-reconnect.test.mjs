@@ -5,6 +5,8 @@ import test from 'node:test';
 import {
 	createReconnectHistoryRecovery,
 	createChatSocketLifecycle,
+	mergeChatMessageRecords,
+	resolveInitialHistoryBoundary,
 	reconcileReconnectHistory
 } from '../src/lib/chat/chat-socket-lifecycle.ts';
 
@@ -492,26 +494,92 @@ test('empty known history on a real reconnect continues across every available p
 	assert.ok(appliedIds.includes('m21'));
 });
 
-test('initial room entry can explicitly stop after its first empty-known page', async () => {
-	const requestedCursors = [];
-	const appliedIds = [];
+test('initial query seed merges with joined WS and recovery records instead of replacing them', () => {
+	const merged = mergeChatMessageRecords(
+		[
+			{ id: 'ws-live', created_at: '2026-08-22T10:02:00Z' },
+			{
+				id: 'optimistic-client-1',
+				client_msg_id: 'client-1',
+				pending: true,
+				created_at: '2026-08-22T10:03:00Z'
+			}
+		],
+		[
+			{ id: 'seed-old', created_at: '2026-08-22T10:01:00Z' },
+			{
+				id: 'server-client-1',
+				client_msg_id: 'client-1',
+				created_at: '2026-08-22T10:03:00Z'
+			}
+		],
+		(a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
+	);
 
-	await reconcileReconnectHistory({
+	assert.deepEqual(
+		merged.map((message) => message.id),
+		['seed-old', 'ws-live', 'server-client-1'],
+		'late initial query data must retain WS/recovery records and reconcile only its matching optimistic row'
+	);
+});
+
+test('initial history boundary prefers cached empty data over a later in-flight page', async () => {
+	const boundary = await resolveInitialHistoryBoundary({
 		knownIds: new Set(),
-		stopAfterFirstPageWithoutKnownIds: true,
-		fetchPage: async (cursor) => {
-			requestedCursors.push(cursor ?? null);
-			return {
-				items: Array.from({ length: 50 }, (_, index) => ({ id: `m${100 - index}` })),
-				next_cursor: 'before-m51'
-			};
-		},
-		applyPage: (items) => appliedIds.push(...items.map((item) => item.id)),
+		cachedPage: { items: [], next_cursor: null },
+		inFlightPage: new Promise(() => {}),
 		isCurrent: () => true
 	});
 
-	assert.deepEqual(requestedCursors, [null]);
-	assert.equal(appliedIds.length, 50, 'the initial view must not fetch an entire large room');
+	assert.deepEqual(
+		[...boundary],
+		[],
+		'a successful pre-subscription empty snapshot is a valid boundary'
+	);
+});
+
+test('initial history boundary consumes only an existing in-flight page when cache is absent', async () => {
+	let resolvePage;
+	const appliedIds = [];
+	const inFlightPage = new Promise((resolve) => {
+		resolvePage = resolve;
+	});
+	const boundaryPromise = resolveInitialHistoryBoundary({
+		knownIds: new Set(),
+		inFlightPage,
+		isCurrent: () => true,
+		applyPage: (items) => appliedIds.push(...items.map((item) => item.id))
+	});
+	resolvePage({ items: [{ id: 'pre-subscription' }], next_cursor: null });
+
+	const boundary = await boundaryPromise;
+	assert.deepEqual([...boundary], ['pre-subscription']);
+	assert.deepEqual(appliedIds, ['pre-subscription']);
+});
+
+test('initial history boundary falls back to uncapped empty boundary on rejected or absent in-flight work', async () => {
+	const rejected = await resolveInitialHistoryBoundary({
+		knownIds: new Set(),
+		inFlightPage: Promise.reject(new Error('initial page failed')),
+		isCurrent: () => true
+	});
+	const absent = await resolveInitialHistoryBoundary({
+		knownIds: new Set(),
+		isCurrent: () => true
+	});
+
+	assert.deepEqual([...rejected], []);
+	assert.deepEqual([...absent], []);
+});
+
+test('initial history boundary returns a captured local boundary without touching cache work', async () => {
+	const boundary = await resolveInitialHistoryBoundary({
+		knownIds: new Set(['already-rendered']),
+		inFlightPage: new Promise(() => {}),
+		isCurrent: () => true
+	});
+
+	assert.deepEqual([...boundary], ['already-rendered']);
 });
 
 test('reconnect history recovery retries transient failures on the same current socket and cancels cleanly', async () => {
@@ -605,8 +673,8 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
-		/message\.client_msg_id[\s\S]*candidate\.pending && candidate\.client_msg_id === message\.client_msg_id[\s\S]*combined\.delete\(optimistic\.id\)/,
-		'a fetched canonical message must replace its matching optimistic row'
+		/mergeChatMessageRecords\([\s\S]*pageItems\.map\(applyBufferedTranscripts\)[\s\S]*compareMessages/,
+		'join-gap records must use the common optimistic-safe merge path'
 	);
 	assert.match(
 		chatRoomSource,
@@ -615,13 +683,23 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
-		/onOpen: \(socket\) => \{[\s\S]*type: 'join'[\s\S]*\},[\s\S]*onReady: \(socket\) => \{[\s\S]*createReconnectHistoryRecovery(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
+		/onOpen: \(socket\) => \{[\s\S]*type: 'join'[\s\S]*\},[\s\S]*onReady: \(socket\) => \{[\s\S]*startHistoryRecovery\(socket, recoveryKnownIds\)/,
 		'ChatRoom must start reconnect history recovery only after join acknowledgement'
 	);
 	assert.match(
 		chatRoomSource,
-		/let hasJoinedSocket = false;[\s\S]*const isInitialRoomJoin = !hasJoinedSocket;[\s\S]*hasJoinedSocket = true;[\s\S]*stopAfterFirstPageWithoutKnownIds: isInitialRoomJoin[\s\S]*return \(\) => \{[\s\S]*hasJoinedSocket = false/,
-		'only the first joined socket of a room may use the initial empty-history page limit'
+		/let hasJoinedSocket = false;[\s\S]*const isInitialRoomJoin = !hasJoinedSocket;[\s\S]*hasJoinedSocket = true;[\s\S]*if \(isInitialRoomJoin\) \{[\s\S]*void startInitialHistoryRecovery\(socket, recoveryKnownIds\);[\s\S]*return;\s*\}/,
+		'only the first joined socket may await the current initial-query recovery boundary'
+	);
+	assert.match(
+		chatRoomSource,
+		/async function startInitialHistoryRecovery\(\s*socket: ChatSocket,\s*recoveryBoundaryIds: ReadonlySet<string>\s*\)[\s\S]*queryClient\.getQueryData<ChatPage>\(\['messages', roomId\]\)[\s\S]*getQueryCache\(\)\.find<ChatPage>\(\{\s*queryKey: \['messages', roomId\],\s*exact: true\s*\}\)[\s\S]*resolveInitialHistoryBoundary\(\{[\s\S]*knownIds: recoveryBoundaryIds[\s\S]*isCurrent: \(\) => isRoomSocketCurrent\(socket\)/,
+		'first join must use only exact-key cached or existing in-flight pre-subscription query work'
+	);
+	assert.doesNotMatch(
+		chatRoomSource,
+		/messagesQuery\.refetch/,
+		'initial boundary recovery must never start a fresh query refetch'
 	);
 	const roomResetStart = chatRoomSource.indexOf('let activeRoomKey');
 	const roomSeedStart = chatRoomSource.indexOf('// Seed the room from the latest page');
@@ -643,6 +721,16 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 		chatRoomSource.slice(socketEffectStart, socketEffectEnd),
 		/pendingRead|lastReadAt|messages = \[\]|nextCursor = null|pendingTranscripts\.clear/,
 		'the socket lifecycle effect must not react to read-throttle or room-reset state'
+	);
+	const seedEffectStart = chatRoomSource.indexOf(
+		'$effect(() => {\n\t\tconst seedPage = messagesQuery.data;'
+	);
+	const seedEffectEnd = chatRoomSource.indexOf('\n\n\tfunction compareMessages', seedEffectStart);
+	assert.ok(seedEffectStart >= 0, 'query seed effect must name its reactive page input');
+	assert.match(
+		chatRoomSource.slice(seedEffectStart, seedEffectEnd),
+		/seedPage\.items\.filter\(\s*\(message\) => message\.chatroom_id === chatroomId\s*\)[\s\S]*untrack\(\(\) =>[\s\S]*applyBufferedTranscripts[\s\S]*untrack\(\(\) => mergeChatMessageRecords\(messages, seededMessages, compareMessages\)[\s\S]*untrack\(\(\) => tryMarkRead\(newest \?\? createdAt\)\)/,
+		'query seed must untrack transcript, current-message, and read-throttle state'
 	);
 	assert.match(
 		chatRoomSource,

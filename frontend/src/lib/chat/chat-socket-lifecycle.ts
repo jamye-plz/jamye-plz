@@ -57,8 +57,6 @@ interface ReconnectHistoryPage<T extends { id: string }> {
 
 interface ReconnectHistoryOptions<T extends { id: string }> {
 	knownIds: ReadonlySet<string>;
-	/** Initial room entry may deliberately retain only its visible first page. */
-	stopAfterFirstPageWithoutKnownIds?: boolean;
 	fetchPage(cursor?: string): Promise<ReconnectHistoryPage<T>>;
 	applyPage(items: T[]): void;
 	isCurrent(): boolean;
@@ -75,6 +73,73 @@ interface ReconnectHistoryRecoveryOptions<
 export interface ReconnectHistoryRecovery {
 	start(): void;
 	dispose(): void;
+}
+
+export interface ChatMessageRecord {
+	id: string;
+	client_msg_id?: string | null;
+	pending?: boolean;
+}
+
+/**
+ * Merges snapshots and live records without discarding a message that arrived
+ * while a request was in flight. A canonical server record replaces only the
+ * optimistic row that shares its client-generated id.
+ */
+export function mergeChatMessageRecords<T extends ChatMessageRecord>(
+	current: Iterable<T>,
+	incoming: Iterable<T>,
+	compare: (a: T, b: T) => number
+): T[] {
+	const combined = new Map<string, T>([...current].map((message) => [message.id, message]));
+	for (const message of incoming) {
+		if (message.client_msg_id) {
+			const optimistic = [...combined.values()].find(
+				(candidate) => candidate.pending && candidate.client_msg_id === message.client_msg_id
+			);
+			if (optimistic) combined.delete(optimistic.id);
+		}
+		combined.set(message.id, message);
+	}
+	return [...combined.values()].sort(compare);
+}
+
+interface InitialHistoryBoundaryOptions<T extends { id: string }> {
+	knownIds: ReadonlySet<string>;
+	cachedPage?: ReconnectHistoryPage<T>;
+	inFlightPage?: Promise<ReconnectHistoryPage<T>>;
+	isCurrent(): boolean;
+	selectItems?: (items: T[]) => T[];
+	applyPage?: (items: T[]) => void;
+}
+
+/**
+ * Resolves only work that already existed before room subscription. It never
+ * starts a fetch: an empty cached page is a valid boundary, while absent or
+ * failed work deliberately leaves an empty boundary for cursor-end recovery.
+ */
+export async function resolveInitialHistoryBoundary<T extends { id: string }>(
+	options: InitialHistoryBoundaryOptions<T>
+): Promise<ReadonlySet<string> | null> {
+	if (!options.isCurrent()) return null;
+	if (options.knownIds.size > 0) return new Set(options.knownIds);
+
+	let page = options.cachedPage;
+	if (page === undefined && options.inFlightPage) {
+		try {
+			page = await options.inFlightPage;
+		} catch {
+			if (!options.isCurrent()) return null;
+			return new Set();
+		}
+	}
+	if (!options.isCurrent()) return null;
+	if (page === undefined) return new Set();
+
+	const items = options.selectItems ? options.selectItems(page.items) : page.items;
+	if (!options.isCurrent()) return null;
+	options.applyPage?.(items);
+	return new Set(items.map((item) => item.id));
 }
 
 /**
@@ -99,7 +164,6 @@ export async function reconcileReconnectHistory<T extends { id: string }>(
 		const overlapsExistingHistory =
 			hasKnownHistory && page.items.some((item) => options.knownIds.has(item.id));
 		if (
-			(!hasKnownHistory && options.stopAfterFirstPageWithoutKnownIds) ||
 			overlapsExistingHistory ||
 			page.items.length === 0 ||
 			page.next_cursor === null ||
