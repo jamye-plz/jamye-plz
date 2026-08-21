@@ -8,10 +8,11 @@
 	import { getMe } from '$lib/api/auth.api';
 	import {
 		createChatSocketLifecycle,
-		reconcileReconnectHistory,
+		createReconnectHistoryRecovery,
 		type ChatConnectionState,
 		type ChatSocket,
-		type ChatSocketLifecycle
+		type ChatSocketLifecycle,
+		type ReconnectHistoryRecovery
 	} from '$lib/chat/chat-socket-lifecycle';
 	import type {
 		ChatMedia,
@@ -75,9 +76,12 @@
 	// load where performance.now() is still < 1500ms); only later calls throttle.
 	let lastReadAt = Number.NEGATIVE_INFINITY;
 	let pendingRead: ReturnType<typeof setTimeout> | null = null;
+	// The initial page alone cannot close the REST/WS join gap. Keep receipts
+	// behind this barrier until the current physical socket's snapshot succeeds.
+	let historyRecoveryPending = $state(true);
 
 	function tryMarkRead(explicitUpTo?: string) {
-		if (!groupId || !chatroomId) return;
+		if (!groupId || !chatroomId || historyRecoveryPending) return;
 		const since = performance.now() - lastReadAt;
 		if (since < 1500) {
 			// Within the window: ensure exactly one trailing read fires after it.
@@ -429,7 +433,9 @@
 		const currentGroupId = groupId;
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
 		let recoveryKnownIds: ReadonlySet<string> = new Set();
+		let historyRecovery: ReconnectHistoryRecovery | null = null;
 		let lifecycle: ChatSocketLifecycle;
+		historyRecoveryPending = true;
 		lifecycle = createChatSocketLifecycle({
 			url: `${protocol}://${window.location.host}/api/ws`,
 			createSocket: (url) => new WebSocket(url),
@@ -451,6 +457,7 @@
 			},
 			onOpen: (socket) => {
 				if (!lifecycle.isCurrent(socket)) return;
+				historyRecoveryPending = true;
 				recoveryKnownIds = new Set(
 					messages.filter((message) => !message.pending).map((message) => message.id)
 				);
@@ -463,19 +470,33 @@
 				// query: older loaded pages and the reader's scroll position stay local.
 				// The server emits `joined` only after ws_hub subscription, closing the
 				// final delivery gap before this independent REST snapshot begins.
-				reconcileReconnectHistory<ChatMessage>({
+				historyRecovery?.dispose();
+				historyRecovery = createReconnectHistoryRecovery<ChatMessage>({
 					knownIds: recoveryKnownIds,
 					fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
 					applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
-					isCurrent: () => lifecycle.isCurrent(socket)
-				}).catch(() => {
-					// Transient; a later reconnect/live message can still reconcile.
+					isCurrent: () => lifecycle.isCurrent(socket),
+					onSuccess: () => {
+						if (!lifecycle.isCurrent(socket)) return;
+						historyRecoveryPending = false;
+						tick().then(() => {
+							if (
+								!lifecycle.isCurrent(socket) ||
+								document.visibilityState !== 'visible' ||
+								!isNearBottom()
+							)
+								return;
+							tryMarkRead();
+						});
+					}
 				});
+				historyRecovery.start();
 			},
 			onMessage: handleSocketMessage,
 			onTerminalClose: () => {
 				// 4001 = eviction. This is terminal: lifecycle has already cancelled
 				// retry/heartbeat work before preserving the existing group cleanup.
+				historyRecovery?.dispose();
 				for (const key of [
 					['group', currentGroupId],
 					['members', currentGroupId],
@@ -489,12 +510,18 @@
 				queryClient.invalidateQueries({ queryKey: ['groups'] });
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- static route literal
 				goto('/groups');
+			},
+			onAuthenticationClose: () => {
+				historyRecovery?.dispose();
+				queryClient.clear();
+				window.location.assign('/login');
 			}
 		});
 		socketLifecycle = lifecycle;
 		lifecycle.start();
 
 		return () => {
+			historyRecovery?.dispose();
 			lifecycle.dispose();
 			if (socketLifecycle === lifecycle) {
 				socketLifecycle = null;

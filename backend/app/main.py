@@ -197,6 +197,12 @@ async def websocket_endpoint(websocket: WebSocket):
     from app.services.chat_service import ChatService
     from app.core.exceptions import MessageIdempotencyError
 
+    # Starlette turns a pre-accept close into an HTTP 403 denial, which hides
+    # the WebSocket close code from browser clients. Accept first so an expired
+    # or missing cookie is delivered as the terminal 1008 policy close below.
+    # No room subscription or application frame is processed before auth.
+    await websocket.accept()
+
     token = websocket.cookies.get("access_token")
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -210,8 +216,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except AuthenticationError:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-
-    await websocket.accept()
 
     # Resolve the sender's nickname + avatar once for this connection.
     sender_nickname: str | None = None

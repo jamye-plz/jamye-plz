@@ -3,18 +3,20 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import WebSocketDisconnect
+from fastapi import WebSocketDisconnect, status
 
 from app.core import ws_hub
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import AuthenticationError, ForbiddenError, NotFoundError
 from app.main import websocket_endpoint
 
 
 class ScriptedWebSocket:
     """Minimal authenticated socket that supplies a finite sequence of frames."""
 
-    def __init__(self, frames: list[dict[str, str]]) -> None:
-        self.cookies = {"access_token": "test-token"}
+    def __init__(
+        self, frames: list[dict[str, str]], access_token: str | None = "test-token"
+    ) -> None:
+        self.cookies = {"access_token": access_token} if access_token is not None else {}
         self._frames = iter(frames)
         self.accepted = False
         self.sent: list[dict[str, str]] = []
@@ -83,6 +85,29 @@ async def test_ping_returns_direct_pong_without_mutating_socket_state(
     assert ws_hub._socket_users == {}
 
 
+@pytest.mark.parametrize("access_token", [None, "expired-token"])
+async def test_auth_failure_is_sent_as_terminal_close_after_websocket_accept(
+    monkeypatch: pytest.MonkeyPatch,
+    access_token: str | None,
+) -> None:
+    """Browsers can observe 1008 only after the WebSocket handshake succeeds."""
+
+    def reject_token(token: str) -> dict[str, str]:
+        assert token == "expired-token"
+        raise AuthenticationError("expired")
+
+    monkeypatch.setattr("app.core.security.decode_access_token", reject_token)
+    websocket = ScriptedWebSocket([], access_token=access_token)
+
+    await websocket_endpoint(websocket)  # type: ignore[arg-type]
+
+    assert websocket.accepted is True
+    assert websocket.closed_with == status.WS_1008_POLICY_VIOLATION
+    assert websocket.sent == []
+    assert ws_hub._connections == {}
+    assert ws_hub._socket_users == {}
+
+
 async def test_join_acknowledges_only_after_socket_subscription(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -117,7 +142,7 @@ async def test_join_acknowledges_only_after_socket_subscription(
 
     assert websocket.sent == [{"type": "joined", "chatroom_id": "room-1"}]
     assert websocket.closed_with is None
-    assert ws_hub._connections == {}
+    assert not any(ws_hub._connections.values())
     assert ws_hub._socket_users == {}
 
 

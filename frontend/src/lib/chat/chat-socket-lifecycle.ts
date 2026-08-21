@@ -30,6 +30,7 @@ interface ChatSocketLifecycleOptions {
 	onReady: (socket: ChatSocket) => void;
 	onMessage: (event: MessageEvent, socket: ChatSocket) => void;
 	onTerminalClose: () => void;
+	onAuthenticationClose: () => void;
 	onSocketChange: (socket: ChatSocket | null) => void;
 	onStateChange: (state: ChatConnectionState) => void;
 	onRecoveryChange: (recovering: boolean) => void;
@@ -61,6 +62,19 @@ interface ReconnectHistoryOptions<T extends { id: string }> {
 	isCurrent(): boolean;
 }
 
+interface ReconnectHistoryRecoveryOptions<
+	T extends { id: string }
+> extends ReconnectHistoryOptions<T> {
+	timers?: ChatSocketTimers;
+	random?: () => number;
+	onSuccess?: () => void;
+}
+
+export interface ReconnectHistoryRecovery {
+	start(): void;
+	dispose(): void;
+}
+
 /**
  * Walk newest-to-oldest reconnect pages until they overlap the room's existing
  * server history. Scroll pagination keeps its own cursor, so recovery cannot
@@ -71,8 +85,7 @@ export async function reconcileReconnectHistory<T extends { id: string }>(
 ): Promise<void> {
 	let cursor: string | undefined;
 
-	do {
-		if (!options.isCurrent()) return;
+	while (options.isCurrent()) {
 		const page = await options.fetchPage(cursor);
 		if (!options.isCurrent()) return;
 		options.applyPage(page.items);
@@ -89,7 +102,7 @@ export async function reconcileReconnectHistory<T extends { id: string }>(
 		}
 
 		cursor = page.next_cursor;
-	} while (true);
+	}
 }
 
 const CONNECTING = 0;
@@ -108,6 +121,74 @@ const browserTimers: ChatSocketTimers = {
 	setInterval: (callback, delay) => setInterval(callback, delay),
 	clearInterval: (handle) => clearInterval(handle)
 };
+
+function retryDelay(retryNumber: number, random: () => number): number {
+	const base = Math.min(RETRY_BASE_MS * 2 ** retryNumber, RETRY_CAP_MS);
+	const jitter = Math.floor(random() * RETRY_BASE_MS);
+	return Math.min(base + jitter, RETRY_CAP_MS);
+}
+
+/**
+ * Retries only the REST snapshot that closes one physical socket's join gap.
+ * The caller supplies the socket identity guard, so a room switch or replaced
+ * socket can neither apply stale pages nor keep a retry timer alive.
+ */
+export function createReconnectHistoryRecovery<T extends { id: string }>(
+	options: ReconnectHistoryRecoveryOptions<T>
+): ReconnectHistoryRecovery {
+	const timers = options.timers ?? browserTimers;
+	const random = options.random ?? Math.random;
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+	let retryNumber = 0;
+	let inFlight = false;
+	let disposed = false;
+	const isActive = () => !disposed && options.isCurrent();
+
+	function clearRetry() {
+		if (retryTimer !== null) {
+			timers.clearTimeout(retryTimer);
+			retryTimer = null;
+		}
+	}
+
+	function retry() {
+		if (!isActive() || retryTimer !== null) return;
+		const delay = retryDelay(retryNumber, random);
+		retryNumber += 1;
+		retryTimer = timers.setTimeout(() => {
+			retryTimer = null;
+			attempt();
+		}, delay);
+	}
+
+	function attempt() {
+		if (!isActive() || inFlight) return;
+		inFlight = true;
+		void reconcileReconnectHistory({ ...options, isCurrent: isActive })
+			.then(() => {
+				if (!isActive()) return;
+				retryNumber = 0;
+				options.onSuccess?.();
+			})
+			.catch(() => {
+				if (!isActive()) return;
+				retry();
+			})
+			.finally(() => {
+				inFlight = false;
+			});
+	}
+
+	return {
+		start() {
+			attempt();
+		},
+		dispose() {
+			disposed = true;
+			clearRetry();
+		}
+	};
+}
 
 /**
  * Keeps exactly one room socket alive. Browser WebSocket does not expose native
@@ -188,6 +269,28 @@ export function createChatSocketLifecycle(
 		candidate.onmessage = null;
 	}
 
+	function removeRecoveryListeners() {
+		options.networkEvents.removeEventListener('online', onOnline);
+		options.networkEvents.removeEventListener('offline', onOffline);
+		options.visibilityEvents.removeEventListener('visibilitychange', onVisibilityChange);
+	}
+
+	function terminate(candidate: ChatSocket, callback: () => void) {
+		if (socket !== candidate || disposed || terminal) return;
+		terminal = true;
+		waitingForCloseCode = false;
+		clearRetry();
+		clearConnectDeadline();
+		clearHeartbeat();
+		clearManualRetry();
+		removeRecoveryListeners();
+		detach(candidate);
+		socket = null;
+		options.onSocketChange(null);
+		setState('disconnected');
+		callback();
+	}
+
 	function scheduleManualRetry() {
 		if (failedSince || terminal || disposed) return;
 		failedSince = true;
@@ -199,9 +302,7 @@ export function createChatSocketLifecycle(
 
 	function scheduleRetry() {
 		if (disposed || terminal || !options.isOnline() || retryTimer !== null) return;
-		const base = Math.min(RETRY_BASE_MS * 2 ** retryNumber, RETRY_CAP_MS);
-		const jitter = Math.floor(random() * RETRY_BASE_MS);
-		const delay = Math.min(base + jitter, RETRY_CAP_MS);
+		const delay = retryDelay(retryNumber, random);
 		retryNumber += 1;
 		setState('connecting');
 		setRecovery(true);
@@ -332,8 +433,8 @@ export function createChatSocketLifecycle(
 		candidate.onerror = () => {
 			if (socket !== candidate || disposed || terminal) return;
 			// Browser WebSocket errors are paired with a close event. Keep this
-			// handler alive until that close supplies its code: 4001 is terminal,
-			// while every other code uses the same idempotent retirement below.
+			// handler alive until that close supplies its code: 4001 eviction and
+			// 1008 authentication failures are terminal; other codes retire below.
 			waitingForCloseCode = true;
 			// The socket is no longer safe for sends, but its close handler must
 			// remain attached until we know whether it was a terminal eviction.
@@ -344,20 +445,8 @@ export function createChatSocketLifecycle(
 		};
 		candidate.onclose = (event) => {
 			if (socket !== candidate || disposed || terminal) return;
-			if (event.code === 4001) {
-				terminal = true;
-				waitingForCloseCode = false;
-				clearRetry();
-				clearConnectDeadline();
-				clearHeartbeat();
-				clearManualRetry();
-				detach(candidate);
-				socket = null;
-				options.onSocketChange(null);
-				setState('disconnected');
-				options.onTerminalClose();
-				return;
-			}
+			if (event.code === 4001) return terminate(candidate, options.onTerminalClose);
+			if (event.code === 1008) return terminate(candidate, options.onAuthenticationClose);
 			retire(candidate, false);
 		};
 	}
@@ -411,9 +500,7 @@ export function createChatSocketLifecycle(
 			clearConnectDeadline();
 			clearHeartbeat();
 			clearManualRetry();
-			options.networkEvents.removeEventListener('online', onOnline);
-			options.networkEvents.removeEventListener('offline', onOffline);
-			options.visibilityEvents.removeEventListener('visibilitychange', onVisibilityChange);
+			removeRecoveryListeners();
 			if (socket) {
 				const current = socket;
 				detach(current);

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+	createReconnectHistoryRecovery,
 	createChatSocketLifecycle,
 	reconcileReconnectHistory
 } from '../src/lib/chat/chat-socket-lifecycle.ts';
@@ -11,6 +12,8 @@ const chatRoomSource = readFileSync(
 	new URL('../src/lib/components/ChatRoom.svelte', import.meta.url),
 	'utf8'
 );
+
+const settlePromises = () => new Promise((resolve) => setImmediate(resolve));
 
 class FakeTimers {
 	#now = 0;
@@ -124,6 +127,7 @@ function makeHarness() {
 	let visible = true;
 	let readySignals = 0;
 	let terminalClosures = 0;
+	let authenticationClosures = 0;
 	const lifecycle = createChatSocketLifecycle({
 		url: 'ws://chat.test/api/ws',
 		createSocket: () => {
@@ -144,6 +148,9 @@ function makeHarness() {
 		onMessage: () => {},
 		onTerminalClose: () => {
 			terminalClosures += 1;
+		},
+		onAuthenticationClose: () => {
+			authenticationClosures += 1;
 		},
 		onSocketChange: () => {},
 		onStateChange: (state) => states.push(state),
@@ -166,7 +173,8 @@ function makeHarness() {
 			visible = value;
 		},
 		readySignals: () => readySignals,
-		terminalClosures: () => terminalClosures
+		terminalClosures: () => terminalClosures,
+		authenticationClosures: () => authenticationClosures
 	};
 }
 
@@ -398,6 +406,30 @@ test('an unanswered heartbeat retires once, while 4001 and disposal suppress all
 	assert.equal(clean.sockets.length, 1, 'dispose leaves no zombie reconnect loop');
 });
 
+test('1008 is terminal authentication failure even after error, with no successor or retained work', () => {
+	const h = makeHarness();
+	h.lifecycle.start();
+	const socket = h.sockets[0];
+	socket.open();
+	socket.receive({ type: 'joined', chatroom_id: 'room-1' });
+	h.timers.advance(25_000);
+	assert.deepEqual(socket.sent, [{ type: 'ping' }], 'the test starts with active heartbeat work');
+
+	socket.fail(1008);
+	assert.equal(h.authenticationClosures(), 1, '1008 must use only the authentication callback');
+	assert.equal(h.terminalClosures(), 0, '1008 must not use the eviction callback');
+	assert.equal(h.events.count(), 0, 'terminal auth removes recovery event listeners');
+	assert.equal(
+		h.timers.hasPending(),
+		false,
+		'1008 clears retry, connect, heartbeat, and manual timers'
+	);
+	h.events.dispatch('online');
+	h.events.dispatch('visibilitychange');
+	h.timers.advance(60_000);
+	assert.equal(h.sockets.length, 1, '1008 must never create a successor socket');
+});
+
 test('reconnect history paginates backward until it overlaps local history', async () => {
 	const requestedCursors = [];
 	const appliedIds = [];
@@ -431,6 +463,87 @@ test('reconnect history paginates backward until it overlaps local history', asy
 	}
 });
 
+test('reconnect history recovery retries transient failures on the same current socket and cancels cleanly', async () => {
+	const timers = new FakeTimers();
+	const appliedIds = [];
+	let attempts = 0;
+	let current = true;
+	const recovery = createReconnectHistoryRecovery({
+		knownIds: new Set(['m1']),
+		fetchPage: async () => {
+			attempts += 1;
+			if (attempts === 1) throw new Error('temporary history failure');
+			return { items: [{ id: 'm2' }, { id: 'm1' }], next_cursor: null };
+		},
+		applyPage: (items) => appliedIds.push(...items.map((item) => item.id)),
+		isCurrent: () => current,
+		timers,
+		random: () => 0.5
+	});
+
+	recovery.start();
+	await settlePromises();
+	assert.equal(
+		timers.timeoutDelays.at(-1),
+		1_500,
+		'first recovery retry uses shared 1s+jitter backoff'
+	);
+	recovery.dispose();
+	timers.advance(60_000);
+	assert.equal(
+		attempts,
+		1,
+		'disposing a pending retry must not refetch while its socket is still current'
+	);
+
+	const succeedingRecovery = createReconnectHistoryRecovery({
+		knownIds: new Set(['m1']),
+		fetchPage: async () => {
+			attempts += 1;
+			return { items: [{ id: 'm2' }, { id: 'm1' }], next_cursor: null };
+		},
+		applyPage: (items) => appliedIds.push(...items.map((item) => item.id)),
+		isCurrent: () => current,
+		timers,
+		random: () => 0.5
+	});
+
+	succeedingRecovery.start();
+	await settlePromises();
+	assert.equal(attempts, 2, 'a replacement controller retries on the same healthy physical socket');
+	assert.deepEqual(appliedIds, ['m2', 'm1'], 'the successful retry uses the original merge path');
+
+	current = false;
+	succeedingRecovery.dispose();
+	timers.advance(60_000);
+	assert.equal(attempts, 2, 'room replacement/disposal cancels any future history retry');
+});
+
+test('disposing an in-flight reconnect history recovery prevents stale merge and success callbacks', async () => {
+	let resolveFetch;
+	const appliedIds = [];
+	let successes = 0;
+	const recovery = createReconnectHistoryRecovery({
+		knownIds: new Set(),
+		fetchPage: () =>
+			new Promise((resolve) => {
+				resolveFetch = resolve;
+			}),
+		applyPage: (items) => appliedIds.push(...items.map((item) => item.id)),
+		isCurrent: () => true,
+		onSuccess: () => {
+			successes += 1;
+		}
+	});
+
+	recovery.start();
+	recovery.dispose();
+	resolveFetch({ items: [{ id: 'stale' }], next_cursor: null });
+	await settlePromises();
+	assert.deepEqual(appliedIds, [], 'a disposed controller must not merge a late page');
+	assert.equal(successes, 0, 'a disposed controller must not run its follow-up success action');
+});
+
 test('ChatRoom only queues sends after liveness and reconciles fetched client message ids', () => {
 	const sendMessage = chatRoomSource.match(/function sendMessage[\s\S]*?\n\t}/)?.[0];
 	assert.ok(sendMessage, 'ChatRoom must retain its sendMessage implementation');
@@ -451,8 +564,23 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
-		/onOpen: \(socket\) => \{[\s\S]*type: 'join'[\s\S]*\},[\s\S]*onReady: \(socket\) => \{[\s\S]*reconcileReconnectHistory(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
+		/onOpen: \(socket\) => \{[\s\S]*type: 'join'[\s\S]*\},[\s\S]*onReady: \(socket\) => \{[\s\S]*createReconnectHistoryRecovery(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
 		'ChatRoom must start reconnect history recovery only after join acknowledgement'
+	);
+	assert.match(
+		chatRoomSource,
+		/createReconnectHistoryRecovery(?:<ChatMessage>)?\([\s\S]*onSuccess:[\s\S]*historyRecoveryPending = false/,
+		'ChatRoom must own a cancellable retry chain for transient join-gap history failures'
+	);
+	assert.match(
+		chatRoomSource,
+		/function tryMarkRead\(explicitUpTo\?: string\) \{[\s\S]*historyRecoveryPending[\s\S]*onSuccess:[\s\S]*historyRecoveryPending = false[\s\S]*tryMarkRead\(\)/,
+		'read receipts must wait for successful gap recovery, then advance only from the current recovery path'
+	);
+	assert.match(
+		chatRoomSource,
+		/onAuthenticationClose: \(\) => \{[\s\S]*queryClient\.clear\(\)[\s\S]*window\.location\.assign\('\/login'\)/,
+		'1008 must clear stale query state and use a hard login redirect, separately from eviction'
 	);
 	assert.match(
 		chatRoomSource,
