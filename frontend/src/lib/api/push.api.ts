@@ -92,12 +92,28 @@ async function teardownRecoveredSub(sub: PushSubscription, userId: string): Prom
 		new Promise<void>((resolve) => setTimeout(resolve, 3000))
 	]);
 	// Re-read after the wait: the user may have toggled push back ON (up to
-	// 3s to restore intent) while the DELETE/timeout race was in flight. If
-	// so, the still-live browser subscription is wanted again — unsubscribing
-	// it now would just force another recovery round trip for something the
-	// user still wants. Any resulting row ambiguity self-heals on the next
-	// app open via the existing reclaim/recovery path.
-	if (getPushIntent() === userId) return;
+	// 3s to restore intent) while the DELETE/timeout race was in flight. Our
+	// own (bounded) DELETE above may have raced past that toggle-ON's POST
+	// and removed the row it just registered — leaving a live browser
+	// subscription with NO server row until the next app load. Re-POST the
+	// same subscription (an idempotent upsert, bound to this user) to
+	// restore it, instead of just skipping the unsubscribe. Residual: if the
+	// DELETE exceeds the 3s bound and lands AFTER this re-POST, the row is
+	// gone again — accepted, it self-heals on the next app open via the
+	// existing reclaim path (existing-subscription branch re-registers). No
+	// signal here: this branch preserves the user's own fresh toggle-ON, it
+	// doesn't complete a recovery — the toggle path already owns the UI.
+	if (getPushIntent() === userId) {
+		const raw = sub.toJSON();
+		const keys = raw.keys as { p256dh: string; auth: string };
+		await subscribePush({
+			endpoint: sub.endpoint,
+			p256dh: keys.p256dh,
+			auth: keys.auth,
+			expected_user_id: userId
+		}).catch(() => {});
+		return;
+	}
 	await sub.unsubscribe().catch(() => {});
 }
 

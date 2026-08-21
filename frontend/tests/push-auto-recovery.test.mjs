@@ -331,18 +331,39 @@ test('teardownRecoveredSub takes the intended userId and races a delete against 
 	);
 });
 
-test('teardownRecoveredSub skips the local unsubscribe when intent was restored', () => {
+test('teardownRecoveredSub re-POSTs (not just skips) when intent was restored', () => {
 	const fn = extractTeardownRecoveredSub();
 	const raceCloseIdx = fn.indexOf(']);');
-	const recheckIdx = fn.indexOf('if (getPushIntent() === userId) return;');
+	const recheckIdx = fn.indexOf('if (getPushIntent() === userId) {');
+	const rePostIdx = fn.indexOf('await subscribePush({', recheckIdx);
+	const expectedUserIdIdx = fn.indexOf('expected_user_id: userId', rePostIdx);
+	const catchIdx = fn.indexOf('}).catch(() => {});', expectedUserIdIdx);
+	const returnIdx = fn.indexOf('return;', catchIdx);
 	const unsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
 
 	assert.notEqual(raceCloseIdx, -1);
 	assert.notEqual(recheckIdx, -1, 'the marker must be re-read after the race, not before it');
+	assert.notEqual(rePostIdx, -1, 'a restored marker must re-POST the subscription, not just skip');
+	assert.notEqual(expectedUserIdIdx, -1, 're-POST must stay bound to the intended user');
+	assert.notEqual(catchIdx, -1, 're-POST must be best-effort (swallowed failure)');
+	assert.notEqual(returnIdx, -1);
 	assert.notEqual(unsubscribeIdx, -1);
+
 	assert.ok(
-		raceCloseIdx < recheckIdx && recheckIdx < unsubscribeIdx,
-		'a restored marker must return before the local unsubscribe ever runs'
+		raceCloseIdx < recheckIdx &&
+			recheckIdx < rePostIdx &&
+			rePostIdx < expectedUserIdIdx &&
+			expectedUserIdIdx < catchIdx &&
+			catchIdx < returnIdx &&
+			returnIdx < unsubscribeIdx,
+		're-POST must run and return before the (skipped, restored-intent) local unsubscribe'
+	);
+
+	const restoredBranch = fn.slice(recheckIdx, returnIdx + 'return;'.length);
+	assert.doesNotMatch(
+		restoredBranch,
+		/signalPushRecovered/,
+		'restoring the fresh toggle-ON subscription is not a recovery — no pulse here'
 	);
 });
 
