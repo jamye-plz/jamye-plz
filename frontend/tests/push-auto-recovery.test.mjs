@@ -355,14 +355,46 @@ test('a cross-tab logout/login during requestAndSubscribe tears down via identit
 	);
 });
 
-test('recoverIntendedPush reuses teardownRecoveredSub for both post-await mismatches', () => {
+test('recoverIntendedPush reuses teardownRecoveredSub for all three post-await rechecks', () => {
 	const fn = extractRecoverIntendedPush();
 	const calls = [...fn.matchAll(/await teardownRecoveredSub\(sub\);/g)];
-	assert.equal(calls.length, 2, 'the marker and identity mismatches must both reuse the helper');
+	assert.equal(calls.length, 3, 'the marker, identity, and final rechecks must reuse the helper');
 	for (const call of calls) {
 		const after = fn.slice(call.index, call.index + 120);
 		assert.match(after, /return;/, 'each teardown call must be followed by a return');
 	}
+});
+
+test('a final synchronous marker recheck sits between identity confirmation and the pulse', () => {
+	const fn = extractRecoverIntendedPush();
+	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
+	const identityMismatchIdx = fn.indexOf('if (!me || me.id !== userId) {', meIdx);
+	const finalRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', identityMismatchIdx + 1);
+	const signalIdx = fn.indexOf('signalPushRecovered();');
+
+	assert.notEqual(meIdx, -1);
+	assert.notEqual(identityMismatchIdx, -1);
+	assert.notEqual(finalRecheckIdx, -1, 'a third, post-getMe marker recheck must exist');
+	assert.notEqual(signalIdx, -1);
+	assert.ok(
+		meIdx < identityMismatchIdx &&
+			identityMismatchIdx < finalRecheckIdx &&
+			finalRecheckIdx < signalIdx,
+		'the final recheck must sit after identity confirmation and before the pulse'
+	);
+
+	const between = fn.slice(finalRecheckIdx, signalIdx + 'signalPushRecovered();'.length);
+	const expected =
+		'if (getPushIntent() !== userId) {\n' +
+		'\t\t\tawait teardownRecoveredSub(sub);\n' +
+		'\t\t\treturn;\n' +
+		'\t\t}\n' +
+		'\t\tsignalPushRecovered();';
+	assert.equal(
+		between,
+		expected,
+		'no await may sit between the final recheck and the pulse on the success path'
+	);
 });
 
 test('recoverIntendedPush re-checks permission right before subscribing (no re-prompt)', () => {

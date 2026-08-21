@@ -166,6 +166,22 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 			await teardownRecoveredSub(sub);
 			return;
 		}
+		// Final synchronous recheck: the getMe() await above reopens the same
+		// staleness window — another tab can finish a toggle-OFF (clearing the
+		// marker and unsubscribing) while /me was pending, and /me still
+		// answers for the (still-correct) user, so the identity check alone
+		// can't catch it. Every await in this function must be followed by a
+		// marker recheck; this one runs in the same synchronous frame as the
+		// signal, so nothing can invalidate intent between them — this closes
+		// the recheck chain for good (the earlier pre-getMe recheck stays as a
+		// cheap fast-path that skips the network call when the marker is
+		// already gone). Teardown here is harmless even if the other tab
+		// already unsubscribed: the DELETE 404s into its catch and
+		// sub.unsubscribe() just resolves false.
+		if (getPushIntent() !== userId) {
+			await teardownRecoveredSub(sub);
+			return;
+		}
 		signalPushRecovered();
 	} catch {
 		// Key fetch, subscribe, or registration POST failed — silent, the
