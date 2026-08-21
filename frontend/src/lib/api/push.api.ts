@@ -110,12 +110,34 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 		// disabled. The residual gap to requestAndSubscribe's own awaits is
 		// accepted: worst case self-corrects on the next settings visit.
 		if (getPushIntent() !== userId) return;
+		// Re-check permission too: it can change during the key fetch await
+		// above, and requestAndSubscribe's very first statement is an
+		// unconditional permission request. Nothing awaits between this check
+		// and that call, so a permission that dropped to 'default' or
+		// 'denied' mid-fetch can never reach it and surface a real prompt
+		// with no user gesture behind it.
+		if (Notification.permission !== 'granted') {
+			clearPushIntent();
+			return;
+		}
 		const sub = await requestAndSubscribe(public_key);
-		// Only pulse on an actual subscription: requestAndSubscribe can still
-		// resolve null (permission flipped away between our granted check and
-		// here), and a stale signal would flip an open settings toggle ON
-		// with nothing behind it.
-		if (sub) signalPushRecovered();
+		if (!sub) return;
+		// Final re-check: another tab may have toggled push off (clearing the
+		// marker) while requestAndSubscribe was in flight. A cross-tab
+		// toggle-OFF must win over recovery, so tear the just-created
+		// subscription back down using the same best-effort pattern
+		// requestAndSubscribe itself uses for its own rollback, and skip the
+		// signal — no open settings page should flip ON for a subscription
+		// that no longer reflects the user's intent.
+		if (getPushIntent() !== userId) {
+			await Promise.race([
+				unsubscribePush(sub.endpoint).catch(() => {}),
+				new Promise<void>((resolve) => setTimeout(resolve, 3000))
+			]);
+			await sub.unsubscribe().catch(() => {});
+			return;
+		}
+		signalPushRecovered();
 	} catch {
 		// Key fetch, subscribe, or registration POST failed — silent, the
 		// marker stays and the next app load retries.

@@ -85,8 +85,8 @@ test('an empty VAPID key keeps the marker instead of clearing it', () => {
 	const clearCalls = fn.match(/clearPushIntent\(\)/g) ?? [];
 	assert.equal(
 		clearCalls.length,
-		1,
-		'clearPushIntent must be called only from the non-granted-permission branch'
+		2,
+		'clearPushIntent must be called only from the two non-granted-permission branches'
 	);
 });
 
@@ -197,7 +197,7 @@ test('a failed toggle never reaches the marker calls (both sit before the catch)
 	assert.ok(clearIdx < catchIdx, 'clearPushIntent must run before the catch, i.e. only on success');
 });
 
-test('settings onMount backfills the marker only when reconcileOrRecreate succeeds and uid is resolved', () => {
+test('settings onMount backfills the marker on reconcile success only when uid is resolved', () => {
 	assert.match(
 		settingsPage,
 		/const uid = meQuery\.data\?\.id;\s*\n\s*if \(uid\) setPushIntent\(uid\);/,
@@ -251,13 +251,85 @@ test('recoverIntendedPush re-checks intent right before subscribing (TOCTOU narr
 	);
 });
 
-test('recoverIntendedPush pulses the signal only after a confirmed subscription', () => {
+test('recoverIntendedPush signals only after subscribe succeeds and intent still matches', () => {
 	const fn = extractRecoverIntendedPush();
 	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
-	const signalIdx = fn.indexOf('if (sub) signalPushRecovered();');
+	const notSubIdx = fn.indexOf('if (!sub) return;');
+	const recheckIdx = fn.lastIndexOf('if (getPushIntent() !== userId) {');
+	const signalIdx = fn.indexOf('signalPushRecovered();');
+
 	assert.notEqual(subIdx, -1, 'the subscribe result must be captured');
-	assert.notEqual(signalIdx, -1, 'the pulse must be guarded on a non-null subscription');
-	assert.ok(subIdx < signalIdx, 'the pulse must fire only after requestAndSubscribe resolves');
+	assert.notEqual(notSubIdx, -1, 'a null subscription must bail before signaling');
+	assert.notEqual(recheckIdx, -1, 'the post-await intent recheck must exist');
+	assert.notEqual(signalIdx, -1, 'signalPushRecovered must exist');
+
+	assert.ok(
+		subIdx < notSubIdx && notSubIdx < recheckIdx && recheckIdx < signalIdx,
+		'the pulse must fire only after subscribe succeeds and intent is reconfirmed'
+	);
+});
+
+test('a cross-tab toggle-OFF during requestAndSubscribe tears the subscription back down', () => {
+	const fn = extractRecoverIntendedPush();
+	const recheckIdx = fn.lastIndexOf('if (getPushIntent() !== userId) {');
+	const raceIdx = fn.indexOf('await Promise.race([', recheckIdx);
+	const serverDeleteIdx = fn.indexOf(
+		'unsubscribePush(sub.endpoint).catch(() => {})',
+		recheckIdx
+	);
+	const browserUnsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});', recheckIdx);
+	const returnIdx = fn.indexOf('return;', browserUnsubscribeIdx);
+	const signalIdx = fn.indexOf('signalPushRecovered();');
+
+	assert.notEqual(recheckIdx, -1, 'the post-await intent recheck block must exist');
+	assert.notEqual(raceIdx, -1, 'teardown must race the server delete against a timeout');
+	assert.notEqual(serverDeleteIdx, -1, 'teardown must attempt the server-side unsubscribe');
+	assert.notEqual(browserUnsubscribeIdx, -1, 'teardown must drop the local subscription too');
+	assert.notEqual(returnIdx, -1);
+
+	assert.ok(
+		recheckIdx < raceIdx &&
+			raceIdx < serverDeleteIdx &&
+			serverDeleteIdx < browserUnsubscribeIdx &&
+			browserUnsubscribeIdx < returnIdx,
+		'teardown must follow the same server-delete-then-unsubscribe order as requestAndSubscribe'
+	);
+	assert.ok(
+		returnIdx < signalIdx,
+		'a torn-down (marker-mismatched) subscription must return before reaching the pulse'
+	);
+});
+
+test('recoverIntendedPush re-checks permission right before subscribing (no re-prompt)', () => {
+	const fn = extractRecoverIntendedPush();
+	const emptyKeyIdx = fn.indexOf('if (!public_key) return;');
+	const firstIntentRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) return;', emptyKeyIdx);
+	const permMatches = [...fn.matchAll(/if \(Notification\.permission !== 'granted'\)/g)];
+	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
+
+	assert.notEqual(emptyKeyIdx, -1);
+	assert.notEqual(firstIntentRecheckIdx, -1);
+	assert.notEqual(subIdx, -1);
+	assert.equal(
+		permMatches.length,
+		2,
+		'permission must be checked twice: once at entry, once right before subscribing'
+	);
+
+	const secondPermIdx = permMatches[1].index;
+	assert.ok(
+		emptyKeyIdx < firstIntentRecheckIdx &&
+			firstIntentRecheckIdx < secondPermIdx &&
+			secondPermIdx < subIdx,
+		'the second permission check must sit after the key fetch/intent recheck, before subscribe'
+	);
+
+	const gap = fn.slice(secondPermIdx, subIdx);
+	assert.doesNotMatch(
+		gap,
+		/await /,
+		'nothing may await between the second permission check and requestAndSubscribe'
+	);
 });
 
 test('recoverIntendedPush never pulses on the denied, empty-key, or failure paths', () => {
