@@ -176,11 +176,13 @@ async def websocket_endpoint(websocket: WebSocket):
     Authentication via httpOnly cookie `access_token`.
     Protocol (JSON messages):
       Client → Server:
+        { "type": "ping" }
         { "type": "join",         "chatroom_id": "..." }
         { "type": "send_message", "chatroom_id": "...", "body": "...", "client_msg_id": "..." }
         { "type": "ack",          "message_id": "..." }
 
       Server → Client:
+        { "type": "pong" }
         { "type": "message",   ...MessageOut fields }
         { "type": "duplicate", "message_id": "..." }
         { "type": "system",    "body": "..." }
@@ -227,7 +229,13 @@ async def websocket_endpoint(websocket: WebSocket):
             data: dict[str, Any] = await websocket.receive_json()
             msg_type: str = data.get("type", "")
 
-            if msg_type == "join":
+            if msg_type == "ping":
+                # Browser clients cannot emit native WebSocket control pings.
+                # This application-level heartbeat is deliberately direct: it
+                # neither subscribes the socket nor touches chat persistence.
+                await websocket.send_json({"type": "pong"})
+
+            elif msg_type == "join":
                 chatroom_id: str = data.get("chatroom_id", "")
                 if not chatroom_id:
                     await websocket.send_json({"type": "error", "detail": "chatroom_id required"})

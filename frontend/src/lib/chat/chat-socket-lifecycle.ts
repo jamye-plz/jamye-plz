@@ -1,0 +1,352 @@
+/** Room-scoped WebSocket recovery. It deliberately owns no chat data or queries. */
+export type ChatConnectionState = 'connecting' | 'connected' | 'disconnected';
+
+export interface ChatSocket {
+	readonly readyState: number;
+	onopen: ((event: Event) => void) | null;
+	onclose: ((event: CloseEvent) => void) | null;
+	onerror: ((event: Event) => void) | null;
+	onmessage: ((event: MessageEvent) => void) | null;
+	send(data: string): void;
+	close(): void;
+}
+
+export interface ChatSocketTimers {
+	setTimeout(callback: () => void, delay: number): ReturnType<typeof setTimeout>;
+	clearTimeout(handle: ReturnType<typeof setTimeout>): void;
+	setInterval(callback: () => void, delay: number): ReturnType<typeof setInterval>;
+	clearInterval(handle: ReturnType<typeof setInterval>): void;
+}
+
+export interface ChatSocketEventTarget {
+	addEventListener(type: string, listener: EventListener): void;
+	removeEventListener(type: string, listener: EventListener): void;
+}
+
+interface ChatSocketLifecycleOptions {
+	url: string;
+	createSocket: (url: string) => ChatSocket;
+	onOpen: (socket: ChatSocket) => void;
+	onMessage: (event: MessageEvent, socket: ChatSocket) => void;
+	onTerminalClose: () => void;
+	onSocketChange: (socket: ChatSocket | null) => void;
+	onStateChange: (state: ChatConnectionState) => void;
+	onRecoveryChange: (recovering: boolean) => void;
+	onManualRetryChange: (visible: boolean) => void;
+	isOnline: () => boolean;
+	isVisible: () => boolean;
+	networkEvents: ChatSocketEventTarget;
+	visibilityEvents: ChatSocketEventTarget;
+	timers?: ChatSocketTimers;
+	random?: () => number;
+}
+
+export interface ChatSocketLifecycle {
+	start(): void;
+	retryNow(): void;
+	dispose(): void;
+	isCurrent(socket: ChatSocket): boolean;
+}
+
+const CONNECTING = 0;
+const OPEN = 1;
+const CLOSING = 2;
+const RETRY_BASE_MS = 1_000;
+const RETRY_CAP_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 25_000;
+const PONG_DEADLINE_MS = 10_000;
+const MANUAL_RETRY_AFTER_MS = 30_000;
+
+const browserTimers: ChatSocketTimers = {
+	setTimeout: (callback, delay) => setTimeout(callback, delay),
+	clearTimeout: (handle) => clearTimeout(handle),
+	setInterval: (callback, delay) => setInterval(callback, delay),
+	clearInterval: (handle) => clearInterval(handle)
+};
+
+/**
+ * Keeps exactly one room socket alive. Browser WebSocket does not expose native
+ * ping frames, so JSON ping/pong is used only as liveness evidence here.
+ */
+export function createChatSocketLifecycle(
+	options: ChatSocketLifecycleOptions
+): ChatSocketLifecycle {
+	const timers = options.timers ?? browserTimers;
+	const random = options.random ?? Math.random;
+	let socket: ChatSocket | null = null;
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	let pongDeadline: ReturnType<typeof setTimeout> | null = null;
+	let manualRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let retryNumber = 0;
+	let failedSince = false;
+	let disposed = false;
+	let terminal = false;
+	let started = false;
+	let waitingForCloseCode = false;
+
+	function setState(state: ChatConnectionState) {
+		if (!disposed) options.onStateChange(state);
+	}
+
+	function setRecovery(recovering: boolean) {
+		if (!disposed) options.onRecoveryChange(recovering);
+	}
+
+	function clearRetry() {
+		if (retryTimer !== null) {
+			timers.clearTimeout(retryTimer);
+			retryTimer = null;
+		}
+	}
+
+	function clearHeartbeat() {
+		if (heartbeatTimer !== null) {
+			timers.clearInterval(heartbeatTimer);
+			heartbeatTimer = null;
+		}
+		if (pongDeadline !== null) {
+			timers.clearTimeout(pongDeadline);
+			pongDeadline = null;
+		}
+	}
+
+	function clearManualRetry() {
+		if (manualRetryTimer !== null) {
+			timers.clearTimeout(manualRetryTimer);
+			manualRetryTimer = null;
+		}
+		options.onManualRetryChange(false);
+	}
+
+	function detach(candidate: ChatSocket) {
+		candidate.onopen = null;
+		candidate.onclose = null;
+		candidate.onerror = null;
+		candidate.onmessage = null;
+	}
+
+	function scheduleManualRetry() {
+		if (failedSince || terminal || disposed) return;
+		failedSince = true;
+		manualRetryTimer = timers.setTimeout(() => {
+			manualRetryTimer = null;
+			if (!disposed && !terminal && failedSince) options.onManualRetryChange(true);
+		}, MANUAL_RETRY_AFTER_MS);
+	}
+
+	function scheduleRetry() {
+		if (disposed || terminal || !options.isOnline() || retryTimer !== null) return;
+		const base = Math.min(RETRY_BASE_MS * 2 ** retryNumber, RETRY_CAP_MS);
+		const jitter = Math.floor(random() * RETRY_BASE_MS);
+		const delay = Math.min(base + jitter, RETRY_CAP_MS);
+		retryNumber += 1;
+		setState('connecting');
+		setRecovery(true);
+		retryTimer = timers.setTimeout(() => {
+			retryTimer = null;
+			connect();
+		}, delay);
+	}
+
+	function retire(candidate: ChatSocket, closeSocket: boolean, immediate = false) {
+		if (socket !== candidate || disposed || terminal) return;
+		waitingForCloseCode = false;
+		clearHeartbeat();
+		detach(candidate);
+		socket = null;
+		options.onSocketChange(null);
+		if (closeSocket) {
+			try {
+				candidate.close();
+			} catch {
+				// A browser can reject close() while it is already gone. Recovery still proceeds.
+			}
+		}
+		scheduleManualRetry();
+		if (!options.isOnline()) {
+			setState('disconnected');
+			setRecovery(false);
+			return;
+		}
+		if (immediate) {
+			setState('connecting');
+			setRecovery(true);
+			return;
+		}
+		scheduleRetry();
+	}
+
+	function sendHeartbeat(candidate: ChatSocket, recovering = false) {
+		if (socket !== candidate || candidate.readyState !== OPEN || pongDeadline !== null) return;
+		if (recovering) {
+			setState('connecting');
+			setRecovery(true);
+		}
+		try {
+			candidate.send(JSON.stringify({ type: 'ping' }));
+		} catch {
+			retire(candidate, true);
+			return;
+		}
+		pongDeadline = timers.setTimeout(() => {
+			pongDeadline = null;
+			retire(candidate, true);
+		}, PONG_DEADLINE_MS);
+	}
+
+	function connect() {
+		if (disposed || terminal || !options.isOnline()) {
+			if (!disposed && !terminal) {
+				setState('disconnected');
+				setRecovery(false);
+			}
+			return;
+		}
+		if (socket && (socket.readyState === OPEN || socket.readyState === CONNECTING)) return;
+		clearRetry();
+		setState('connecting');
+		setRecovery(failedSince);
+		let candidate: ChatSocket;
+		try {
+			candidate = options.createSocket(options.url);
+		} catch {
+			scheduleManualRetry();
+			scheduleRetry();
+			return;
+		}
+		socket = candidate;
+		options.onSocketChange(candidate);
+
+		candidate.onopen = () => {
+			if (socket !== candidate || disposed || terminal) return;
+			retryNumber = 0;
+			failedSince = false;
+			clearManualRetry();
+			setState('connected');
+			setRecovery(false);
+			heartbeatTimer = timers.setInterval(() => sendHeartbeat(candidate), HEARTBEAT_INTERVAL_MS);
+			try {
+				options.onOpen(candidate);
+			} catch {
+				retire(candidate, true);
+			}
+		};
+
+		candidate.onmessage = (event) => {
+			if (socket !== candidate || disposed || terminal) return;
+			try {
+				const payload = JSON.parse(String(event.data)) as { type?: string };
+				if (payload.type === 'pong') {
+					if (pongDeadline !== null) {
+						timers.clearTimeout(pongDeadline);
+						pongDeadline = null;
+						setState('connected');
+						setRecovery(false);
+					}
+					return;
+				}
+			} catch {
+				// ChatRoom owns malformed application-frame handling.
+			}
+			options.onMessage(event, candidate);
+		};
+
+		candidate.onerror = () => {
+			if (socket !== candidate || disposed || terminal) return;
+			// Browser WebSocket errors are paired with a close event. Keep this
+			// handler alive until that close supplies its code: 4001 is terminal,
+			// while every other code uses the same idempotent retirement below.
+			waitingForCloseCode = true;
+			// The socket is no longer safe for sends, but its close handler must
+			// remain attached until we know whether it was a terminal eviction.
+			clearHeartbeat();
+			setState('connecting');
+			setRecovery(true);
+		};
+		candidate.onclose = (event) => {
+			if (socket !== candidate || disposed || terminal) return;
+			if (event.code === 4001) {
+				terminal = true;
+				waitingForCloseCode = false;
+				clearRetry();
+				clearHeartbeat();
+				clearManualRetry();
+				detach(candidate);
+				socket = null;
+				options.onSocketChange(null);
+				setState('disconnected');
+				options.onTerminalClose();
+				return;
+			}
+			retire(candidate, false);
+		};
+	}
+
+	function recoverNow() {
+		if (disposed || terminal || !options.isOnline()) {
+			if (!disposed && !terminal) {
+				setState('disconnected');
+				setRecovery(false);
+			}
+			return;
+		}
+		if (waitingForCloseCode) return;
+		clearRetry();
+		if (socket?.readyState === OPEN) {
+			sendHeartbeat(socket, true);
+			return;
+		}
+		if (socket?.readyState === CONNECTING || socket?.readyState === CLOSING) return;
+		if (socket) retire(socket, true, true);
+		connect();
+	}
+
+	const onOnline = () => recoverNow();
+	const onOffline = () => {
+		clearRetry();
+		setState('disconnected');
+		setRecovery(false);
+	};
+	const onVisibilityChange = () => {
+		if (options.isVisible()) recoverNow();
+	};
+
+	return {
+		start() {
+			if (disposed || started) return;
+			started = true;
+			options.networkEvents.addEventListener('online', onOnline);
+			options.networkEvents.addEventListener('offline', onOffline);
+			options.visibilityEvents.addEventListener('visibilitychange', onVisibilityChange);
+			connect();
+		},
+		retryNow() {
+			if (socket?.readyState === CONNECTING) return;
+			recoverNow();
+		},
+		dispose() {
+			if (disposed) return;
+			disposed = true;
+			clearRetry();
+			clearHeartbeat();
+			clearManualRetry();
+			options.networkEvents.removeEventListener('online', onOnline);
+			options.networkEvents.removeEventListener('offline', onOffline);
+			options.visibilityEvents.removeEventListener('visibilitychange', onVisibilityChange);
+			if (socket) {
+				const current = socket;
+				detach(current);
+				socket = null;
+				try {
+					current.close();
+				} catch {
+					// Nothing else can observe a disposed lifecycle.
+				}
+			}
+		},
+		isCurrent(candidate) {
+			return !disposed && !terminal && socket === candidate;
+		}
+	};
+}

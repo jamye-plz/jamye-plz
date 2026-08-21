@@ -6,6 +6,12 @@
 	import { listMessages, markChatroomRead, refreshChatMediaUrl } from '$lib/api/chat.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
+	import {
+		createChatSocketLifecycle,
+		type ChatConnectionState,
+		type ChatSocket,
+		type ChatSocketLifecycle
+	} from '$lib/chat/chat-socket-lifecycle';
 	import type {
 		ChatMedia,
 		ChatMediaInput,
@@ -14,6 +20,7 @@
 		WsServerMessage
 	} from '$lib/types/chat.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -49,10 +56,6 @@
 	} = $props();
 
 	const queryClient = useQueryClient();
-
-	// Matches ws_hub.EVICTED_CLOSE_CODE on the backend: the server closes a
-	// socket with this code when the user is removed from / the group is deleted.
-	const EVICTED_CLOSE_CODE = 4001;
 
 	// backHref is a caller-provided absolute app route (may carry a ?date query).
 	// resolve()'s typed-routes signature only accepts statically-known route
@@ -155,8 +158,23 @@
 	// Hide the list until the first page is pinned to the bottom, so entering a
 	// room never flashes at the oldest message before jumping to the newest.
 	let initialReady = $state(false);
-	let ws = $state<WebSocket | null>(null);
-	let connected = $state(false);
+	let ws = $state<ChatSocket | null>(null);
+	let socketLifecycle: ChatSocketLifecycle | null = null;
+	let connectionState = $state<ChatConnectionState>('connecting');
+	let reconnecting = $state(false);
+	let showManualRetry = $state(false);
+	const connected = $derived(connectionState === 'connected' && ws?.readyState === WebSocket.OPEN);
+	const retryAttemptActive = $derived(ws?.readyState === WebSocket.CONNECTING);
+	const manualRetryDisabled = $derived(retryAttemptActive || connectionState === 'disconnected');
+	const connectionLabel = $derived(
+		connectionState === 'connected'
+			? '연결됨'
+			: connectionState === 'connecting'
+				? reconnecting
+					? '다시 연결하는 중'
+					: '연결 중'
+				: '연결이 끊겼어요'
+	);
 	let messagesEl = $state<HTMLElement | null>(null);
 	let rootEl = $state<HTMLElement | null>(null);
 	// True while the on-screen keyboard is open — drops the composer's home-indicator
@@ -273,77 +291,89 @@
 		}
 	});
 
-	$effect(() => {
-		if (!chatroomId) return;
+	function sortMessages(items: Iterable<ChatMessage>): ChatMessage[] {
+		return [...items].sort((a, b) =>
+			a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id.localeCompare(b.id)
+		);
+	}
 
-		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-		const socket = new WebSocket(`${protocol}://${window.location.host}/api/ws`);
+	function mergeJoinGap(
+		pageItems: ChatMessage[],
+		lifecycle: ChatSocketLifecycle,
+		socket: ChatSocket
+	) {
+		if (!lifecycle.isCurrent(socket)) return;
+		const stick = isNearBottom();
+		const existingIds = new Set(messages.map((message) => message.id));
+		const combined = new SvelteMap(messages.map((message) => [message.id, message]));
+		// Always pass fetched records through the transcript buffer, even when the
+		// message is already present from WS. The fetched canonical record then
+		// replaces it while the final map still guarantees one id per message.
+		for (const message of pageItems.map(applyBufferedTranscripts)) {
+			if (message.client_msg_id) {
+				const optimistic = [...combined.values()].find(
+					(candidate) => candidate.pending && candidate.client_msg_id === message.client_msg_id
+				);
+				if (optimistic) combined.delete(optimistic.id);
+			}
+			combined.set(message.id, message);
+		}
+		messages = sortMessages(combined.values());
+		if (stick && pageItems.some((message) => !existingIds.has(message.id))) {
+			tick().then(scrollToBottom);
+		}
+	}
 
-		socket.onopen = () => {
-			connected = true;
-			const joinMsg: WsClientMessage = {
-				type: 'join',
-				chatroom_id: chatroomId
-			};
-			socket.send(JSON.stringify(joinMsg));
-			// Close the REST/WS gap: a message can arrive between the history fetch
-			// and this join (so it's in neither the fetched page nor the broadcast).
-			// Re-fetch the latest page and merge anything we don't have, keeping the
-			// stream contiguous before a read can advance past it.
-			listMessages(groupId, chatroomId)
-				.then((page) => {
-					const have = new Set(messages.map((m) => m.id));
-					const missed = page.items.filter((m) => !have.has(m.id)).map(applyBufferedTranscripts);
-					if (!missed.length) return;
-					const stick = isNearBottom();
-					messages = [...messages, ...missed].sort((a, b) =>
-						a.created_at < b.created_at
-							? -1
-							: a.created_at > b.created_at
-								? 1
-								: a.id.localeCompare(b.id)
-					);
-					if (stick) tick().then(scrollToBottom);
-				})
-				.catch(() => {
-					// transient — the next live message / re-entry will reconcile
+	function handleSocketMessage(event: MessageEvent, socket: ChatSocket) {
+		if (!socketLifecycle?.isCurrent(socket)) return;
+		try {
+			const data: WsServerMessage = JSON.parse(event.data as string);
+			const stick = isNearBottom();
+			if (data.type === 'message') {
+				const msg: ChatMessage = applyBufferedTranscripts({
+					id: data.id,
+					chatroom_id: data.chatroom_id,
+					sender_id: data.sender_id,
+					sender_nickname: data.sender_nickname ?? undefined,
+					sender_avatar_url: data.sender_avatar_url ?? undefined,
+					body: data.body,
+					type: data.msg_type,
+					created_at: data.created_at,
+					media: data.media ?? [],
+					client_msg_id: data.client_msg_id ?? undefined
 				});
-		};
-
-		socket.onmessage = (event) => {
-			try {
-				const data: WsServerMessage = JSON.parse(event.data as string);
-				const stick = isNearBottom();
-				if (data.type === 'message') {
-					const msg: ChatMessage = applyBufferedTranscripts({
-						id: data.id,
-						chatroom_id: data.chatroom_id,
-						sender_id: data.sender_id,
-						sender_nickname: data.sender_nickname ?? undefined,
-						sender_avatar_url: data.sender_avatar_url ?? undefined,
-						body: data.body,
-						type: data.msg_type,
-						created_at: data.created_at,
-						media: data.media ?? [],
-						client_msg_id: data.client_msg_id ?? undefined
-					});
-					const idx = data.client_msg_id
-						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
-						: -1;
-					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
-					if (stick) tick().then(scrollToBottom);
-					// Only mark read when the message is actually in view: a message appended
-					// while the user has scrolled up isn't brought into view, so reading it
-					// would clear its unread state unseen. Scrolling back down marks it read.
-					if (document.visibilityState === 'visible' && stick) {
-						tryMarkRead();
-					}
-				} else if (data.type === 'system') {
-					// e.g. "A posted a new topic!" reminder in the group main chat.
+				const pendingIndex = data.client_msg_id
+					? messages.findIndex(
+							(message) => message.pending && message.client_msg_id === data.client_msg_id
+						)
+					: -1;
+				const realIndex = messages.findIndex((message) => message.id === msg.id);
+				if (pendingIndex >= 0 && realIndex >= 0 && pendingIndex !== realIndex) {
+					messages = messages
+						.filter((_, index) => index !== pendingIndex)
+						.map((message, index) =>
+							index === (pendingIndex < realIndex ? realIndex - 1 : realIndex) ? msg : message
+						);
+				} else {
+					const index = pendingIndex >= 0 ? pendingIndex : realIndex;
+					messages =
+						index >= 0
+							? messages.map((message, i) => (i === index ? msg : message))
+							: [...messages, msg];
+				}
+				if (stick) tick().then(scrollToBottom);
+				// Only mark read when the message is actually in view: a message appended
+				// while the user has scrolled up isn't brought into view, so reading it
+				// would clear its unread state unseen. Scrolling back down marks it read.
+				if (document.visibilityState === 'visible' && stick) tryMarkRead();
+			} else if (data.type === 'system') {
+				// e.g. "A posted a new topic!" reminder in the group main chat.
+				const id = data.id ?? crypto.randomUUID();
+				if (!messages.some((message) => message.id === id)) {
 					messages = [
 						...messages,
 						{
-							id: data.id ?? crypto.randomUUID(),
+							id,
 							chatroom_id: chatroomId,
 							sender_id: null,
 							body: data.body,
@@ -352,52 +382,87 @@
 						}
 					];
 					if (stick) tick().then(scrollToBottom);
-				} else if (data.type === 'transcript') {
-					// Async STT finished for a voice message (possibly one sent
-					// minutes ago) — patch the media entry in place. No scroll:
-					// the bubble grows a caption, the log must not jump.
-					const owner = messages.find(
-						(m) => m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
-					);
-					if (!owner) {
-						// The frame beat its message (worker publish is unordered
-						// with the echo/broadcast). Hold it; the insertion paths
-						// apply it when the message shows up.
-						pendingTranscripts.set(data.media_id, {
-							status: data.status,
-							transcript: data.transcript
-						});
-					} else {
-						messages = messages.map((m) =>
-							m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
-								? {
-										...m,
-										media: m.media.map((x) =>
-											x.id === data.media_id
-												? { ...x, transcript: data.transcript, transcript_status: data.status }
-												: x
-										)
-									}
-								: m
-						);
-					}
 				}
-			} catch {
-				// ignore parse errors
+			} else if (data.type === 'transcript') {
+				// Async STT finished for a voice message (possibly one sent minutes ago).
+				// Every insertion path claims this buffer when its message arrives.
+				const owner = messages.find(
+					(message) =>
+						message.id === data.message_id &&
+						message.media?.some((media) => media.id === data.media_id)
+				);
+				if (!owner) {
+					pendingTranscripts.set(data.media_id, {
+						status: data.status,
+						transcript: data.transcript
+					});
+				} else {
+					messages = messages.map((message) =>
+						message.id === data.message_id &&
+						message.media?.some((media) => media.id === data.media_id)
+							? {
+									...message,
+									media: message.media.map((media) =>
+										media.id === data.media_id
+											? { ...media, transcript: data.transcript, transcript_status: data.status }
+											: media
+									)
+								}
+							: message
+					);
+				}
 			}
-		};
+		} catch {
+			// Ignore malformed application frames.
+		}
+	}
 
-		socket.onclose = (event) => {
-			connected = false;
-			// 4001 = the server evicted us because we were removed from (or the
-			// owner deleted) this group. Drop the now-inaccessible group's caches
-			// and leave the group so we don't keep rendering stale chat/topics.
-			if (event.code === EVICTED_CLOSE_CODE) {
+	$effect(() => {
+		if (!chatroomId) return;
+		const roomId = chatroomId;
+		const currentGroupId = groupId;
+		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+		let lifecycle: ChatSocketLifecycle;
+		lifecycle = createChatSocketLifecycle({
+			url: `${protocol}://${window.location.host}/api/ws`,
+			createSocket: (url) => new WebSocket(url),
+			isOnline: () => navigator.onLine,
+			isVisible: () => document.visibilityState === 'visible',
+			networkEvents: window,
+			visibilityEvents: document,
+			onSocketChange: (socket) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) ws = socket;
+			},
+			onStateChange: (state) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) connectionState = state;
+			},
+			onRecoveryChange: (recovering) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) reconnecting = recovering;
+			},
+			onManualRetryChange: (visible) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) showManualRetry = visible;
+			},
+			onOpen: (socket) => {
+				if (!lifecycle.isCurrent(socket)) return;
+				const joinMsg: WsClientMessage = { type: 'join', chatroom_id: roomId };
+				socket.send(JSON.stringify(joinMsg));
+				// Close the REST/WS gap for every physical socket. Do not refetch the
+				// query: older loaded pages and the reader's scroll position stay local.
+				listMessages(currentGroupId, roomId)
+					.then((page) => mergeJoinGap(page.items, lifecycle, socket))
+					.catch(() => {
+						// Transient; a later reconnect/live message can still reconcile.
+					});
+			},
+			onMessage: handleSocketMessage,
+			onTerminalClose: () => {
+				// 4001 = eviction. This is terminal: lifecycle has already cancelled
+				// retry/heartbeat work before preserving the existing group cleanup.
 				for (const key of [
-					['group', groupId],
-					['members', groupId],
-					['topics', groupId],
-					['topic-dates', groupId]
+					['group', currentGroupId],
+					['members', currentGroupId],
+					['topics', currentGroupId],
+					['topic-dates', currentGroupId]
 				]) {
 					queryClient.removeQueries({ queryKey: key });
 				}
@@ -407,13 +472,16 @@
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- static route literal
 				goto('/groups');
 			}
-		};
-
-		ws = socket;
+		});
+		socketLifecycle = lifecycle;
+		lifecycle.start();
 
 		return () => {
-			socket.close();
-			ws = null;
+			lifecycle.dispose();
+			if (socketLifecycle === lifecycle) {
+				socketLifecycle = null;
+				ws = null;
+			}
 		};
 	});
 
@@ -481,7 +549,13 @@
 	 */
 	function sendMessage(body: string, media: ChatMediaInput[] = []): boolean {
 		// A media-only message is valid, so body alone no longer gates the send.
-		if ((!body && media.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || !chatroomId)
+		if (
+			(!body && media.length === 0) ||
+			connectionState !== 'connected' ||
+			!ws ||
+			ws.readyState !== WebSocket.OPEN ||
+			!chatroomId
+		)
 			return false;
 
 		const clientMsgId = crypto.randomUUID();
@@ -655,6 +729,10 @@
 	function initial(name: string | undefined): string {
 		return name?.trim()?.[0]?.toUpperCase() ?? '?';
 	}
+
+	function retrySocket(): void {
+		socketLifecycle?.retryNow();
+	}
 </script>
 
 {#snippet messageBody(msg: ChatMessage, onPrimary: boolean)}
@@ -735,15 +813,56 @@
 					본문 추가
 				</button>
 			{/if}
-			<div
-				class="status shrink-0 {connected ? 'status-success' : ''}"
-				role="status"
-				aria-label={connected ? '연결됨' : '연결 중'}
-				aria-live="polite"
-				title={connected ? '연결됨' : '연결 중...'}
-			></div>
+			<div class="flex shrink-0 items-center gap-1">
+				<div
+					role="status"
+					aria-live="polite"
+					class="flex items-center gap-1 text-xs whitespace-nowrap"
+				>
+					{#if connectionState === 'connected'}
+						<span class="relative grid size-4 place-items-center" aria-hidden="true">
+							<span class="absolute inset-0 status status-xl status-success"></span>
+							<Check class="relative size-3 text-success-content" strokeWidth={3} />
+						</span>
+					{:else}
+						<span
+							class="status {connectionState === 'connecting' ? 'status-warning' : 'status-error'}"
+							aria-hidden="true"
+						></span>
+					{/if}
+					<span class:sr-only={connectionState === 'connected'}>{connectionLabel}</span>
+				</div>
+				{#if showManualRetry}
+					<button
+						type="button"
+						data-chat-retry="header"
+						class="btn hidden min-h-11 btn-ghost px-2 text-xs text-primary sm:inline-flex"
+						disabled={manualRetryDisabled}
+						onclick={retrySocket}
+					>
+						다시 시도
+					</button>
+				{/if}
+			</div>
 		</div>
 	</AppHeader>
+
+	{#if showManualRetry}
+		<div
+			data-chat-retry-row
+			class="flex shrink-0 justify-end border-b border-base-300 bg-base-100 px-4 py-1 sm:hidden"
+		>
+			<button
+				type="button"
+				data-chat-retry="mobile"
+				class="btn min-h-11 btn-ghost px-3 text-xs text-primary"
+				disabled={manualRetryDisabled}
+				onclick={retrySocket}
+			>
+				다시 시도
+			</button>
+		</div>
+	{/if}
 
 	{#if pinnedBody}
 		<div

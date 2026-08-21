@@ -97,6 +97,7 @@ export interface ChatPage {
 // WebSocket protocol types — must match backend/app/main.py /api/ws handler.
 export type WsClientMessage =
 	| { type: 'join'; chatroom_id: string }
+	| { type: 'ping' }
 	| {
 			type: 'send_message';
 			chatroom_id: string;
@@ -108,6 +109,7 @@ export type WsClientMessage =
 	| { type: 'ack'; message_id: string };
 
 export type WsServerMessage =
+	| { type: 'pong' }
 	| {
 			type: 'message';
 			id: string;
