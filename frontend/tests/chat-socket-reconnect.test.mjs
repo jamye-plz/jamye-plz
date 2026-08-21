@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { createChatSocketLifecycle } from '../src/lib/chat/chat-socket-lifecycle.ts';
+import {
+	createChatSocketLifecycle,
+	reconcileReconnectHistory
+} from '../src/lib/chat/chat-socket-lifecycle.ts';
 
 const chatRoomSource = readFileSync(
 	new URL('../src/lib/components/ChatRoom.svelte', import.meta.url),
@@ -330,6 +333,39 @@ test('an unanswered heartbeat retires once, while 4001 and disposal suppress all
 	assert.equal(clean.sockets.length, 1, 'dispose leaves no zombie reconnect loop');
 });
 
+test('reconnect history paginates backward until it overlaps local history', async () => {
+	const requestedCursors = [];
+	const appliedIds = [];
+	const items = (newest, oldest) =>
+		Array.from({ length: newest - oldest + 1 }, (_, index) => ({ id: `m${newest - index}` }));
+
+	await reconcileReconnectHistory({
+		knownIds: new Set(['m100']),
+		fetchPage: async (cursor) => {
+			requestedCursors.push(cursor ?? null);
+			if (cursor === undefined) {
+				return { items: items(170, 121), next_cursor: 'before-m121' };
+			}
+			if (cursor === 'before-m121') {
+				return { items: items(120, 71), next_cursor: 'before-m71' };
+			}
+			throw new Error(`unexpected cursor: ${cursor}`);
+		},
+		applyPage: (pageItems) => appliedIds.push(...pageItems.map((item) => item.id)),
+		isCurrent: () => true
+	});
+
+	assert.deepEqual(
+		requestedCursors,
+		[null, 'before-m121'],
+		'a 70-message interruption requires the second page but stops at the known overlap'
+	);
+	assert.equal(appliedIds.length, 100);
+	for (let id = 101; id <= 170; id += 1) {
+		assert.ok(appliedIds.includes(`m${id}`), `missed message m${id} must be recovered`);
+	}
+});
+
 test('ChatRoom only queues sends after liveness and reconciles fetched client message ids', () => {
 	const sendMessage = chatRoomSource.match(/function sendMessage[\s\S]*?\n\t}/)?.[0];
 	assert.ok(sendMessage, 'ChatRoom must retain its sendMessage implementation');
@@ -345,8 +381,25 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
-		/role="status" aria-live="polite" class="flex items-center gap-1 text-xs whitespace-nowrap"[\s\S]*status status-success status-xl[\s\S]*<Check[\s\S]*<span class:sr-only=\{connectionState === 'connected'\}>\{connectionLabel\}<\/span>/,
-		'the connected state must use a non-color check beacon with a screen-reader-only label'
+		/reconcileReconnectHistory(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
+		'ChatRoom must paginate reconnect history through the overlap helper'
+	);
+	assert.match(
+		chatRoomSource,
+		/role="status"/,
+		'the connection indicator must expose status semantics'
+	);
+	assert.match(chatRoomSource, /aria-live="polite"/, 'connection changes must be announced');
+	assert.match(
+		chatRoomSource,
+		/class="(?=[^"]*\bstatus\b)(?=[^"]*\bstatus-success\b)(?=[^"]*\bstatus-xl\b)[^"]*"/,
+		'the connected beacon must retain its status, success, and size classes in any order'
+	);
+	assert.match(chatRoomSource, /<Check\b/, 'the connected beacon must include a non-color cue');
+	assert.match(
+		chatRoomSource,
+		/<span class:sr-only=\{connectionState === 'connected'\}>\{connectionLabel\}<\/span>/,
+		'the connected label must remain available to screen readers'
 	);
 	assert.match(
 		chatRoomSource,

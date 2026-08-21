@@ -8,6 +8,7 @@
 	import { getMe } from '$lib/api/auth.api';
 	import {
 		createChatSocketLifecycle,
+		reconcileReconnectHistory,
 		type ChatConnectionState,
 		type ChatSocket,
 		type ChatSocketLifecycle
@@ -448,8 +449,15 @@
 				socket.send(JSON.stringify(joinMsg));
 				// Close the REST/WS gap for every physical socket. Do not refetch the
 				// query: older loaded pages and the reader's scroll position stay local.
-				listMessages(currentGroupId, roomId)
-					.then((page) => mergeJoinGap(page.items, lifecycle, socket))
+				const knownIds = new Set(
+					messages.filter((message) => !message.pending).map((message) => message.id)
+				);
+				reconcileReconnectHistory<ChatMessage>({
+					knownIds,
+					fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
+					applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
+					isCurrent: () => lifecycle.isCurrent(socket)
+				})
 					.catch(() => {
 						// Transient; a later reconnect/live message can still reconcile.
 					});

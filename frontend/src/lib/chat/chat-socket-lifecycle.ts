@@ -48,6 +48,49 @@ export interface ChatSocketLifecycle {
 	isCurrent(socket: ChatSocket): boolean;
 }
 
+interface ReconnectHistoryPage<T extends { id: string }> {
+	items: T[];
+	next_cursor: string | null;
+}
+
+interface ReconnectHistoryOptions<T extends { id: string }> {
+	knownIds: ReadonlySet<string>;
+	fetchPage(cursor?: string): Promise<ReconnectHistoryPage<T>>;
+	applyPage(items: T[]): void;
+	isCurrent(): boolean;
+}
+
+/**
+ * Walk newest-to-oldest reconnect pages until they overlap the room's existing
+ * server history. Scroll pagination keeps its own cursor, so recovery cannot
+ * discard previously loaded pages or move the reader's position.
+ */
+export async function reconcileReconnectHistory<T extends { id: string }>(
+	options: ReconnectHistoryOptions<T>
+): Promise<void> {
+	let cursor: string | undefined;
+
+	do {
+		if (!options.isCurrent()) return;
+		const page = await options.fetchPage(cursor);
+		if (!options.isCurrent()) return;
+		options.applyPage(page.items);
+
+		const overlapsExistingHistory =
+			options.knownIds.size === 0 || page.items.some((item) => options.knownIds.has(item.id));
+		if (
+			overlapsExistingHistory ||
+			page.items.length === 0 ||
+			page.next_cursor === null ||
+			page.next_cursor === cursor
+		) {
+			return;
+		}
+
+		cursor = page.next_cursor;
+	} while (true);
+}
+
 const CONNECTING = 0;
 const OPEN = 1;
 const CLOSING = 2;
