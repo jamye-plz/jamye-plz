@@ -13,7 +13,7 @@
 		requestAndSubscribe,
 		unsubscribePush
 	} from '$lib/api/push.api';
-	import { clearPushIntent, setPushIntent } from '$lib/push-intent';
+	import { hasExplicitPushOptOut, setPushIntent, setPushIntentOff } from '$lib/push-intent';
 	import { pushRecoverySignal } from '$lib/push-recovery-signal';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
@@ -97,9 +97,14 @@
 						// existed: a subscription reconciled for the current user is
 						// proof they once opted in. onMount is NOT gated on meQuery.data
 						// (unlike the toggle), so it can race the user query — guard on
-						// uid and silently skip; the next settings visit retries.
+						// uid and silently skip; the next settings visit retries. Never
+						// resurrect an explicit opt-out: with two settings tabs open, a
+						// pending reconcile here can resolve AFTER another tab's
+						// toggle-OFF wrote the opt-out sentinel — both write orders must
+						// converge to "off" (backfill-first: the sentinel overwrites it
+						// right after; off-first: this check skips the backfill).
 						const uid = meQuery.data?.id;
-						if (uid) setPushIntent(uid);
+						if (uid && !hasExplicitPushOptOut(uid)) setPushIntent(uid);
 					}
 				} catch {
 					pushSubscribed = false;
@@ -155,9 +160,13 @@
 					await sub.unsubscribe();
 				}
 				pushSubscribed = false;
-				// Toggle-off is deliberate: clear the intent so the reconciler
-				// never silently re-enables push the user just turned off.
-				clearPushIntent();
+				// Toggle-off is deliberate: record an explicit opt-out sentinel so
+				// it can't be mistaken for "never opted in". A plain marker removal
+				// would let a concurrent settings tab's pending backfill silently
+				// re-set intent after this write, regardless of which write lands
+				// last.
+				const uid = meQuery.data?.id;
+				if (uid) setPushIntentOff(uid);
 			}
 		} catch (err) {
 			input.checked = !turnOn;

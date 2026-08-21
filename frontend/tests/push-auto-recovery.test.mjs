@@ -189,30 +189,37 @@ test('settings toggle ON success sets the intent marker', () => {
 	assert.ok(turnOnIdx < setIdx && setIdx < elseIdx, 'setPushIntent must run in the turnOn branch');
 });
 
-test('settings toggle OFF success clears the intent marker', () => {
+test('settings toggle OFF success records an explicit opt-out, not just a clear', () => {
 	const fn = extractOnTogglePush();
 	const elseIdx = fn.indexOf('} else {');
-	const clearIdx = fn.indexOf('clearPushIntent();');
+	const offIdx = fn.indexOf('if (uid) setPushIntentOff(uid);');
 	assert.notEqual(elseIdx, -1);
-	assert.notEqual(clearIdx, -1);
-	assert.ok(elseIdx < clearIdx, 'clearPushIntent must run in the turnOff branch');
+	assert.notEqual(offIdx, -1);
+	assert.ok(elseIdx < offIdx, 'setPushIntentOff must run in the turnOff branch');
+	assert.doesNotMatch(
+		fn,
+		/clearPushIntent/,
+		'toggle-OFF must use the durable off sentinel, not the ambiguous clear'
+	);
 });
 
 test('a failed toggle never reaches the marker calls (both sit before the catch)', () => {
 	const fn = extractOnTogglePush();
 	const catchIdx = fn.indexOf('} catch (err) {');
 	const setIdx = fn.indexOf('if (uid) setPushIntent(uid);');
-	const clearIdx = fn.indexOf('clearPushIntent();');
+	const offIdx = fn.indexOf('if (uid) setPushIntentOff(uid);');
 	assert.notEqual(catchIdx, -1);
 	assert.ok(setIdx < catchIdx, 'setPushIntent must run before the catch, i.e. only on success');
-	assert.ok(clearIdx < catchIdx, 'clearPushIntent must run before the catch, i.e. only on success');
+	assert.ok(offIdx < catchIdx, 'setPushIntentOff must run before the catch, i.e. only on success');
 });
 
-test('settings onMount backfills the marker on reconcile success only when uid is resolved', () => {
-	assert.match(
-		settingsPage,
-		/const uid = meQuery\.data\?\.id;\s*\n\s*if \(uid\) setPushIntent\(uid\);/,
-		'backfill must be guarded on meQuery.data?.id, never write undefined/empty'
+test('settings onMount backfill is guarded by hasExplicitPushOptOut', () => {
+	assert.ok(
+		settingsPage.includes(
+			'const uid = meQuery.data?.id;\n' +
+				'\t\t\t\t\t\tif (uid && !hasExplicitPushOptOut(uid)) setPushIntent(uid);'
+		),
+		'backfill must skip an explicit opt-out regardless of concurrent-tab write ordering'
 	);
 });
 
@@ -221,11 +228,28 @@ test('push-intent is imported by push.api.ts and settings, never by the service 
 		/import \{ clearPushIntent, getPushIntent \} from '\$lib\/push-intent';/.test(pushApi),
 		'push.api.ts must import the intent accessors it uses'
 	);
+	const settingsImport =
+		"import { hasExplicitPushOptOut, setPushIntent, setPushIntentOff } from '$lib/push-intent';";
 	assert.ok(
-		/import \{ clearPushIntent, setPushIntent \} from '\$lib\/push-intent';/.test(settingsPage),
-		'settings must import the intent writers it uses'
+		settingsPage.includes(settingsImport),
+		'settings must import the opt-out-aware intent writers it uses'
 	);
 	assert.doesNotMatch(serviceWorker, /from '\$lib\/push-intent'/);
+});
+
+// --- explicit opt-out sentinel: ordering-independent backfill vs toggle-OFF ---
+
+test('recovery still compares getPushIntent() with strict equality (off sentinel is inert)', () => {
+	const fn = extractRecoverIntendedPush();
+	// Every marker check in recovery is `=== userId` / `!== userId` against
+	// the raw stored value. `off:<userId>` never equals `<userId>`, so the
+	// opt-out sentinel is inert for recovery by construction — no dedicated
+	// off-handling branch should exist there.
+	assert.doesNotMatch(
+		fn,
+		/hasExplicitPushOptOut|setPushIntentOff/,
+		'recovery must stay unaware of the off sentinel; plain equality already excludes it'
+	);
 });
 
 // --- T3b: reactive settings-toggle refresh on background recovery ---
