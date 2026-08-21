@@ -97,6 +97,7 @@ const OPEN = 1;
 const CLOSING = 2;
 const RETRY_BASE_MS = 1_000;
 const RETRY_CAP_MS = 30_000;
+const CONNECT_DEADLINE_MS = 10_000;
 const HEARTBEAT_INTERVAL_MS = 25_000;
 const PONG_DEADLINE_MS = 10_000;
 const MANUAL_RETRY_AFTER_MS = 30_000;
@@ -119,6 +120,7 @@ export function createChatSocketLifecycle(
 	const random = options.random ?? Math.random;
 	let socket: ChatSocket | null = null;
 	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+	let connectDeadline: ReturnType<typeof setTimeout> | null = null;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	let pongDeadline: ReturnType<typeof setTimeout> | null = null;
 	let manualRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -141,6 +143,13 @@ export function createChatSocketLifecycle(
 		if (retryTimer !== null) {
 			timers.clearTimeout(retryTimer);
 			retryTimer = null;
+		}
+	}
+
+	function clearConnectDeadline() {
+		if (connectDeadline !== null) {
+			timers.clearTimeout(connectDeadline);
+			connectDeadline = null;
 		}
 	}
 
@@ -205,6 +214,7 @@ export function createChatSocketLifecycle(
 	function retire(candidate: ChatSocket, closeSocket: boolean, immediate = false) {
 		if (socket !== candidate || disposed || terminal) return;
 		waitingForCloseCode = false;
+		clearConnectDeadline();
 		clearHeartbeat();
 		detach(candidate);
 		socket = null;
@@ -270,9 +280,16 @@ export function createChatSocketLifecycle(
 		}
 		socket = candidate;
 		options.onSocketChange(candidate);
+		const deadline = timers.setTimeout(() => {
+			if (connectDeadline !== deadline || socket !== candidate) return;
+			connectDeadline = null;
+			retire(candidate, true);
+		}, CONNECT_DEADLINE_MS);
+		connectDeadline = deadline;
 
 		candidate.onopen = () => {
 			if (socket !== candidate || disposed || terminal) return;
+			clearConnectDeadline();
 			// A successful transport handshake is not enough: the room still has to
 			// pass membership validation and enter ws_hub before sends are safe.
 			setState('connecting');
@@ -320,6 +337,7 @@ export function createChatSocketLifecycle(
 			waitingForCloseCode = true;
 			// The socket is no longer safe for sends, but its close handler must
 			// remain attached until we know whether it was a terminal eviction.
+			clearConnectDeadline();
 			clearHeartbeat();
 			setState('connecting');
 			setRecovery(true);
@@ -330,6 +348,7 @@ export function createChatSocketLifecycle(
 				terminal = true;
 				waitingForCloseCode = false;
 				clearRetry();
+				clearConnectDeadline();
 				clearHeartbeat();
 				clearManualRetry();
 				detach(candidate);
@@ -389,6 +408,7 @@ export function createChatSocketLifecycle(
 			if (disposed) return;
 			disposed = true;
 			clearRetry();
+			clearConnectDeadline();
 			clearHeartbeat();
 			clearManualRetry();
 			options.networkEvents.removeEventListener('online', onOnline);

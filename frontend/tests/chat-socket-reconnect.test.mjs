@@ -264,15 +264,41 @@ test('manual retry, online, and visible recovery leave an active CONNECTING sock
 	h.lifecycle.start();
 	h.sockets[0].fail();
 	h.timers.advance(1_500);
-	const connecting = h.sockets[1];
 	h.timers.advance(28_500);
 	assert.equal(h.manualRetry.at(-1), true, 'manual retry is visible after prolonged recovery');
+	const connecting = h.sockets.at(-1);
+	const socketCountBeforeTriggers = h.sockets.length;
 
 	h.lifecycle.retryNow();
 	h.events.dispatch('online');
 	h.events.dispatch('visibilitychange');
-	assert.equal(h.sockets.length, 2, 'no recovery trigger may replace an active handshake');
+	assert.equal(
+		h.sockets.length,
+		socketCountBeforeTriggers,
+		'no recovery trigger may replace an active handshake'
+	);
 	assert.equal(connecting.closed, false, 'the active handshake stays owned by the lifecycle');
+});
+
+test('a stalled CONNECTING attempt expires into the normal retry path while an opened socket clears that deadline', () => {
+	const stalled = makeHarness();
+	stalled.lifecycle.start();
+	const first = stalled.sockets[0];
+	stalled.timers.advance(10_000);
+	assert.equal(first.closed, true, 'a CONNECTING socket must not block recovery forever');
+	stalled.timers.advance(1_500);
+	assert.equal(
+		stalled.sockets.length,
+		2,
+		'the connect deadline must use the existing backoff retry path'
+	);
+
+	const opened = makeHarness();
+	opened.lifecycle.start();
+	const transportOpen = opened.sockets[0];
+	transportOpen.open();
+	opened.timers.advance(10_000);
+	assert.equal(transportOpen.closed, false, 'onopen must clear the CONNECTING deadline');
 });
 
 test('an unanswered heartbeat retires once, while 4001 and disposal suppress all future recovery', () => {
@@ -417,6 +443,11 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 		chatRoomSource,
 		/message\.client_msg_id[\s\S]*candidate\.pending && candidate\.client_msg_id === message\.client_msg_id[\s\S]*combined\.delete\(optimistic\.id\)/,
 		'a fetched canonical message must replace its matching optimistic row'
+	);
+	assert.match(
+		chatRoomSource,
+		/const hasNewRecoveryMessages = pageItems\.some\(\(message\) => !existingIds\.has\(message\.id\)\)[\s\S]*if \(stick && hasNewRecoveryMessages\)[\s\S]*tick\(\)\.then\(\(\) => \{[\s\S]*if \(!lifecycle\.isCurrent\(socket\)\) return;[\s\S]*scrollToBottom\(\)[\s\S]*document\.visibilityState === 'visible'[\s\S]*tryMarkRead\(\)/,
+		'a current visible reader at the bottom must mark genuinely recovered messages as read after scrolling'
 	);
 	assert.match(
 		chatRoomSource,

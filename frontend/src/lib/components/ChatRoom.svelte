@@ -306,6 +306,7 @@
 		if (!lifecycle.isCurrent(socket)) return;
 		const stick = isNearBottom();
 		const existingIds = new Set(messages.map((message) => message.id));
+		const hasNewRecoveryMessages = pageItems.some((message) => !existingIds.has(message.id));
 		const combined = new SvelteMap(messages.map((message) => [message.id, message]));
 		// Always pass fetched records through the transcript buffer, even when the
 		// message is already present from WS. The fetched canonical record then
@@ -320,8 +321,12 @@
 			combined.set(message.id, message);
 		}
 		messages = sortMessages(combined.values());
-		if (stick && pageItems.some((message) => !existingIds.has(message.id))) {
-			tick().then(scrollToBottom);
+		if (stick && hasNewRecoveryMessages) {
+			tick().then(() => {
+				if (!lifecycle.isCurrent(socket)) return;
+				scrollToBottom();
+				if (document.visibilityState === 'visible') tryMarkRead();
+			});
 		}
 	}
 
