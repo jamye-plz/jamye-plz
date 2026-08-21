@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiDelete } from './client';
+import { getMe } from './auth.api';
 import { clearPushIntent, getPushIntent } from '$lib/push-intent';
 import { signalPushRecovered } from '$lib/push-recovery-signal';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
@@ -78,6 +79,22 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
 }
 
 /**
+ * Best-effort rollback for a subscription `recoverIntendedPush` just created
+ * but must not keep — same pattern `requestAndSubscribe` uses for its own
+ * rollback: race the server delete against a short timeout (never block on a
+ * stalled/failed DELETE), then drop the local subscription regardless.
+ * Extracted because `recoverIntendedPush` now needs this teardown from two
+ * different post-await checks (stale intent, and mismatched identity).
+ */
+async function teardownRecoveredSub(sub: PushSubscription): Promise<void> {
+	await Promise.race([
+		unsubscribePush(sub.endpoint).catch(() => {}),
+		new Promise<void>((resolve) => setTimeout(resolve, 3000))
+	]);
+	await sub.unsubscribe().catch(() => {});
+}
+
+/**
  * Silently re-subscribe when the CURRENT user previously expressed push
  * intent (settings toggle ON, or the reconcile backfill) but this browser
  * now holds no subscription — e.g. a `pushsubscriptionchange` rollback, or a
@@ -125,16 +142,28 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 		// Final re-check: another tab may have toggled push off (clearing the
 		// marker) while requestAndSubscribe was in flight. A cross-tab
 		// toggle-OFF must win over recovery, so tear the just-created
-		// subscription back down using the same best-effort pattern
-		// requestAndSubscribe itself uses for its own rollback, and skip the
-		// signal — no open settings page should flip ON for a subscription
-		// that no longer reflects the user's intent.
+		// subscription back down and skip the signal — no open settings page
+		// should flip ON for a subscription that no longer reflects the
+		// user's intent. Kept first: it's synchronous and free, no need to
+		// pay for a network round trip when the local marker already says no.
 		if (getPushIntent() !== userId) {
-			await Promise.race([
-				unsubscribePush(sub.endpoint).catch(() => {}),
-				new Promise<void>((resolve) => setTimeout(resolve, 3000))
-			]);
-			await sub.unsubscribe().catch(() => {});
+			await teardownRecoveredSub(sub);
+			return;
+		}
+		// Identity re-check: the httpOnly session cookie is shared across tabs
+		// and this tab's `userId`/marker can't see a cross-tab logout->login
+		// that happened during the requestAndSubscribe await. The POST already
+		// committed under whatever cookie was live at that moment, so the
+		// fresh row belongs to whichever account that was — a stale local
+		// generation counter can't catch this, only a server round trip can.
+		// A mismatch (including a failed/401 getMe, treated the same way) means
+		// the row was created for a DIFFERENT account than this recovery was
+		// started for: tear it down with the same (now-current) cookie. Do NOT
+		// clear the marker here — it still records the ORIGINAL user's intent,
+		// and they recover normally next time they're the active session.
+		const me = await getMe().catch(() => null);
+		if (!me || me.id !== userId) {
+			await teardownRecoveredSub(sub);
 			return;
 		}
 		signalPushRecovered();

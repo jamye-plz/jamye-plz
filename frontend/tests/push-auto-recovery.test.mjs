@@ -36,6 +36,12 @@ function extractOnTogglePush() {
 	return fn;
 }
 
+function extractTeardownRecoveredSub() {
+	const fn = pushApi.match(/async function teardownRecoveredSub[\s\S]*?\n}\n/)?.[0];
+	assert.ok(fn, 'teardownRecoveredSub must exist in push.api.ts');
+	return fn;
+}
+
 test('reclaimPushForCurrentUser takes the current user id', () => {
 	assert.ok(
 		/export async function reclaimPushForCurrentUser\(userId: string\)/.test(pushApi),
@@ -251,53 +257,112 @@ test('recoverIntendedPush re-checks intent right before subscribing (TOCTOU narr
 	);
 });
 
-test('recoverIntendedPush signals only after subscribe succeeds and intent still matches', () => {
+test('teardownRecoveredSub races a server delete against a timeout then unsubscribes', () => {
+	const fn = extractTeardownRecoveredSub();
+	const raceIdx = fn.indexOf('await Promise.race([');
+	const serverDeleteIdx = fn.indexOf('unsubscribePush(sub.endpoint).catch(() => {})');
+	const timeoutIdx = fn.indexOf('setTimeout(resolve, 3000)');
+	const browserUnsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
+
+	assert.notEqual(raceIdx, -1);
+	assert.notEqual(serverDeleteIdx, -1);
+	assert.notEqual(timeoutIdx, -1);
+	assert.notEqual(browserUnsubscribeIdx, -1);
+	assert.ok(
+		raceIdx < serverDeleteIdx && serverDeleteIdx < timeoutIdx && timeoutIdx < browserUnsubscribeIdx,
+		'must race the server delete vs a timeout, then unsubscribe locally regardless'
+	);
+});
+
+test('push.api.ts imports getMe from the sibling auth.api module', () => {
+	assert.ok(
+		/import \{ getMe \} from '\.\/auth\.api';/.test(pushApi),
+		'the identity recheck must reuse the existing /me endpoint'
+	);
+});
+
+test('recoverIntendedPush signals only once subscribe, marker, and identity all confirm', () => {
 	const fn = extractRecoverIntendedPush();
 	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.lastIndexOf('if (getPushIntent() !== userId) {');
+	const markerRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
+	const identityCheckIdx = fn.indexOf('if (!me || me.id !== userId) {');
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(subIdx, -1, 'the subscribe result must be captured');
 	assert.notEqual(notSubIdx, -1, 'a null subscription must bail before signaling');
-	assert.notEqual(recheckIdx, -1, 'the post-await intent recheck must exist');
+	assert.notEqual(markerRecheckIdx, -1, 'the post-await marker recheck must exist');
+	assert.notEqual(meIdx, -1, 'identity must be re-verified with a server round trip');
+	assert.notEqual(identityCheckIdx, -1, 'the identity mismatch branch must exist');
 	assert.notEqual(signalIdx, -1, 'signalPushRecovered must exist');
 
 	assert.ok(
-		subIdx < notSubIdx && notSubIdx < recheckIdx && recheckIdx < signalIdx,
-		'the pulse must fire only after subscribe succeeds and intent is reconfirmed'
+		subIdx < notSubIdx &&
+			notSubIdx < markerRecheckIdx &&
+			markerRecheckIdx < meIdx &&
+			meIdx < identityCheckIdx &&
+			identityCheckIdx < signalIdx,
+		'subscribe, the marker recheck, then identity must all pass before the pulse fires'
 	);
 });
 
 test('a cross-tab toggle-OFF during requestAndSubscribe tears the subscription back down', () => {
 	const fn = extractRecoverIntendedPush();
-	const recheckIdx = fn.lastIndexOf('if (getPushIntent() !== userId) {');
-	const raceIdx = fn.indexOf('await Promise.race([', recheckIdx);
-	const serverDeleteIdx = fn.indexOf(
-		'unsubscribePush(sub.endpoint).catch(() => {})',
-		recheckIdx
+	const notSubIdx = fn.indexOf('if (!sub) return;');
+	const markerRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub);', markerRecheckIdx);
+	const returnIdx = fn.indexOf('return;', teardownIdx);
+	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
+
+	assert.notEqual(markerRecheckIdx, -1, 'the post-await marker recheck block must exist');
+	assert.notEqual(teardownIdx, -1, 'a stale marker must reuse the teardown helper');
+	assert.notEqual(returnIdx, -1);
+	assert.notEqual(meIdx, -1);
+
+	assert.ok(
+		markerRecheckIdx < teardownIdx && teardownIdx < returnIdx && returnIdx < meIdx,
+		'a stale marker must tear down and return before the identity check ever runs'
 	);
-	const browserUnsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});', recheckIdx);
-	const returnIdx = fn.indexOf('return;', browserUnsubscribeIdx);
+});
+
+test('a cross-tab logout/login during requestAndSubscribe tears down via identity mismatch', () => {
+	const fn = extractRecoverIntendedPush();
+	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
+	const mismatchIdx = fn.indexOf('if (!me || me.id !== userId) {', meIdx);
+	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub);', mismatchIdx);
+	const returnIdx = fn.indexOf('return;', teardownIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
-	assert.notEqual(recheckIdx, -1, 'the post-await intent recheck block must exist');
-	assert.notEqual(raceIdx, -1, 'teardown must race the server delete against a timeout');
-	assert.notEqual(serverDeleteIdx, -1, 'teardown must attempt the server-side unsubscribe');
-	assert.notEqual(browserUnsubscribeIdx, -1, 'teardown must drop the local subscription too');
+	assert.notEqual(meIdx, -1, 'identity must be re-verified via a server round trip');
+	assert.notEqual(mismatchIdx, -1);
+	assert.notEqual(teardownIdx, -1, 'an identity mismatch must reuse the teardown helper');
 	assert.notEqual(returnIdx, -1);
 
 	assert.ok(
-		recheckIdx < raceIdx &&
-			raceIdx < serverDeleteIdx &&
-			serverDeleteIdx < browserUnsubscribeIdx &&
-			browserUnsubscribeIdx < returnIdx,
-		'teardown must follow the same server-delete-then-unsubscribe order as requestAndSubscribe'
+		meIdx < mismatchIdx &&
+			mismatchIdx < teardownIdx &&
+			teardownIdx < returnIdx &&
+			returnIdx < signalIdx,
+		'a mismatched (or unreachable) identity must tear down and return before the pulse'
 	);
-	assert.ok(
-		returnIdx < signalIdx,
-		'a torn-down (marker-mismatched) subscription must return before reaching the pulse'
+
+	const mismatchBranch = fn.slice(mismatchIdx, returnIdx + 'return;'.length);
+	assert.doesNotMatch(
+		mismatchBranch,
+		/clearPushIntent/,
+		'the marker records the ORIGINAL user intent and must survive an identity mismatch'
 	);
+});
+
+test('recoverIntendedPush reuses teardownRecoveredSub for both post-await mismatches', () => {
+	const fn = extractRecoverIntendedPush();
+	const calls = [...fn.matchAll(/await teardownRecoveredSub\(sub\);/g)];
+	assert.equal(calls.length, 2, 'the marker and identity mismatches must both reuse the helper');
+	for (const call of calls) {
+		const after = fn.slice(call.index, call.index + 120);
+		assert.match(after, /return;/, 'each teardown call must be followed by a return');
+	}
 });
 
 test('recoverIntendedPush re-checks permission right before subscribing (no re-prompt)', () => {
