@@ -27,6 +27,7 @@ interface ChatSocketLifecycleOptions {
 	url: string;
 	createSocket: (url: string) => ChatSocket;
 	onOpen: (socket: ChatSocket) => void;
+	onReady: (socket: ChatSocket) => void;
 	onMessage: (event: MessageEvent, socket: ChatSocket) => void;
 	onTerminalClose: () => void;
 	onSocketChange: (socket: ChatSocket | null) => void;
@@ -162,6 +163,15 @@ export function createChatSocketLifecycle(
 		options.onManualRetryChange(false);
 	}
 
+	function markStable(candidate: ChatSocket) {
+		if (socket !== candidate || disposed || terminal) return;
+		retryNumber = 0;
+		failedSince = false;
+		clearManualRetry();
+		setState('connected');
+		setRecovery(false);
+	}
+
 	function detach(candidate: ChatSocket) {
 		candidate.onopen = null;
 		candidate.onclose = null;
@@ -263,11 +273,10 @@ export function createChatSocketLifecycle(
 
 		candidate.onopen = () => {
 			if (socket !== candidate || disposed || terminal) return;
-			retryNumber = 0;
-			failedSince = false;
-			clearManualRetry();
-			setState('connected');
-			setRecovery(false);
+			// A successful transport handshake is not enough: the room still has to
+			// pass membership validation and enter ws_hub before sends are safe.
+			setState('connecting');
+			setRecovery(failedSince);
 			heartbeatTimer = timers.setInterval(() => sendHeartbeat(candidate), HEARTBEAT_INTERVAL_MS);
 			try {
 				options.onOpen(candidate);
@@ -284,8 +293,16 @@ export function createChatSocketLifecycle(
 					if (pongDeadline !== null) {
 						timers.clearTimeout(pongDeadline);
 						pongDeadline = null;
-						setState('connected');
-						setRecovery(false);
+					}
+					markStable(candidate);
+					return;
+				}
+				if (payload.type === 'joined') {
+					markStable(candidate);
+					try {
+						options.onReady(candidate);
+					} catch {
+						retire(candidate, true);
 					}
 					return;
 				}

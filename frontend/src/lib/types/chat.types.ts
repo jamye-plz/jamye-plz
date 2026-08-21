@@ -110,6 +110,7 @@ export type WsClientMessage =
 
 export type WsServerMessage =
 	| { type: 'pong' }
+	| { type: 'joined'; chatroom_id: string }
 	| {
 			type: 'message';
 			id: string;

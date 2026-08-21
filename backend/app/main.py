@@ -183,6 +183,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
       Server → Client:
         { "type": "pong" }
+        { "type": "joined",    "chatroom_id": "..." }
         { "type": "message",   ...MessageOut fields }
         { "type": "duplicate", "message_id": "..." }
         { "type": "system",    "body": "..." }
@@ -251,10 +252,15 @@ async def websocket_endpoint(websocket: WebSocket):
                             ws_hub.leave(active_chatroom, websocket)
                         active_chatroom = chatroom_id
                         ws_hub.join(chatroom_id, websocket, user_id)
-                        # No join ack: it surfaced as a "Joined chatroom <uuid>"
-                        # system line in the room. Errors still report via "error".
-                    except AppError as exc:
-                        await websocket.send_json({"type": "error", "detail": exc.detail})
+                        # This acknowledgement is the client's causal boundary:
+                        # history recovery starts only after live fan-out is active.
+                        await websocket.send_json({"type": "joined", "chatroom_id": chatroom_id})
+                    except AppError:
+                        # A rejected reconnect is terminal. Reuse the same 4001
+                        # client cleanup as live membership eviction; retrying can
+                        # never restore access and would leave stale group caches.
+                        await websocket.close(code=ws_hub.EVICTED_CLOSE_CODE)
+                        return
                     break
 
             elif msg_type == "send_message":

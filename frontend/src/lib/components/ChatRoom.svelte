@@ -423,6 +423,7 @@
 		const roomId = chatroomId;
 		const currentGroupId = groupId;
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+		let recoveryKnownIds: ReadonlySet<string> = new Set();
 		let lifecycle: ChatSocketLifecycle;
 		lifecycle = createChatSocketLifecycle({
 			url: `${protocol}://${window.location.host}/api/ws`,
@@ -445,22 +446,26 @@
 			},
 			onOpen: (socket) => {
 				if (!lifecycle.isCurrent(socket)) return;
-				const joinMsg: WsClientMessage = { type: 'join', chatroom_id: roomId };
-				socket.send(JSON.stringify(joinMsg));
-				// Close the REST/WS gap for every physical socket. Do not refetch the
-				// query: older loaded pages and the reader's scroll position stay local.
-				const knownIds = new Set(
+				recoveryKnownIds = new Set(
 					messages.filter((message) => !message.pending).map((message) => message.id)
 				);
+				const joinMsg: WsClientMessage = { type: 'join', chatroom_id: roomId };
+				socket.send(JSON.stringify(joinMsg));
+			},
+			onReady: (socket) => {
+				if (!lifecycle.isCurrent(socket)) return;
+				// Close the REST/WS gap for every physical socket. Do not refetch the
+				// query: older loaded pages and the reader's scroll position stay local.
+				// The server emits `joined` only after ws_hub subscription, closing the
+				// final delivery gap before this independent REST snapshot begins.
 				reconcileReconnectHistory<ChatMessage>({
-					knownIds,
+					knownIds: recoveryKnownIds,
 					fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
 					applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
 					isCurrent: () => lifecycle.isCurrent(socket)
-				})
-					.catch(() => {
-						// Transient; a later reconnect/live message can still reconcile.
-					});
+				}).catch(() => {
+					// Transient; a later reconnect/live message can still reconcile.
+				});
 			},
 			onMessage: handleSocketMessage,
 			onTerminalClose: () => {

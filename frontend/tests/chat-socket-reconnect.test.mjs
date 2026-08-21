@@ -122,6 +122,7 @@ function makeHarness() {
 	const manualRetry = [];
 	let online = true;
 	let visible = true;
+	let readySignals = 0;
 	let terminalClosures = 0;
 	const lifecycle = createChatSocketLifecycle({
 		url: 'ws://chat.test/api/ws',
@@ -137,6 +138,9 @@ function makeHarness() {
 		timers,
 		random: () => 0.5,
 		onOpen: () => {},
+		onReady: () => {
+			readySignals += 1;
+		},
 		onMessage: () => {},
 		onTerminalClose: () => {
 			terminalClosures += 1;
@@ -161,6 +165,7 @@ function makeHarness() {
 		setVisible: (value) => {
 			visible = value;
 		},
+		readySignals: () => readySignals,
 		terminalClosures: () => terminalClosures
 	};
 }
@@ -192,6 +197,40 @@ test('retry uses 1s exponential base plus bounded jitter, deduplicates error/clo
 	);
 	assert.ok(h.states.includes('connecting'));
 	assert.ok(h.recovery.includes(true));
+});
+
+test('application readiness gates connected state and resets backoff only after join acknowledgement', () => {
+	const h = makeHarness();
+	h.lifecycle.start();
+
+	const first = h.sockets[0];
+	first.open();
+	assert.equal(h.states.at(-1), 'connecting', 'TCP open alone must not enable chat sends');
+	first.fail();
+	assert.equal(h.timers.timeoutDelays.at(-1), 1_500);
+	h.timers.advance(1_500);
+
+	const second = h.sockets[1];
+	second.open();
+	second.fail();
+	assert.equal(
+		h.timers.timeoutDelays.at(-1),
+		2_500,
+		'an open-then-close before join acknowledgement must retain exponential backoff'
+	);
+	h.timers.advance(2_500);
+
+	const stable = h.sockets[2];
+	stable.open();
+	stable.receive({ type: 'joined', chatroom_id: 'room-1' });
+	assert.equal(h.states.at(-1), 'connected');
+	assert.equal(h.readySignals(), 1);
+	stable.fail();
+	assert.equal(
+		h.timers.timeoutDelays.at(-1),
+		1_500,
+		'a proven application connection resets the next retry to the base delay'
+	);
 });
 
 test('online and visible resume bypass backoff; pong permits only one outstanding heartbeat', () => {
@@ -381,8 +420,8 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
-		/reconcileReconnectHistory(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
-		'ChatRoom must paginate reconnect history through the overlap helper'
+		/onOpen: \(socket\) => \{[\s\S]*type: 'join'[\s\S]*\},[\s\S]*onReady: \(socket\) => \{[\s\S]*reconcileReconnectHistory(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
+		'ChatRoom must start reconnect history recovery only after join acknowledgement'
 	);
 	assert.match(
 		chatRoomSource,
