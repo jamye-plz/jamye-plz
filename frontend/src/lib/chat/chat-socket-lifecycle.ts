@@ -57,6 +57,8 @@ interface ReconnectHistoryPage<T extends { id: string }> {
 
 interface ReconnectHistoryOptions<T extends { id: string }> {
 	knownIds: ReadonlySet<string>;
+	/** Initial room entry may deliberately retain only its visible first page. */
+	stopAfterFirstPageWithoutKnownIds?: boolean;
 	fetchPage(cursor?: string): Promise<ReconnectHistoryPage<T>>;
 	applyPage(items: T[]): void;
 	isCurrent(): boolean;
@@ -84,19 +86,24 @@ export async function reconcileReconnectHistory<T extends { id: string }>(
 	options: ReconnectHistoryOptions<T>
 ): Promise<void> {
 	let cursor: string | undefined;
+	const visitedCursors = new Set<string | undefined>();
 
 	while (options.isCurrent()) {
+		if (visitedCursors.has(cursor)) return;
+		visitedCursors.add(cursor);
 		const page = await options.fetchPage(cursor);
 		if (!options.isCurrent()) return;
 		options.applyPage(page.items);
 
+		const hasKnownHistory = options.knownIds.size > 0;
 		const overlapsExistingHistory =
-			options.knownIds.size === 0 || page.items.some((item) => options.knownIds.has(item.id));
+			hasKnownHistory && page.items.some((item) => options.knownIds.has(item.id));
 		if (
+			(!hasKnownHistory && options.stopAfterFirstPageWithoutKnownIds) ||
 			overlapsExistingHistory ||
 			page.items.length === 0 ||
 			page.next_cursor === null ||
-			page.next_cursor === cursor
+			visitedCursors.has(page.next_cursor)
 		) {
 			return;
 		}

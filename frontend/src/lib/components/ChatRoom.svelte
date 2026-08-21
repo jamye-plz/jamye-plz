@@ -168,6 +168,15 @@
 	let connectionState = $state<ChatConnectionState>('connecting');
 	let reconnecting = $state(false);
 	let showManualRetry = $state(false);
+	// Transcript frames that arrived before the message they belong to. The
+	// worker publishes through Redis on its own schedule — it is NOT ordered
+	// with this handler's echo/broadcast — so a fast failure (or a very short
+	// clip) can beat the `message` frame here. Dropping the frame would strand
+	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
+	// media_id lets every message-insertion path claim it. Entries are removed
+	// on match; the map only ever holds this room's still-unmatched frames.
+	const pendingTranscripts = new SvelteMap<string, { status: string; transcript: string | null }>();
+	let activeRoomKey = '';
 	const connected = $derived(connectionState === 'connected' && ws?.readyState === WebSocket.OPEN);
 	const retryAttemptActive = $derived(ws?.readyState === WebSocket.CONNECTING);
 	const manualRetryDisabled = $derived(retryAttemptActive || connectionState === 'disconnected');
@@ -195,6 +204,32 @@
 			bodyOpenRoom = chatroomId;
 			bodyOpen = false;
 		}
+	});
+
+	// This component stays mounted while dynamic topic routes change. Keep this
+	// effect dependent only on the route key: physical socket recovery must
+	// retain local history, while a different room starts with no old state.
+	$effect(() => {
+		const roomKey = `${groupId}:${chatroomId}`;
+		if (!chatroomId || roomKey === activeRoomKey) return;
+		activeRoomKey = roomKey;
+		untrack(() => {
+			messages = [];
+			nextCursor = null;
+			loadingOlder = false;
+			initialReady = false;
+			if (pendingRead !== null) {
+				clearTimeout(pendingRead);
+				pendingRead = null;
+			}
+			lastReadAt = Number.NEGATIVE_INFINITY;
+			ws = null;
+			connectionState = 'connecting';
+			reconnecting = false;
+			showManualRetry = false;
+			pendingTranscripts.clear();
+			historyRecoveryPending = true;
+		});
 	});
 
 	// Keep the header pinned while the on-screen keyboard is open — only the messages +
@@ -435,7 +470,7 @@
 		let recoveryKnownIds: ReadonlySet<string> = new Set();
 		let historyRecovery: ReconnectHistoryRecovery | null = null;
 		let lifecycle: ChatSocketLifecycle;
-		historyRecoveryPending = true;
+		let hasJoinedSocket = false;
 		lifecycle = createChatSocketLifecycle({
 			url: `${protocol}://${window.location.host}/api/ws`,
 			createSocket: (url) => new WebSocket(url),
@@ -459,13 +494,17 @@
 				if (!lifecycle.isCurrent(socket)) return;
 				historyRecoveryPending = true;
 				recoveryKnownIds = new Set(
-					messages.filter((message) => !message.pending).map((message) => message.id)
+					messages
+						.filter((message) => !message.pending && message.chatroom_id === roomId)
+						.map((message) => message.id)
 				);
 				const joinMsg: WsClientMessage = { type: 'join', chatroom_id: roomId };
 				socket.send(JSON.stringify(joinMsg));
 			},
 			onReady: (socket) => {
 				if (!lifecycle.isCurrent(socket)) return;
+				const isInitialRoomJoin = !hasJoinedSocket;
+				hasJoinedSocket = true;
 				// Close the REST/WS gap for every physical socket. Do not refetch the
 				// query: older loaded pages and the reader's scroll position stay local.
 				// The server emits `joined` only after ws_hub subscription, closing the
@@ -473,6 +512,7 @@
 				historyRecovery?.dispose();
 				historyRecovery = createReconnectHistoryRecovery<ChatMessage>({
 					knownIds: recoveryKnownIds,
+					stopAfterFirstPageWithoutKnownIds: isInitialRoomJoin,
 					fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
 					applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
 					isCurrent: () => lifecycle.isCurrent(socket),
@@ -523,6 +563,7 @@
 		return () => {
 			historyRecovery?.dispose();
 			lifecycle.dispose();
+			hasJoinedSocket = false;
 			if (socketLifecycle === lifecycle) {
 				socketLifecycle = null;
 				ws = null;
@@ -548,12 +589,15 @@
 	// anchored to the message the user was reading (no jump).
 	async function loadOlder() {
 		if (loadingOlder || !nextCursor || !chatroomId || !messagesEl) return;
+		const requestRoomId = chatroomId;
+		const requestGroupId = groupId;
 		const cursor = nextCursor;
 		const prevHeight = messagesEl.scrollHeight;
 		const prevTop = messagesEl.scrollTop;
 		loadingOlder = true;
 		try {
-			const olderPage = await listMessages(groupId, chatroomId, cursor);
+			const olderPage = await listMessages(requestGroupId, requestRoomId, cursor);
+			if (chatroomId !== requestRoomId || groupId !== requestGroupId) return;
 			const older = [...olderPage.items].reverse(); // oldest-first
 			const seen = new Set(messages.map((m) => m.id));
 			// Claim buffered transcript frames here too: an older page's REST
@@ -566,12 +610,13 @@
 		} catch {
 			// transient failure — the user can scroll up again to retry
 		} finally {
-			loadingOlder = false;
+			if (chatroomId === requestRoomId && groupId === requestGroupId) loadingOlder = false;
 		}
+		if (chatroomId !== requestRoomId || groupId !== requestGroupId) return;
 		// Measure after the indicator is gone so its height doesn't skew the
 		// anchor; restore the prior reading position now that content prepended.
 		await tick();
-		if (messagesEl) {
+		if (chatroomId === requestRoomId && groupId === requestGroupId && messagesEl) {
 			messagesEl.scrollTop = messagesEl.scrollHeight - prevHeight + prevTop;
 		}
 	}
@@ -638,15 +683,6 @@
 		scrollToBottom();
 		return true;
 	}
-
-	// Transcript frames that arrived before the message they belong to. The
-	// worker publishes through Redis on its own schedule — it is NOT ordered
-	// with this handler's echo/broadcast — so a fast failure (or a very short
-	// clip) can beat the `message` frame here. Dropping the frame would strand
-	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
-	// media_id lets every message-insertion path claim it. Entries are removed
-	// on match; the map only ever holds this room's still-unmatched frames.
-	const pendingTranscripts = new SvelteMap<string, { status: string; transcript: string | null }>();
 
 	function applyBufferedTranscripts(msg: ChatMessage): ChatMessage {
 		if (!msg.media?.length || pendingTranscripts.size === 0) return msg;

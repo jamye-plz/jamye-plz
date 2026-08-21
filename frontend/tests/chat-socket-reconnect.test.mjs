@@ -463,6 +463,57 @@ test('reconnect history paginates backward until it overlaps local history', asy
 	}
 });
 
+test('empty known history on a real reconnect continues across every available page', async () => {
+	const requestedCursors = [];
+	const appliedIds = [];
+	const page = (newest, oldest, next_cursor) => ({
+		items: Array.from({ length: newest - oldest + 1 }, (_, index) => ({
+			id: `m${newest - index}`
+		})),
+		next_cursor
+	});
+
+	await reconcileReconnectHistory({
+		knownIds: new Set(),
+		fetchPage: async (cursor) => {
+			requestedCursors.push(cursor ?? null);
+			return cursor === undefined ? page(120, 71, 'before-m71') : page(70, 21, null);
+		},
+		applyPage: (items) => appliedIds.push(...items.map((item) => item.id)),
+		isCurrent: () => true
+	});
+
+	assert.deepEqual(requestedCursors, [null, 'before-m71']);
+	assert.equal(
+		appliedIds.length,
+		100,
+		'an outage with more than 50 missed messages must recover all pages'
+	);
+	assert.ok(appliedIds.includes('m21'));
+});
+
+test('initial room entry can explicitly stop after its first empty-known page', async () => {
+	const requestedCursors = [];
+	const appliedIds = [];
+
+	await reconcileReconnectHistory({
+		knownIds: new Set(),
+		stopAfterFirstPageWithoutKnownIds: true,
+		fetchPage: async (cursor) => {
+			requestedCursors.push(cursor ?? null);
+			return {
+				items: Array.from({ length: 50 }, (_, index) => ({ id: `m${100 - index}` })),
+				next_cursor: 'before-m51'
+			};
+		},
+		applyPage: (items) => appliedIds.push(...items.map((item) => item.id)),
+		isCurrent: () => true
+	});
+
+	assert.deepEqual(requestedCursors, [null]);
+	assert.equal(appliedIds.length, 50, 'the initial view must not fetch an entire large room');
+});
+
 test('reconnect history recovery retries transient failures on the same current socket and cancels cleanly', async () => {
 	const timers = new FakeTimers();
 	const appliedIds = [];
@@ -566,6 +617,42 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 		chatRoomSource,
 		/onOpen: \(socket\) => \{[\s\S]*type: 'join'[\s\S]*\},[\s\S]*onReady: \(socket\) => \{[\s\S]*createReconnectHistoryRecovery(?:<ChatMessage>)?\(\{[\s\S]*fetchPage:[\s\S]*applyPage:/,
 		'ChatRoom must start reconnect history recovery only after join acknowledgement'
+	);
+	assert.match(
+		chatRoomSource,
+		/let hasJoinedSocket = false;[\s\S]*const isInitialRoomJoin = !hasJoinedSocket;[\s\S]*hasJoinedSocket = true;[\s\S]*stopAfterFirstPageWithoutKnownIds: isInitialRoomJoin[\s\S]*return \(\) => \{[\s\S]*hasJoinedSocket = false/,
+		'only the first joined socket of a room may use the initial empty-history page limit'
+	);
+	const roomResetStart = chatRoomSource.indexOf('let activeRoomKey');
+	const roomSeedStart = chatRoomSource.indexOf('// Seed the room from the latest page');
+	const socketEffectStart = chatRoomSource.indexOf('$effect(() => {\n\t\tif (!chatroomId) return;');
+	const socketEffectEnd = chatRoomSource.indexOf(
+		'\n\t// True when the viewport is at/near the newest message',
+		socketEffectStart
+	);
+	assert.ok(
+		roomResetStart >= 0 && roomResetStart < roomSeedStart,
+		'room-switch reset must be registered before cached query data can seed the new room'
+	);
+	assert.match(
+		chatRoomSource,
+		/let activeRoomKey = ''[\s\S]*const roomKey = `\$\{groupId\}:\$\{chatroomId\}`;[\s\S]*roomKey === activeRoomKey[\s\S]*untrack\(\(\) => \{[\s\S]*messages = \[\];[\s\S]*nextCursor = null;[\s\S]*loadingOlder = false;[\s\S]*initialReady = false;[\s\S]*clearTimeout\(pendingRead\)[\s\S]*lastReadAt = Number\.NEGATIVE_INFINITY;[\s\S]*pendingTranscripts\.clear\(\)[\s\S]*historyRecoveryPending = true/,
+		'only a new room key may reset message, paging, read, transcript, and recovery state'
+	);
+	assert.doesNotMatch(
+		chatRoomSource.slice(socketEffectStart, socketEffectEnd),
+		/pendingRead|lastReadAt|messages = \[\]|nextCursor = null|pendingTranscripts\.clear/,
+		'the socket lifecycle effect must not react to read-throttle or room-reset state'
+	);
+	assert.match(
+		chatRoomSource,
+		/messages\s*\.filter\(\(message\) => !message\.pending && message\.chatroom_id === roomId\)/,
+		'join snapshots must never seed new-room recovery with old-room message ids'
+	);
+	assert.match(
+		chatRoomSource,
+		/const requestRoomId = chatroomId;[\s\S]*await listMessages\(requestGroupId, requestRoomId, cursor\);[\s\S]*if \(chatroomId !== requestRoomId \|\| groupId !== requestGroupId\) return;/,
+		'a stale load-older response must not write into a newly selected room'
 	);
 	assert.match(
 		chatRoomSource,
