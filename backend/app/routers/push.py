@@ -42,6 +42,13 @@ class PushSubscribeBody(BaseModel):
     endpoint: str
     p256dh: str = Field(max_length=128)
     auth: str = Field(max_length=64)
+    # Optional client-asserted user id, set by the frontend's silent recovery
+    # flow. The httpOnly session cookie is shared across tabs, so a client-side
+    # "is this still my session?" check races (session can flip A→B→A mid
+    # flight). The server is the single authority: when present, it must match
+    # the *session's* current_user.id or the request is rejected outright — see
+    # the check in NotificationService.upsert_push_subscription.
+    expected_user_id: str | None = None
 
     @field_validator("endpoint")
     @classmethod
@@ -110,6 +117,7 @@ async def subscribe_push(body: PushSubscribeBody, current_user: CurrentUser, db:
         endpoint=body.endpoint,
         p256dh=body.p256dh,
         auth=body.auth,
+        expected_user_id=body.expected_user_id,
     )
 
 

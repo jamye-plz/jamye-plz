@@ -17,6 +17,10 @@ const pushRecoverySignal = readFileSync(
 	new URL('../src/lib/push-recovery-signal.ts', import.meta.url),
 	'utf8'
 );
+const notificationTypes = readFileSync(
+	new URL('../src/lib/types/notification.types.ts', import.meta.url),
+	'utf8'
+);
 
 function extractRecoverIntendedPush() {
 	const fn = pushApi.match(/async function recoverIntendedPush[\s\S]*?\n}\n/)?.[0];
@@ -69,7 +73,7 @@ test('recovery only READS Notification.permission and never requests it', () => 
 		'recovery must never call requestPermission (no transient activation)'
 	);
 	assert.ok(
-		/await requestAndSubscribe\(public_key\);/.test(fn),
+		/await requestAndSubscribe\(public_key, userId\);/.test(fn),
 		'subscribe must only be reached once permission is confirmed granted'
 	);
 });
@@ -78,9 +82,10 @@ test('denied/default permission removes the marker and skips the subscribe attem
 	const fn = extractRecoverIntendedPush();
 	const permIdx = fn.indexOf("Notification.permission !== 'granted'");
 	const clearIdx = fn.indexOf('clearPushIntent();');
-	const subscribeIdx = fn.indexOf('requestAndSubscribe(public_key)');
+	const subscribeIdx = fn.indexOf('requestAndSubscribe(public_key, userId)');
 	assert.notEqual(permIdx, -1);
 	assert.notEqual(clearIdx, -1);
+	assert.notEqual(subscribeIdx, -1);
 	assert.ok(permIdx < clearIdx, 'clearPushIntent must sit inside the non-granted branch');
 	assert.ok(clearIdx < subscribeIdx, 'clearPushIntent must run before any subscribe path');
 });
@@ -100,7 +105,7 @@ test('recovery failures are fully swallowed inside recoverIntendedPush', () => {
 	const fn = extractRecoverIntendedPush();
 	const tryIdx = fn.indexOf('try {');
 	const fetchIdx = fn.indexOf('await getVapidPublicKey();');
-	const subscribeIdx = fn.indexOf('await requestAndSubscribe(public_key);');
+	const subscribeIdx = fn.indexOf('await requestAndSubscribe(public_key, userId);');
 	const catchIdx = fn.indexOf('} catch {');
 	assert.ok(tryIdx !== -1 && fetchIdx !== -1 && subscribeIdx !== -1 && catchIdx !== -1);
 	assert.ok(tryIdx < fetchIdx, 'key fetch must run inside the try');
@@ -240,7 +245,7 @@ test('recoverIntendedPush re-checks intent right before subscribing (TOCTOU narr
 	const fn = extractRecoverIntendedPush();
 	const emptyKeyIdx = fn.indexOf('if (!public_key) return;');
 	const recheckMatches = [...fn.matchAll(/if \(getPushIntent\(\) !== userId\) return;/g)];
-	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
+	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 
 	assert.notEqual(emptyKeyIdx, -1);
 	assert.notEqual(subIdx, -1);
@@ -257,143 +262,147 @@ test('recoverIntendedPush re-checks intent right before subscribing (TOCTOU narr
 	);
 });
 
-test('teardownRecoveredSub races a server delete against a timeout then unsubscribes', () => {
+// --- Server-side binding (expected_user_id) supersedes client-side getMe() ---
+
+test('PushSubscriptionPayload declares an optional expected_user_id field', () => {
+	assert.ok(
+		/expected_user_id\?: string;/.test(notificationTypes),
+		'the payload type must declare the optional server-side binding field'
+	);
+});
+
+test('requestAndSubscribe accepts an optional expectedUserId and forwards it', () => {
+	assert.ok(
+		pushApi.includes(
+			'export async function requestAndSubscribe(\n' +
+				'\tvapidPublicKey: string,\n' +
+				'\texpectedUserId?: string\n' +
+				'): Promise<PushSubscription | null> {'
+		),
+		'requestAndSubscribe must accept an optional expectedUserId parameter'
+	);
+	assert.ok(
+		/expected_user_id: expectedUserId/.test(pushApi),
+		'the subscribePush payload must forward expectedUserId as expected_user_id'
+	);
+});
+
+test('recoverIntendedPush passes userId as expectedUserId into requestAndSubscribe', () => {
+	const fn = extractRecoverIntendedPush();
+	assert.ok(
+		/const sub = await requestAndSubscribe\(public_key, userId\);/.test(fn),
+		'recovery must bind the subscribe POST to the intended user server-side'
+	);
+});
+
+test('settings toggle path calls requestAndSubscribe without an expectedUserId', () => {
+	const fn = extractOnTogglePush();
+	assert.ok(
+		/await requestAndSubscribe\(vapidPublicKey!\);/.test(fn),
+		'the explicit settings toggle needs no server-side binding (it is already a user gesture)'
+	);
+});
+
+test('push.api.ts no longer imports getMe (server binding supersedes identity check)', () => {
+	assert.doesNotMatch(
+		pushApi,
+		/from '\.\/auth\.api'/,
+		'the getMe-based identity re-check was replaced by expected_user_id server binding'
+	);
+});
+
+// --- teardownRecoveredSub: restored-intent skip ---
+
+test('teardownRecoveredSub takes the intended userId and races a delete against a timeout', () => {
 	const fn = extractTeardownRecoveredSub();
+	assert.ok(
+		/async function teardownRecoveredSub\(sub: PushSubscription, userId: string\)/.test(fn),
+		'teardownRecoveredSub must accept the userId whose intent it re-checks'
+	);
 	const raceIdx = fn.indexOf('await Promise.race([');
 	const serverDeleteIdx = fn.indexOf('unsubscribePush(sub.endpoint).catch(() => {})');
 	const timeoutIdx = fn.indexOf('setTimeout(resolve, 3000)');
-	const browserUnsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
-
 	assert.notEqual(raceIdx, -1);
 	assert.notEqual(serverDeleteIdx, -1);
 	assert.notEqual(timeoutIdx, -1);
-	assert.notEqual(browserUnsubscribeIdx, -1);
 	assert.ok(
-		raceIdx < serverDeleteIdx && serverDeleteIdx < timeoutIdx && timeoutIdx < browserUnsubscribeIdx,
-		'must race the server delete vs a timeout, then unsubscribe locally regardless'
+		raceIdx < serverDeleteIdx && serverDeleteIdx < timeoutIdx,
+		'must race the server delete against a timeout before any local decision'
 	);
 });
 
-test('push.api.ts imports getMe from the sibling auth.api module', () => {
+test('teardownRecoveredSub skips the local unsubscribe when intent was restored', () => {
+	const fn = extractTeardownRecoveredSub();
+	const raceCloseIdx = fn.indexOf(']);');
+	const recheckIdx = fn.indexOf('if (getPushIntent() === userId) return;');
+	const unsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
+
+	assert.notEqual(raceCloseIdx, -1);
+	assert.notEqual(recheckIdx, -1, 'the marker must be re-read after the race, not before it');
+	assert.notEqual(unsubscribeIdx, -1);
 	assert.ok(
-		/import \{ getMe \} from '\.\/auth\.api';/.test(pushApi),
-		'the identity recheck must reuse the existing /me endpoint'
+		raceCloseIdx < recheckIdx && recheckIdx < unsubscribeIdx,
+		'a restored marker must return before the local unsubscribe ever runs'
 	);
 });
 
-test('recoverIntendedPush signals only once subscribe, marker, and identity all confirm', () => {
+// --- post-subscribe marker recheck + pulse ---
+
+test('recoverIntendedPush signals only after subscribe succeeds and the recheck passes', () => {
 	const fn = extractRecoverIntendedPush();
-	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
+	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const markerRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
-	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
-	const identityCheckIdx = fn.indexOf('if (!me || me.id !== userId) {');
+	const recheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(subIdx, -1, 'the subscribe result must be captured');
 	assert.notEqual(notSubIdx, -1, 'a null subscription must bail before signaling');
-	assert.notEqual(markerRecheckIdx, -1, 'the post-await marker recheck must exist');
-	assert.notEqual(meIdx, -1, 'identity must be re-verified with a server round trip');
-	assert.notEqual(identityCheckIdx, -1, 'the identity mismatch branch must exist');
+	assert.notEqual(recheckIdx, -1, 'the post-await marker recheck must exist');
 	assert.notEqual(signalIdx, -1, 'signalPushRecovered must exist');
-
 	assert.ok(
-		subIdx < notSubIdx &&
-			notSubIdx < markerRecheckIdx &&
-			markerRecheckIdx < meIdx &&
-			meIdx < identityCheckIdx &&
-			identityCheckIdx < signalIdx,
-		'subscribe, the marker recheck, then identity must all pass before the pulse fires'
+		subIdx < notSubIdx && notSubIdx < recheckIdx && recheckIdx < signalIdx,
+		'the pulse must fire only after subscribe succeeds and the marker is reconfirmed'
 	);
 });
 
 test('a cross-tab toggle-OFF during requestAndSubscribe tears the subscription back down', () => {
 	const fn = extractRecoverIntendedPush();
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const markerRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
-	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub);', markerRecheckIdx);
-	const returnIdx = fn.indexOf('return;', teardownIdx);
-	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
-
-	assert.notEqual(markerRecheckIdx, -1, 'the post-await marker recheck block must exist');
-	assert.notEqual(teardownIdx, -1, 'a stale marker must reuse the teardown helper');
-	assert.notEqual(returnIdx, -1);
-	assert.notEqual(meIdx, -1);
-
-	assert.ok(
-		markerRecheckIdx < teardownIdx && teardownIdx < returnIdx && returnIdx < meIdx,
-		'a stale marker must tear down and return before the identity check ever runs'
-	);
-});
-
-test('a cross-tab logout/login during requestAndSubscribe tears down via identity mismatch', () => {
-	const fn = extractRecoverIntendedPush();
-	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
-	const mismatchIdx = fn.indexOf('if (!me || me.id !== userId) {', meIdx);
-	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub);', mismatchIdx);
+	const recheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId);', recheckIdx);
 	const returnIdx = fn.indexOf('return;', teardownIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
-	assert.notEqual(meIdx, -1, 'identity must be re-verified via a server round trip');
-	assert.notEqual(mismatchIdx, -1);
-	assert.notEqual(teardownIdx, -1, 'an identity mismatch must reuse the teardown helper');
+	assert.notEqual(recheckIdx, -1, 'the post-await marker recheck block must exist');
+	assert.notEqual(teardownIdx, -1, 'a stale marker must reuse the teardown helper with userId');
 	assert.notEqual(returnIdx, -1);
-
-	assert.ok(
-		meIdx < mismatchIdx &&
-			mismatchIdx < teardownIdx &&
-			teardownIdx < returnIdx &&
-			returnIdx < signalIdx,
-		'a mismatched (or unreachable) identity must tear down and return before the pulse'
-	);
-
-	const mismatchBranch = fn.slice(mismatchIdx, returnIdx + 'return;'.length);
-	assert.doesNotMatch(
-		mismatchBranch,
-		/clearPushIntent/,
-		'the marker records the ORIGINAL user intent and must survive an identity mismatch'
-	);
-});
-
-test('recoverIntendedPush reuses teardownRecoveredSub for all three post-await rechecks', () => {
-	const fn = extractRecoverIntendedPush();
-	const calls = [...fn.matchAll(/await teardownRecoveredSub\(sub\);/g)];
-	assert.equal(calls.length, 3, 'the marker, identity, and final rechecks must reuse the helper');
-	for (const call of calls) {
-		const after = fn.slice(call.index, call.index + 120);
-		assert.match(after, /return;/, 'each teardown call must be followed by a return');
-	}
-});
-
-test('a final synchronous marker recheck sits between identity confirmation and the pulse', () => {
-	const fn = extractRecoverIntendedPush();
-	const meIdx = fn.indexOf('const me = await getMe().catch(() => null);');
-	const identityMismatchIdx = fn.indexOf('if (!me || me.id !== userId) {', meIdx);
-	const finalRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', identityMismatchIdx + 1);
-	const signalIdx = fn.indexOf('signalPushRecovered();');
-
-	assert.notEqual(meIdx, -1);
-	assert.notEqual(identityMismatchIdx, -1);
-	assert.notEqual(finalRecheckIdx, -1, 'a third, post-getMe marker recheck must exist');
 	assert.notEqual(signalIdx, -1);
 	assert.ok(
-		meIdx < identityMismatchIdx &&
-			identityMismatchIdx < finalRecheckIdx &&
-			finalRecheckIdx < signalIdx,
-		'the final recheck must sit after identity confirmation and before the pulse'
+		recheckIdx < teardownIdx && teardownIdx < returnIdx && returnIdx < signalIdx,
+		'a stale marker must tear down and return before ever reaching the pulse'
 	);
+});
 
-	const between = fn.slice(finalRecheckIdx, signalIdx + 'signalPushRecovered();'.length);
+test('the marker recheck runs synchronously right before the pulse, no intervening await', () => {
+	const fn = extractRecoverIntendedPush();
+	const notSubIdx = fn.indexOf('if (!sub) return;');
+	const recheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const signalIdx = fn.indexOf('signalPushRecovered();');
+
+	assert.notEqual(recheckIdx, -1);
+	assert.notEqual(signalIdx, -1);
+
+	const between = fn.slice(recheckIdx, signalIdx + 'signalPushRecovered();'.length);
 	const expected =
 		'if (getPushIntent() !== userId) {\n' +
-		'\t\t\tawait teardownRecoveredSub(sub);\n' +
+		'\t\t\tawait teardownRecoveredSub(sub, userId);\n' +
 		'\t\t\treturn;\n' +
 		'\t\t}\n' +
 		'\t\tsignalPushRecovered();';
 	assert.equal(
 		between,
 		expected,
-		'no await may sit between the final recheck and the pulse on the success path'
+		'nothing (in particular no await) may sit between the recheck and the pulse'
 	);
 });
 
@@ -402,7 +411,7 @@ test('recoverIntendedPush re-checks permission right before subscribing (no re-p
 	const emptyKeyIdx = fn.indexOf('if (!public_key) return;');
 	const firstIntentRecheckIdx = fn.indexOf('if (getPushIntent() !== userId) return;', emptyKeyIdx);
 	const permMatches = [...fn.matchAll(/if \(Notification\.permission !== 'granted'\)/g)];
-	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
+	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 
 	assert.notEqual(emptyKeyIdx, -1);
 	assert.notEqual(firstIntentRecheckIdx, -1);
@@ -442,7 +451,7 @@ test('recoverIntendedPush never pulses on the denied, empty-key, or failure path
 	);
 
 	const emptyKeyIdx = fn.indexOf('if (!public_key) return;');
-	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key);');
+	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 	assert.ok(emptyKeyIdx < subIdx, 'the empty-key return must precede the subscribe attempt');
 
 	const catchBody = fn.slice(fn.indexOf('} catch {'));

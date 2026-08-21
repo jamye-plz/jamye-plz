@@ -1,5 +1,4 @@
 import { apiGet, apiPost, apiDelete } from './client';
-import { getMe } from './auth.api';
 import { clearPushIntent, getPushIntent } from '$lib/push-intent';
 import { signalPushRecovered } from '$lib/push-recovery-signal';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
@@ -82,15 +81,23 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
  * Best-effort rollback for a subscription `recoverIntendedPush` just created
  * but must not keep — same pattern `requestAndSubscribe` uses for its own
  * rollback: race the server delete against a short timeout (never block on a
- * stalled/failed DELETE), then drop the local subscription regardless.
- * Extracted because `recoverIntendedPush` now needs this teardown from two
- * different post-await checks (stale intent, and mismatched identity).
+ * stalled/failed DELETE), then drop the local subscription — UNLESS intent
+ * was restored while we waited. Only reachable from the marker-mismatch
+ * path now (the getMe-based identity check is gone), so an intent-restored
+ * skip can never preserve a DIFFERENT account's subscription.
  */
-async function teardownRecoveredSub(sub: PushSubscription): Promise<void> {
+async function teardownRecoveredSub(sub: PushSubscription, userId: string): Promise<void> {
 	await Promise.race([
 		unsubscribePush(sub.endpoint).catch(() => {}),
 		new Promise<void>((resolve) => setTimeout(resolve, 3000))
 	]);
+	// Re-read after the wait: the user may have toggled push back ON (up to
+	// 3s to restore intent) while the DELETE/timeout race was in flight. If
+	// so, the still-live browser subscription is wanted again — unsubscribing
+	// it now would just force another recovery round trip for something the
+	// user still wants. Any resulting row ambiguity self-heals on the next
+	// app open via the existing reclaim/recovery path.
+	if (getPushIntent() === userId) return;
 	await sub.unsubscribe().catch(() => {});
 }
 
@@ -137,55 +144,33 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 			clearPushIntent();
 			return;
 		}
-		const sub = await requestAndSubscribe(public_key);
+		// Bind the POST to this user server-side: passing userId as
+		// expectedUserId makes the backend reject (403, writes nothing) if the
+		// session cookie belongs to a DIFFERENT account by the time the POST
+		// lands — e.g. a cross-tab logout->login racing this await. That
+		// atomic server-side check supersedes a post-hoc client-side identity
+		// verification: the server alone knows the true session identity at
+		// the moment it would write. A 403 throws and is handled by the
+		// existing rollback+rethrow inside requestAndSubscribe, then swallowed
+		// by this function's own catch below — no extra handling needed here.
+		const sub = await requestAndSubscribe(public_key, userId);
 		if (!sub) return;
-		// Final re-check: another tab may have toggled push off (clearing the
-		// marker) while requestAndSubscribe was in flight. A cross-tab
-		// toggle-OFF must win over recovery, so tear the just-created
-		// subscription back down and skip the signal — no open settings page
-		// should flip ON for a subscription that no longer reflects the
-		// user's intent. Kept first: it's synchronous and free, no need to
-		// pay for a network round trip when the local marker already says no.
+		// Final synchronous re-check: another tab may have toggled push off
+		// (clearing the marker) at any point during the requestAndSubscribe
+		// await. A cross-tab toggle-OFF must win over recovery, so tear the
+		// just-created subscription back down (unless intent was restored in
+		// the meantime — see teardownRecoveredSub) and skip the signal. This
+		// runs in the same synchronous frame as the pulse below, so nothing
+		// can invalidate intent between this check and the pulse itself.
 		if (getPushIntent() !== userId) {
-			await teardownRecoveredSub(sub);
-			return;
-		}
-		// Identity re-check: the httpOnly session cookie is shared across tabs
-		// and this tab's `userId`/marker can't see a cross-tab logout->login
-		// that happened during the requestAndSubscribe await. The POST already
-		// committed under whatever cookie was live at that moment, so the
-		// fresh row belongs to whichever account that was — a stale local
-		// generation counter can't catch this, only a server round trip can.
-		// A mismatch (including a failed/401 getMe, treated the same way) means
-		// the row was created for a DIFFERENT account than this recovery was
-		// started for: tear it down with the same (now-current) cookie. Do NOT
-		// clear the marker here — it still records the ORIGINAL user's intent,
-		// and they recover normally next time they're the active session.
-		const me = await getMe().catch(() => null);
-		if (!me || me.id !== userId) {
-			await teardownRecoveredSub(sub);
-			return;
-		}
-		// Final synchronous recheck: the getMe() await above reopens the same
-		// staleness window — another tab can finish a toggle-OFF (clearing the
-		// marker and unsubscribing) while /me was pending, and /me still
-		// answers for the (still-correct) user, so the identity check alone
-		// can't catch it. Every await in this function must be followed by a
-		// marker recheck; this one runs in the same synchronous frame as the
-		// signal, so nothing can invalidate intent between them — this closes
-		// the recheck chain for good (the earlier pre-getMe recheck stays as a
-		// cheap fast-path that skips the network call when the marker is
-		// already gone). Teardown here is harmless even if the other tab
-		// already unsubscribed: the DELETE 404s into its catch and
-		// sub.unsubscribe() just resolves false.
-		if (getPushIntent() !== userId) {
-			await teardownRecoveredSub(sub);
+			await teardownRecoveredSub(sub, userId);
 			return;
 		}
 		signalPushRecovered();
 	} catch {
-		// Key fetch, subscribe, or registration POST failed — silent, the
-		// marker stays and the next app load retries.
+		// Key fetch, subscribe, or registration POST failed (including a 403
+		// from a mismatched expected_user_id) — silent, the marker stays and
+		// the next app load retries.
 	}
 }
 
@@ -295,9 +280,16 @@ export function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
  * Request push permission and register a subscription with the given VAPID
  * public key (base64url-encoded). Returns the PushSubscription, or null if
  * the browser denies permission or lacks Push API support.
+ *
+ * `expectedUserId` is optional and used only by the silent auto-recovery
+ * path (never the explicit settings toggle): when set, the backend rejects
+ * the POST with 403 (writing nothing) if the session cookie doesn't belong
+ * to that user by the time it lands — an atomic guard against a cross-tab
+ * account change racing this request.
  */
 export async function requestAndSubscribe(
-	vapidPublicKey: string
+	vapidPublicKey: string,
+	expectedUserId?: string
 ): Promise<PushSubscription | null> {
 	// Ask for permission BEFORE any other await. iOS Safari (home-screen PWA)
 	// only honours `requestPermission()` while the tap's transient activation is
@@ -326,7 +318,8 @@ export async function requestAndSubscribe(
 		await subscribePush({
 			endpoint: sub.endpoint,
 			p256dh: keys.p256dh,
-			auth: keys.auth
+			auth: keys.auth,
+			expected_user_id: expectedUserId
 		});
 	} catch (err) {
 		// Registration failed (rejected, or the server committed but the response
