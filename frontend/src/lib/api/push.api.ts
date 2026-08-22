@@ -4,6 +4,18 @@ import { signalPushRecovered } from '$lib/push-recovery-signal';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
 
 /**
+ * Bumped once by `detachPushOnLogout` (module-local, same-tab only). Recovery
+ * must not complete across a logout that began after it started: a logout
+ * mid-recovery can run detachPushOnLogout while no subscription exists yet
+ * (it detaches nothing), then recovery creates one afterwards — leaving a
+ * live subscription + server row on a device the user just signed out of.
+ * The counter makes "a logout happened meanwhile" observable to an in-flight
+ * recovery without any storage or cross-module wiring — recovery just
+ * snapshots it on entry and compares on its way out.
+ */
+let logoutGeneration = 0;
+
+/**
  * No service worker is registered, so there is nothing to subscribe against.
  * Signals a broken/absent SW — NOT a denied notification permission.
  */
@@ -86,7 +98,11 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
  * path now (the getMe-based identity check is gone), so an intent-restored
  * skip can never preserve a DIFFERENT account's subscription.
  */
-async function teardownRecoveredSub(sub: PushSubscription, userId: string): Promise<void> {
+async function teardownRecoveredSub(
+	sub: PushSubscription,
+	userId: string,
+	startGen: number
+): Promise<void> {
 	await Promise.race([
 		unsubscribePush(sub.endpoint).catch(() => {}),
 		new Promise<void>((resolve) => setTimeout(resolve, 3000))
@@ -95,8 +111,7 @@ async function teardownRecoveredSub(sub: PushSubscription, userId: string): Prom
 	// 3s to restore intent) while the DELETE/timeout race was in flight. Our
 	// own (bounded) DELETE above may have raced past that toggle-ON's POST
 	// and removed the row it just registered — leaving a live browser
-	// subscription with NO server row until the next app load. Re-POST the
-	// same subscription (an idempotent upsert, bound to this user) to
+	// subscription with NO server row until the next app load. Re-POST to
 	// restore it, instead of just skipping the unsubscribe. Residual: if the
 	// DELETE exceeds the 3s bound and lands AFTER this re-POST, the row is
 	// gone again — accepted, it self-heals on the next app open via the
@@ -105,18 +120,43 @@ async function teardownRecoveredSub(sub: PushSubscription, userId: string): Prom
 	// doesn't complete a recovery — the toggle path already owns the UI.
 	// Opt-out still takes precedence even here: if the user toggled OFF
 	// again (writing the separate opt-out key) within this same window,
-	// that decision must win over restoring a subscription for them.
-	if (getPushIntent() === userId && !hasExplicitPushOptOut(userId)) {
-		const raw = sub.toJSON();
-		const keys = raw.keys as { p256dh: string; auth: string };
-		await subscribePush({
-			endpoint: sub.endpoint,
-			p256dh: keys.p256dh,
-			auth: keys.auth,
-			expected_user_id: userId
-		}).catch(() => {});
+	// that decision must win over restoring a subscription for them. A
+	// logout that started during our wait must win too (startGen mismatch):
+	// restoring a subscription after the user signed out would defeat the
+	// very teardown detachPushOnLogout just ran.
+	if (
+		getPushIntent() === userId &&
+		!hasExplicitPushOptOut(userId) &&
+		startGen === logoutGeneration
+	) {
+		// Re-read the LIVE subscription rather than trusting the captured
+		// `sub`: the toggle-OFF that wrote the opt-out unsubscribes BEFORE
+		// writing the marker, so by the time we get here `sub` may already be
+		// dead. Only re-POST when the SAME still-live endpoint is what we
+		// just (maybe) deleted — that is the one case our DELETE could have
+		// wrongly stripped. A null/different-endpoint result means a fresh
+		// subscription already exists, owned by whichever toggle-ON created
+		// it, and our bounded DELETE only ever targeted the OLD endpoint, so
+		// it cannot have touched that new row — re-POSTing the dead captured
+		// endpoint here would just plant a stale row that can evict a
+		// legitimate device at the per-user subscription cap.
+		const reg = await getActiveRegistration();
+		const current = reg ? await reg.pushManager.getSubscription() : null;
+		if (current && current.endpoint === sub.endpoint) {
+			const raw = current.toJSON();
+			const keys = raw.keys as { p256dh: string; auth: string };
+			await subscribePush({
+				endpoint: current.endpoint,
+				p256dh: keys.p256dh,
+				auth: keys.auth,
+				expected_user_id: userId
+			}).catch(() => {});
+		}
 		return;
 	}
+	// Best-effort: the server DELETE above may 401 against an already-dead
+	// (logged-out) session — that's fine, the local unsubscribe below is
+	// what actually removes the exposure on this device.
 	await sub.unsubscribe().catch(() => {});
 }
 
@@ -131,6 +171,11 @@ async function teardownRecoveredSub(sub: PushSubscription, userId: string): Prom
  * so the next authenticated app load simply retries.
  */
 async function recoverIntendedPush(userId: string): Promise<void> {
+	// Snapshot the logout generation before anything else: if a logout
+	// starts anywhere later in this function's lifetime (detachPushOnLogout
+	// bumps it), this recovery must not complete after that point even
+	// though it began before it.
+	const startGen = logoutGeneration;
 	// Opt-out lives on its own key precisely so no non-gesture path (this
 	// one included) can ever overwrite it — reads give it precedence over
 	// the intent key, hence the OR here rather than relying on intent alone.
@@ -186,8 +231,21 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 		// runs in the same synchronous frame as the pulse below, so nothing
 		// can invalidate intent between this check and the pulse itself. The
 		// opt-out check is read-precedence, matching the entry gate above.
-		if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {
-			await teardownRecoveredSub(sub, userId);
+		// The generation check catches SAME-TAB logout: a bump means
+		// detachPushOnLogout already ran and missed this not-yet-created
+		// subscription, so tear it down here instead (the server DELETE may
+		// 401 against the now-dead session — best-effort as always; the local
+		// unsubscribe is what actually removes the exposure). A CROSS-tab
+		// logout (cookie flips mid-flight, no generation bump on this tab)
+		// stays in the previously documented accepted class: the POST's own
+		// expected_user_id binding rejects it, or a stray row self-heals via
+		// reclaim on the next app open.
+		if (
+			getPushIntent() !== userId ||
+			hasExplicitPushOptOut(userId) ||
+			startGen !== logoutGeneration
+		) {
+			await teardownRecoveredSub(sub, userId, startGen);
 			return;
 		}
 		signalPushRecovered();
@@ -256,6 +314,9 @@ export async function reclaimPushForCurrentUser(userId: string): Promise<void> {
  * and never hangs when no SW is registered.
  */
 export async function detachPushOnLogout(): Promise<void> {
+	// First statement, unconditional: any in-flight recovery must see this
+	// logout regardless of which branch below runs (or whether it hangs).
+	logoutGeneration++;
 	try {
 		const reg = await getActiveRegistration();
 		if (!reg) return;

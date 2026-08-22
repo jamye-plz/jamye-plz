@@ -58,17 +58,32 @@ test('reclaimPushForCurrentUser takes the current user id', () => {
 	);
 });
 
-test('recovery entry gate rejects a mismatched marker OR an explicit opt-out', () => {
+test('recovery captures the logout generation as its first statement', () => {
 	const fn = extractRecoverIntendedPush();
 	assert.ok(
 		fn.startsWith(
 			'async function recoverIntendedPush(userId: string): Promise<void> {\n' +
-				'\t// Opt-out lives on its own key precisely so no non-gesture path (this\n' +
-				'\t// one included) can ever overwrite it — reads give it precedence over\n' +
-				'\t// the intent key, hence the OR here rather than relying on intent alone.\n' +
-				'\tif (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;'
+				'\t// Snapshot the logout generation before anything else: if a logout\n' +
+				"\t// starts anywhere later in this function's lifetime (detachPushOnLogout\n" +
+				'\t// bumps it), this recovery must not complete after that point even\n' +
+				'\t// though it began before it.\n' +
+				'\tconst startGen = logoutGeneration;'
 		),
-		'the entry gate must reject on a mismatched marker OR an explicit opt-out'
+		'startGen must be captured before any other statement, including the entry gate'
+	);
+});
+
+test('recovery entry gate rejects a mismatched marker OR an explicit opt-out', () => {
+	const fn = extractRecoverIntendedPush();
+	const startGenIdx = fn.indexOf('const startGen = logoutGeneration;');
+	const entryGateIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;'
+	);
+	assert.notEqual(startGenIdx, -1);
+	assert.notEqual(entryGateIdx, -1);
+	assert.ok(
+		startGenIdx < entryGateIdx,
+		'startGen must be captured before the entry gate can short-circuit'
 	);
 });
 
@@ -267,37 +282,43 @@ test('the pre-subscribe recheck stays intent-only (unaffected by the opt-out fix
 	);
 });
 
-test('the final post-await recheck also gates on the compound opt-out condition', () => {
+test('the final post-await recheck also gates on opt-out AND the logout generation', () => {
 	const fn = extractRecoverIntendedPush();
 	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 	const notSubIdx = fn.indexOf('if (!sub) return;', subIdx);
-	const recheckIdx = fn.indexOf(
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
-		notSubIdx
-	);
-	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId);', recheckIdx);
+	const recheckIdx = fn.indexOf('if (\n\t\t\tgetPushIntent() !== userId ||', notSubIdx);
+	const optOutIdx = fn.indexOf('hasExplicitPushOptOut(userId) ||', recheckIdx);
+	const genIdx = fn.indexOf('startGen !== logoutGeneration', optOutIdx);
+	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId, startGen);', genIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(subIdx, -1);
 	assert.notEqual(notSubIdx, -1);
-	assert.notEqual(recheckIdx, -1, 'the final recheck must use the same compound gate as entry');
-	assert.notEqual(teardownIdx, -1);
+	assert.notEqual(recheckIdx, -1, 'the final recheck must start with the same condition as entry');
+	assert.notEqual(optOutIdx, -1, 'the opt-out term must be part of the final recheck');
+	assert.notEqual(genIdx, -1, 'the logout-generation term must be part of the final recheck');
+	assert.notEqual(teardownIdx, -1, 'teardown must be called with the captured startGen');
 	assert.notEqual(signalIdx, -1);
 	assert.ok(
 		subIdx < notSubIdx &&
 			notSubIdx < recheckIdx &&
-			recheckIdx < teardownIdx &&
+			recheckIdx < optOutIdx &&
+			optOutIdx < genIdx &&
+			genIdx < teardownIdx &&
 			teardownIdx < signalIdx,
-		'subscribe -> !sub bail -> compound recheck+teardown -> pulse, in that order'
+		'subscribe -> !sub bail -> compound (marker/opt-out/generation) recheck+teardown -> pulse'
 	);
 });
 
-test('teardownRecoveredSub restores intent only when NOT also opted out', () => {
+test('teardownRecoveredSub restores intent only when not opted out AND same generation', () => {
 	const fn = extractTeardownRecoveredSub();
-	assert.ok(
-		/if \(getPushIntent\(\) === userId && !hasExplicitPushOptOut\(userId\)\) \{/.test(fn),
-		'the restored-intent re-POST branch must also require the absence of an opt-out'
-	);
+	const condIdx = fn.indexOf('if (\n\t\tgetPushIntent() === userId &&');
+	const optOutIdx = fn.indexOf('!hasExplicitPushOptOut(userId) &&', condIdx);
+	const genIdx = fn.indexOf('startGen === logoutGeneration', optOutIdx);
+	assert.notEqual(condIdx, -1, 'the restored-intent branch must exist');
+	assert.notEqual(optOutIdx, -1, 'restore must require the absence of an opt-out');
+	assert.notEqual(genIdx, -1, 'restore must require the SAME logout generation as when started');
+	assert.ok(condIdx < optOutIdx && optOutIdx < genIdx, 'all three terms must gate the same branch');
 });
 
 test('hasExplicitPushOptOut is imported by push.api.ts and used at all three gates', () => {
@@ -310,6 +331,26 @@ test('hasExplicitPushOptOut is imported by push.api.ts and used at all three gat
 		calls.length,
 		3,
 		'entry gate, final recheck, and teardown restore must all consult the opt-out key'
+	);
+});
+
+test('logoutGeneration is a module-local counter bumped first by detachPushOnLogout', () => {
+	assert.ok(
+		/^let logoutGeneration = 0;$/m.test(pushApi),
+		'logoutGeneration must be a plain module-level mutable counter'
+	);
+	const detachFn = pushApi.match(
+		/export async function detachPushOnLogout\(\): Promise<void> \{[\s\S]*?\n}\n/
+	)?.[0];
+	assert.ok(detachFn, 'detachPushOnLogout must exist');
+	assert.ok(
+		detachFn.startsWith(
+			'export async function detachPushOnLogout(): Promise<void> {\n' +
+				'\t// First statement, unconditional: any in-flight recovery must see this\n' +
+				'\t// logout regardless of which branch below runs (or whether it hangs).\n' +
+				'\tlogoutGeneration++;'
+		),
+		'logoutGeneration must be incremented as the unconditional first statement'
 	);
 });
 
@@ -377,12 +418,22 @@ test('push.api.ts no longer imports getMe (server binding supersedes identity ch
 
 // --- teardownRecoveredSub: restored-intent re-POST ---
 
-test('teardownRecoveredSub takes the intended userId and races a delete against a timeout', () => {
+test('teardownRecoveredSub takes sub, userId, and the captured startGen', () => {
 	const fn = extractTeardownRecoveredSub();
 	assert.ok(
-		/async function teardownRecoveredSub\(sub: PushSubscription, userId: string\)/.test(fn),
-		'teardownRecoveredSub must accept the userId whose intent it re-checks'
+		fn.startsWith(
+			'async function teardownRecoveredSub(\n' +
+				'\tsub: PushSubscription,\n' +
+				'\tuserId: string,\n' +
+				'\tstartGen: number\n' +
+				'): Promise<void> {'
+		),
+		'teardownRecoveredSub must accept the userId and the logout generation to re-check'
 	);
+});
+
+test('teardownRecoveredSub races a delete against a timeout before any local decision', () => {
+	const fn = extractTeardownRecoveredSub();
 	const raceIdx = fn.indexOf('await Promise.race([');
 	const serverDeleteIdx = fn.indexOf('unsubscribePush(sub.endpoint).catch(() => {})');
 	const timeoutIdx = fn.indexOf('setTimeout(resolve, 3000)');
@@ -395,41 +446,90 @@ test('teardownRecoveredSub takes the intended userId and races a delete against 
 	);
 });
 
-test('teardownRecoveredSub re-POSTs when intent was restored and not opted out', () => {
+test('teardownRecoveredSub re-reads the live subscription before restoring', () => {
 	const fn = extractTeardownRecoveredSub();
 	const raceCloseIdx = fn.indexOf(']);');
-	const recheckIdx = fn.indexOf(
-		'if (getPushIntent() === userId && !hasExplicitPushOptOut(userId)) {'
+	const condIdx = fn.indexOf('if (\n\t\tgetPushIntent() === userId &&', raceCloseIdx);
+	const regIdx = fn.indexOf('const reg = await getActiveRegistration();', condIdx);
+	const currentIdx = fn.indexOf(
+		'const current = reg ? await reg.pushManager.getSubscription() : null;',
+		regIdx
 	);
-	const rePostIdx = fn.indexOf('await subscribePush({', recheckIdx);
-	const expectedUserIdIdx = fn.indexOf('expected_user_id: userId', rePostIdx);
-	const catchIdx = fn.indexOf('}).catch(() => {});', expectedUserIdIdx);
-	const returnIdx = fn.indexOf('return;', catchIdx);
-	const unsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
+	const endpointCheckIdx = fn.indexOf(
+		'if (current && current.endpoint === sub.endpoint) {',
+		currentIdx
+	);
 
 	assert.notEqual(raceCloseIdx, -1);
-	assert.notEqual(recheckIdx, -1, 'the marker must be re-read (with opt-out) after the race');
-	assert.notEqual(rePostIdx, -1, 'a restored, non-opted-out marker must re-POST, not just skip');
+	assert.notEqual(condIdx, -1, 'the restored-intent branch must exist');
+	assert.notEqual(regIdx, -1, 'restore must re-fetch the active registration');
+	assert.notEqual(currentIdx, -1, 'restore must re-read the LIVE subscription, not trust `sub`');
+	assert.notEqual(endpointCheckIdx, -1, 'restore must only proceed on a matching live endpoint');
+	assert.ok(
+		raceCloseIdx < condIdx &&
+			condIdx < regIdx &&
+			regIdx < currentIdx &&
+			currentIdx < endpointCheckIdx,
+		'the live re-read must happen inside the restored-intent branch, before any re-POST'
+	);
+});
+
+test('teardownRecoveredSub re-POSTs using the CURRENT subscription, only on endpoint match', () => {
+	const fn = extractTeardownRecoveredSub();
+	const endpointCheckIdx = fn.indexOf('if (current && current.endpoint === sub.endpoint) {');
+	const rawIdx = fn.indexOf('const raw = current.toJSON();', endpointCheckIdx);
+	const rePostIdx = fn.indexOf('await subscribePush({', rawIdx);
+	const endpointFieldIdx = fn.indexOf('endpoint: current.endpoint,', rePostIdx);
+	const expectedUserIdIdx = fn.indexOf('expected_user_id: userId', endpointFieldIdx);
+	const catchIdx = fn.indexOf('}).catch(() => {});', expectedUserIdIdx);
+	const closingIfIdx = fn.indexOf('\n\t\t}\n\t\treturn;', catchIdx);
+	const unsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
+
+	assert.notEqual(endpointCheckIdx, -1);
+	assert.notEqual(rawIdx, -1, 're-POST must read coords off the CURRENT subscription, not `sub`');
+	assert.notEqual(rePostIdx, -1);
+	assert.notEqual(endpointFieldIdx, -1, 're-POST must send the CURRENT endpoint');
 	assert.notEqual(expectedUserIdIdx, -1, 're-POST must stay bound to the intended user');
 	assert.notEqual(catchIdx, -1, 're-POST must be best-effort (swallowed failure)');
-	assert.notEqual(returnIdx, -1);
+	assert.notEqual(closingIfIdx, -1, 'the if-block must close, then return either way');
 	assert.notEqual(unsubscribeIdx, -1);
 
 	assert.ok(
-		raceCloseIdx < recheckIdx &&
-			recheckIdx < rePostIdx &&
-			rePostIdx < expectedUserIdIdx &&
+		endpointCheckIdx < rawIdx &&
+			rawIdx < rePostIdx &&
+			rePostIdx < endpointFieldIdx &&
+			endpointFieldIdx < expectedUserIdIdx &&
 			expectedUserIdIdx < catchIdx &&
-			catchIdx < returnIdx &&
-			returnIdx < unsubscribeIdx,
-		're-POST must run and return before the (skipped, restored-intent) local unsubscribe'
+			catchIdx < closingIfIdx &&
+			closingIfIdx < unsubscribeIdx,
+		're-POST (bound to the current endpoint) must run, then return, before the fallback unsubscribe'
 	);
 
-	const restoredBranch = fn.slice(recheckIdx, returnIdx + 'return;'.length);
+	const restoredBranch = fn.slice(
+		endpointCheckIdx,
+		closingIfIdx + '\n\t\t}\n\t\treturn;'.length
+	);
 	assert.doesNotMatch(
 		restoredBranch,
 		/signalPushRecovered/,
 		'restoring the fresh toggle-ON subscription is not a recovery — no pulse here'
+	);
+});
+
+test('a null or mismatched current subscription re-POSTs nothing (return is unconditional)', () => {
+	const fn = extractTeardownRecoveredSub();
+	// The `return;` after the endpoint-match if-block sits OUTSIDE that
+	// block, at the same indent as the `if`, so it always runs whether or
+	// not the match (and re-POST) happened — a null/different-endpoint
+	// `current` simply skips straight to this unconditional return, doing
+	// nothing (no re-POST, and no fallback unsubscribe of the dead `sub`
+	// either, since that only runs when the OUTER condition fails entirely).
+	assert.ok(
+		fn.includes(
+			'\t\tif (current && current.endpoint === sub.endpoint) {\n' +
+				'\t\t\tconst raw = current.toJSON();'
+		) && fn.includes('\t\t}\n\t\treturn;\n\t}\n'),
+		'the endpoint-match if must be followed by an unconditional return outside its own braces'
 	);
 });
 
@@ -439,10 +539,7 @@ test('recoverIntendedPush signals only after subscribe succeeds and the recheck 
 	const fn = extractRecoverIntendedPush();
 	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.indexOf(
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
-		notSubIdx
-	);
+	const recheckIdx = fn.indexOf('if (\n\t\t\tgetPushIntent() !== userId ||', notSubIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(subIdx, -1, 'the subscribe result must be captured');
@@ -455,34 +552,28 @@ test('recoverIntendedPush signals only after subscribe succeeds and the recheck 
 	);
 });
 
-test('a cross-tab toggle-OFF/opt-out during requestAndSubscribe tears the sub back down', () => {
+test('a toggle-OFF, opt-out, or logout mid-requestAndSubscribe tears the sub back down', () => {
 	const fn = extractRecoverIntendedPush();
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.indexOf(
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
-		notSubIdx
-	);
-	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId);', recheckIdx);
+	const recheckIdx = fn.indexOf('if (\n\t\t\tgetPushIntent() !== userId ||', notSubIdx);
+	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId, startGen);', recheckIdx);
 	const returnIdx = fn.indexOf('return;', teardownIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(recheckIdx, -1, 'the post-await compound marker recheck block must exist');
-	assert.notEqual(teardownIdx, -1, 'a stale marker or opt-out must reuse the teardown helper');
+	assert.notEqual(teardownIdx, -1, 'a stale marker, opt-out, or logout must reuse the teardown');
 	assert.notEqual(returnIdx, -1);
 	assert.notEqual(signalIdx, -1);
 	assert.ok(
 		recheckIdx < teardownIdx && teardownIdx < returnIdx && returnIdx < signalIdx,
-		'a stale marker or opt-out must tear down and return before ever reaching the pulse'
+		'a stale marker, opt-out, or logout must tear down and return before ever reaching the pulse'
 	);
 });
 
 test('the marker recheck runs synchronously right before the pulse, no intervening await', () => {
 	const fn = extractRecoverIntendedPush();
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.indexOf(
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
-		notSubIdx
-	);
+	const recheckIdx = fn.indexOf('if (\n\t\t\tgetPushIntent() !== userId ||', notSubIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(recheckIdx, -1);
@@ -490,8 +581,12 @@ test('the marker recheck runs synchronously right before the pulse, no interveni
 
 	const between = fn.slice(recheckIdx, signalIdx + 'signalPushRecovered();'.length);
 	const expected =
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {\n' +
-		'\t\t\tawait teardownRecoveredSub(sub, userId);\n' +
+		'if (\n' +
+		'\t\t\tgetPushIntent() !== userId ||\n' +
+		'\t\t\thasExplicitPushOptOut(userId) ||\n' +
+		'\t\t\tstartGen !== logoutGeneration\n' +
+		'\t\t) {\n' +
+		'\t\t\tawait teardownRecoveredSub(sub, userId, startGen);\n' +
 		'\t\t\treturn;\n' +
 		'\t\t}\n' +
 		'\t\tsignalPushRecovered();';
