@@ -156,3 +156,53 @@ export function bumpLogoutGeneration(): void {
 		// Safari private mode / storage disabled — nothing we can do.
 	}
 }
+
+/**
+ * Marks the span from logout cleanup start until the auth transition (the
+ * `/auth/logout` round trip) completes. The logout generation alone only
+ * catches a logout that STARTS during an in-flight recovery; it misses the
+ * reverse ordering: detachPushOnLogout can bump the generation, find no
+ * subscription yet, and return, and only THEN does a recovery start
+ * elsewhere (a queued reclaim, a sw-ready pulse) — that recovery snapshots
+ * the ALREADY-bumped generation as its own baseline, so every downstream
+ * generation check passes even though a logout is still in progress. This
+ * flag closes that gap. Timestamp-based (not a plain boolean) so a logout
+ * tab that dies mid-flow (crash, tab close) can never wedge recovery
+ * forever — the marker self-expires. 30s comfortably covers the
+ * `/auth/logout` round trip.
+ */
+export const PUSH_LOGOUT_PENDING_KEY = 'jamye:push-logout-pending';
+
+/** Mark a logout as in progress, timestamped so the marker self-expires. */
+export function markLogoutPending(): void {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(PUSH_LOGOUT_PENDING_KEY, String(Date.now()));
+	} catch {
+		// Safari private mode / storage disabled — nothing we can do.
+	}
+}
+
+/** Clear the logout-in-progress marker. Best-effort. */
+export function clearLogoutPending(): void {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.removeItem(PUSH_LOGOUT_PENDING_KEY);
+	} catch {
+		// Safari private mode / storage disabled — nothing we can do.
+	}
+}
+
+/** Whether a logout was marked in progress within the last `maxAgeMs`. */
+export function isLogoutPending(maxAgeMs = 30_000): boolean {
+	if (typeof localStorage === 'undefined') return false;
+	try {
+		const raw = localStorage.getItem(PUSH_LOGOUT_PENDING_KEY);
+		if (!raw) return false;
+		const ts = Number(raw);
+		if (!Number.isFinite(ts)) return false;
+		return Date.now() - ts < maxAgeMs;
+	} catch {
+		return false;
+	}
+}

@@ -4,6 +4,8 @@ import {
 	clearPushIntent,
 	getPushIntent,
 	hasExplicitPushOptOut,
+	isLogoutPending,
+	markLogoutPending,
 	readLogoutGeneration
 } from '$lib/push-intent';
 import { signalPushRecovered } from '$lib/push-recovery-signal';
@@ -203,7 +205,15 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 	// Opt-out lives on its own key precisely so no non-gesture path (this
 	// one included) can ever overwrite it — reads give it precedence over
 	// the intent key, hence the OR here rather than relying on intent alone.
-	if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;
+	// isLogoutPending() closes the ordering the generation checks below
+	// cannot: a recovery STARTING inside an in-progress logout would
+	// snapshot the ALREADY-bumped generation as its own baseline and sail
+	// through every downstream generation comparison. Recoveries that
+	// started BEFORE the logout are the forward ordering those generation
+	// checks already catch; this gate catches the reverse one. Not cleared
+	// here — it's a transient condition, and skipping leaves the intent
+	// marker intact so the next app load simply retries.
+	if (getPushIntent() !== userId || hasExplicitPushOptOut(userId) || isLogoutPending()) return;
 	// `window` guard first: this module is imported by push.api.ts consumers
 	// that may run in non-browser contexts (SSR, tests) where `window` itself
 	// is undefined — checking `'Notification' in window` there would throw.
@@ -347,7 +357,12 @@ export async function detachPushOnLogout(): Promise<void> {
 	// storage BEFORE reading the subscription below (not after) is what
 	// closes the cross-tab race: recovery in another tab rechecks storage
 	// AFTER creating its subscription, so this ordering guarantees one side
-	// or the other observes the change.
+	// or the other observes the change. markLogoutPending goes first of all:
+	// it covers the REVERSE ordering the generation bump alone cannot — a
+	// recovery that starts AFTER this function already returned (having
+	// found no subscription) would otherwise snapshot the post-bump
+	// generation as its own baseline and sail through every check below.
+	markLogoutPending();
 	logoutGeneration++;
 	bumpLogoutGeneration();
 	try {

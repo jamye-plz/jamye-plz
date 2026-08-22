@@ -4,12 +4,16 @@ import test from 'node:test';
 import {
 	PUSH_INTENT_KEY,
 	PUSH_LOGOUT_GEN_KEY,
+	PUSH_LOGOUT_PENDING_KEY,
 	PUSH_OPTOUT_KEY,
 	backfillPushIntent,
 	bumpLogoutGeneration,
+	clearLogoutPending,
 	clearPushIntent,
 	getPushIntent,
 	hasExplicitPushOptOut,
+	isLogoutPending,
+	markLogoutPending,
 	readLogoutGeneration,
 	setPushIntent,
 	setPushIntentOff
@@ -142,7 +146,7 @@ test('hasExplicitPushOptOut is false for a missing marker, another user, or an O
 	}
 });
 
-test('setPushIntent clears its OWN prior opt-out but never another user\'s', () => {
+test("setPushIntent clears its OWN prior opt-out but never another user's", () => {
 	globalThis.localStorage = createMemoryStorage();
 	try {
 		setPushIntentOff('user-123');
@@ -160,7 +164,7 @@ test('setPushIntent clears its OWN prior opt-out but never another user\'s', () 
 	}
 });
 
-test('setPushIntent for one user never touches a different user\'s opt-out record', () => {
+test("setPushIntent for one user never touches a different user's opt-out record", () => {
 	globalThis.localStorage = createMemoryStorage();
 	try {
 		setPushIntentOff('user-456');
@@ -265,6 +269,76 @@ test('logout generation accessors are safe without usable storage', () => {
 	try {
 		assert.equal(readLogoutGeneration(), '0');
 		assert.doesNotThrow(() => bumpLogoutGeneration());
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('markLogoutPending/isLogoutPending round-trip: a fresh mark reads as pending', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		assert.equal(isLogoutPending(), false, 'starts empty');
+		markLogoutPending();
+		assert.equal(isLogoutPending(), true, 'a just-written mark must read as pending');
+		assert.ok(
+			/^\d+$/.test(localStorage.getItem(PUSH_LOGOUT_PENDING_KEY)),
+			'the stored value must be a numeric timestamp'
+		);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('isLogoutPending expires an old timestamp', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		const old = Date.now() - 60_000;
+		localStorage.setItem(PUSH_LOGOUT_PENDING_KEY, String(old));
+		assert.equal(isLogoutPending(), false, 'a 60s-old mark must have expired past the 30s default');
+		assert.equal(
+			isLogoutPending(120_000),
+			true,
+			'a wider maxAgeMs must still see the same timestamp as pending'
+		);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('isLogoutPending is false for missing or garbage values, and never throws', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		assert.equal(isLogoutPending(), false, 'no marker at all');
+		localStorage.setItem(PUSH_LOGOUT_PENDING_KEY, 'not-a-number');
+		assert.doesNotThrow(() => isLogoutPending());
+		assert.equal(isLogoutPending(), false, 'garbage must not be treated as pending');
+	} finally {
+		delete globalThis.localStorage;
+	}
+
+	delete globalThis.localStorage;
+	assert.equal(isLogoutPending(), false, 'no storage at all');
+	assert.doesNotThrow(() => markLogoutPending());
+	assert.doesNotThrow(() => clearLogoutPending());
+
+	globalThis.localStorage = createThrowingStorage();
+	try {
+		assert.equal(isLogoutPending(), false, 'a throwing storage falls back to false');
+		assert.doesNotThrow(() => markLogoutPending());
+		assert.doesNotThrow(() => clearLogoutPending());
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('clearLogoutPending removes the marker', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		markLogoutPending();
+		assert.equal(isLogoutPending(), true, 'precondition: marked pending');
+		clearLogoutPending();
+		assert.equal(isLogoutPending(), false, 'cleared marker must no longer read as pending');
+		assert.equal(localStorage.getItem(PUSH_LOGOUT_PENDING_KEY), null);
 	} finally {
 		delete globalThis.localStorage;
 	}

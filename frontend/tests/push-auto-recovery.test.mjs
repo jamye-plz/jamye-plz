@@ -73,14 +73,14 @@ test('recovery captures the logout generation as its first statement', () => {
 	);
 });
 
-test('recovery entry gate rejects a mismatched marker OR an explicit opt-out', () => {
+test('recovery entry gate rejects a mismatched marker, opt-out, OR pending logout', () => {
 	const fn = extractRecoverIntendedPush();
 	const startGenIdx = fn.indexOf('const startGen = logoutGeneration;');
 	const entryGateIdx = fn.indexOf(
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;'
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId) || isLogoutPending()) return;'
 	);
 	assert.notEqual(startGenIdx, -1);
-	assert.notEqual(entryGateIdx, -1);
+	assert.notEqual(entryGateIdx, -1, 'the entry gate must also consult isLogoutPending()');
 	assert.ok(
 		startGenIdx < entryGateIdx,
 		'startGen must be captured before the entry gate can short-circuit'
@@ -92,10 +92,14 @@ test('recovery also snapshots the storage-backed generation, right after startGe
 	const startGenIdx = fn.indexOf('const startGen = logoutGeneration;');
 	const startStoredGenIdx = fn.indexOf('const startStoredGen = readLogoutGeneration();');
 	const entryGateIdx = fn.indexOf(
-		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;'
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId) || isLogoutPending()) return;'
 	);
 	assert.notEqual(startGenIdx, -1);
-	assert.notEqual(startStoredGenIdx, -1, 'the cross-tab storage generation must also be snapshotted');
+	assert.notEqual(
+		startStoredGenIdx,
+		-1,
+		'the cross-tab storage generation must also be snapshotted'
+	);
 	assert.notEqual(entryGateIdx, -1);
 	assert.ok(
 		startGenIdx < startStoredGenIdx && startStoredGenIdx < entryGateIdx,
@@ -282,7 +286,7 @@ test('settings onMount backfill uses backfillPushIntent, never setPushIntent', (
 	const elseIdx = settingsPage.indexOf('} else {', onTogglePushIdx);
 	assert.ok(
 		onTogglePushIdx < setPushIntentCalls[0].index && setPushIntentCalls[0].index < elseIdx,
-		'the sole setPushIntent(uid) call must sit in onTogglePush\'s turnOn branch'
+		"the sole setPushIntent(uid) call must sit in onTogglePush's turnOn branch"
 	);
 });
 
@@ -293,6 +297,8 @@ test('push-intent is imported by push.api.ts and settings, never by the service 
 		'\tclearPushIntent,\n' +
 		'\tgetPushIntent,\n' +
 		'\thasExplicitPushOptOut,\n' +
+		'\tisLogoutPending,\n' +
+		'\tmarkLogoutPending,\n' +
 		'\treadLogoutGeneration\n' +
 		"} from '$lib/push-intent';";
 	assert.ok(
@@ -303,6 +309,7 @@ test('push-intent is imported by push.api.ts and settings, never by the service 
 	const settingsImport =
 		'import {\n' +
 		'\t\tbackfillPushIntent,\n' +
+		'\t\tclearLogoutPending,\n' +
 		'\t\thasExplicitPushOptOut,\n' +
 		'\t\tsetPushIntent,\n' +
 		'\t\tsetPushIntentOff\n' +
@@ -366,7 +373,7 @@ test('the final post-await recheck also gates on opt-out AND both logout generat
 	);
 });
 
-test('teardownRecoveredSub restores intent only when not opted out AND both generations match', () => {
+test('teardownRecoveredSub restores intent only when not opted out AND generations match', () => {
 	const fn = extractTeardownRecoveredSub();
 	const condIdx = fn.indexOf('if (\n\t\tgetPushIntent() === userId &&');
 	const optOutIdx = fn.indexOf('!hasExplicitPushOptOut(userId) &&', condIdx);
@@ -374,7 +381,11 @@ test('teardownRecoveredSub restores intent only when not opted out AND both gene
 	const storedGenIdx = fn.indexOf('startStoredGen === readLogoutGeneration()', genIdx);
 	assert.notEqual(condIdx, -1, 'the restored-intent branch must exist');
 	assert.notEqual(optOutIdx, -1, 'restore must require the absence of an opt-out');
-	assert.notEqual(genIdx, -1, 'restore must require the SAME module-local generation as when started');
+	assert.notEqual(
+		genIdx,
+		-1,
+		'restore must require the SAME module-local generation as when started'
+	);
 	assert.notEqual(storedGenIdx, -1, 'restore must also require the SAME storage-backed generation');
 	assert.ok(
 		condIdx < optOutIdx && optOutIdx < genIdx && genIdx < storedGenIdx,
@@ -383,10 +394,18 @@ test('teardownRecoveredSub restores intent only when not opted out AND both gene
 });
 
 test('hasExplicitPushOptOut is imported by push.api.ts and used at all three gates', () => {
+	const pushApiImport =
+		'import {\n' +
+		'\tbumpLogoutGeneration,\n' +
+		'\tclearPushIntent,\n' +
+		'\tgetPushIntent,\n' +
+		'\thasExplicitPushOptOut,\n' +
+		'\tisLogoutPending,\n' +
+		'\tmarkLogoutPending,\n' +
+		'\treadLogoutGeneration\n' +
+		"} from '$lib/push-intent';";
 	assert.ok(
-		/import \{\s*bumpLogoutGeneration,\s*clearPushIntent,\s*getPushIntent,\s*hasExplicitPushOptOut,\s*readLogoutGeneration\s*\} from '\$lib\/push-intent';/.test(
-			pushApi
-		),
+		pushApi.includes(pushApiImport),
 		'hasExplicitPushOptOut must be imported alongside the other intent and generation accessors'
 	);
 	const calls = pushApi.match(/hasExplicitPushOptOut\(userId\)/g) ?? [];
@@ -433,7 +452,70 @@ test('detachPushOnLogout bumps storage BEFORE reading the subscription it tears 
 	assert.notEqual(getSubIdx, -1);
 	assert.ok(
 		bumpStoredIdx < getSubIdx,
-		'bump-before-read on the logout side is what closes the cross-tab race with recovery\'s recheck-after-create'
+		'bump-before-read on the logout side closes the cross-tab race with ' +
+			"recovery's recheck-after-create"
+	);
+});
+
+// --- P1: self-expiring logout-pending flag closes the reverse ordering ---
+
+test('detachPushOnLogout calls markLogoutPending before either generation bump', () => {
+	const detachFn = pushApi.match(
+		/export async function detachPushOnLogout\(\): Promise<void> \{[\s\S]*?\n}\n/
+	)?.[0];
+	assert.ok(detachFn, 'detachPushOnLogout must exist');
+	const markPendingIdx = detachFn.indexOf('markLogoutPending();');
+	const genIncrementIdx = detachFn.indexOf('logoutGeneration++;');
+	const bumpStoredIdx = detachFn.indexOf('bumpLogoutGeneration();');
+	assert.notEqual(markPendingIdx, -1, 'markLogoutPending must be called');
+	assert.notEqual(genIncrementIdx, -1);
+	assert.notEqual(bumpStoredIdx, -1);
+	assert.ok(
+		markPendingIdx < genIncrementIdx && genIncrementIdx < bumpStoredIdx,
+		'markLogoutPending must run first, before either generation bump — it covers the reverse ' +
+			'ordering the generation bumps alone cannot (a recovery starting AFTER this function ' +
+			'already returned would otherwise snapshot the post-bump generation as its own baseline)'
+	);
+	const preamble = detachFn.slice(0, markPendingIdx);
+	assert.doesNotMatch(preamble, /\bawait\b/, 'markLogoutPending must run before any await');
+});
+
+test('recovery entry gate consults isLogoutPending() alongside marker and opt-out', () => {
+	const fn = extractRecoverIntendedPush();
+	const entryGateIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId) || isLogoutPending()) return;'
+	);
+	assert.notEqual(entryGateIdx, -1, 'the entry gate must include isLogoutPending()');
+});
+
+test('an entry-gate abort (including a pending logout) does not clear the intent marker', () => {
+	const fn = extractRecoverIntendedPush();
+	const entryGateIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId) || isLogoutPending()) return;'
+	);
+	assert.notEqual(entryGateIdx, -1);
+	// The entry gate is a single-line early return with no braces — nothing
+	// else can run on this line, so it structurally cannot call
+	// clearPushIntent: a pending logout is a transient condition and the
+	// next app load must simply retry with the marker still intact.
+	const line = fn.slice(entryGateIdx, fn.indexOf('\n', entryGateIdx));
+	assert.doesNotMatch(line, /clearPushIntent/, 'the entry gate must not clear the intent marker');
+});
+
+test('settings doLogout calls clearLogoutPending after logout() settles either way', () => {
+	const doLogoutFn = settingsPage.match(/async function doLogout\(\) \{[\s\S]*?\n\t\}/)?.[0];
+	assert.ok(doLogoutFn, 'doLogout must exist');
+	const tryIdx = doLogoutFn.indexOf('try {');
+	const logoutCallIdx = doLogoutFn.indexOf('await logout();', tryIdx);
+	const finallyIdx = doLogoutFn.indexOf('} finally {', logoutCallIdx);
+	const clearIdx = doLogoutFn.indexOf('clearLogoutPending();', finallyIdx);
+	assert.notEqual(tryIdx, -1);
+	assert.notEqual(logoutCallIdx, -1);
+	assert.notEqual(finallyIdx, -1, 'clearLogoutPending must run in a finally to cover failure too');
+	assert.notEqual(clearIdx, -1);
+	assert.ok(
+		tryIdx < logoutCallIdx && logoutCallIdx < finallyIdx && finallyIdx < clearIdx,
+		'clearLogoutPending must run inside the finally, after the logout() attempt either way'
 	);
 });
 
@@ -589,10 +671,7 @@ test('teardownRecoveredSub re-POSTs using the CURRENT subscription, only on endp
 		're-POST (bound to the current endpoint) must run, then return, before the fallback unsubscribe'
 	);
 
-	const restoredBranch = fn.slice(
-		endpointCheckIdx,
-		closingIfIdx + '\n\t\t}\n\t\treturn;'.length
-	);
+	const restoredBranch = fn.slice(endpointCheckIdx, closingIfIdx + '\n\t\t}\n\t\treturn;'.length);
 	assert.doesNotMatch(
 		restoredBranch,
 		/signalPushRecovered/,

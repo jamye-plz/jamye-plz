@@ -15,6 +15,7 @@
 	} from '$lib/api/push.api';
 	import {
 		backfillPushIntent,
+		clearLogoutPending,
 		hasExplicitPushOptOut,
 		setPushIntent,
 		setPushIntentOff
@@ -201,6 +202,11 @@
 			await logout();
 		} catch {
 			// even if the call fails, drop local state and return to login
+		} finally {
+			// The auth transition has now settled either way — clear the
+			// logout-pending flag so recovery can run again. Best-effort: if
+			// this tab dies before this runs, the flag expires on its own.
+			clearLogoutPending();
 		}
 		queryClient.clear();
 		goto(resolve('/login'));
