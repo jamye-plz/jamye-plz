@@ -3,10 +3,14 @@ import test from 'node:test';
 
 import {
 	PUSH_INTENT_KEY,
+	PUSH_LOGOUT_GEN_KEY,
 	PUSH_OPTOUT_KEY,
+	backfillPushIntent,
+	bumpLogoutGeneration,
 	clearPushIntent,
 	getPushIntent,
 	hasExplicitPushOptOut,
+	readLogoutGeneration,
 	setPushIntent,
 	setPushIntentOff
 } from '../src/lib/push-intent.ts';
@@ -194,6 +198,73 @@ test('a backfill-style intent write cannot remove the opt-out key it does not ow
 			'user-123',
 			'writing the intent key directly must never disturb the opt-out key'
 		);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('backfillPushIntent writes intent but never touches an existing opt-out', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		setPushIntentOff('user-123');
+		assert.equal(localStorage.getItem(PUSH_OPTOUT_KEY), 'user-123');
+
+		// Unlike setPushIntent (the gesture setter, which clears the same
+		// user's opt-out as part of a fresh decision), the backfill setter
+		// must leave the opt-out untouched even for the SAME user — it is a
+		// non-gesture reconciliation and must never override an explicit off.
+		backfillPushIntent('user-123');
+		assert.equal(getPushIntent(), 'user-123');
+		assert.equal(
+			localStorage.getItem(PUSH_OPTOUT_KEY),
+			'user-123',
+			"the backfill setter must not clear the user's own opt-out record"
+		);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('backfillPushIntent is a safe no-op without usable storage', () => {
+	delete globalThis.localStorage;
+	assert.doesNotThrow(() => backfillPushIntent('user-123'));
+
+	globalThis.localStorage = createThrowingStorage();
+	try {
+		assert.doesNotThrow(() => backfillPushIntent('user-123'));
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('logout generation round-trips and increments through storage', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		assert.equal(readLogoutGeneration(), '0');
+		bumpLogoutGeneration();
+		assert.equal(readLogoutGeneration(), '1');
+		bumpLogoutGeneration();
+		assert.equal(readLogoutGeneration(), '2');
+		assert.equal(localStorage.getItem(PUSH_LOGOUT_GEN_KEY), '2');
+
+		// Garbage in storage degrades to 0 and keeps counting from there.
+		localStorage.setItem(PUSH_LOGOUT_GEN_KEY, 'not-a-number');
+		bumpLogoutGeneration();
+		assert.equal(readLogoutGeneration(), '1');
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('logout generation accessors are safe without usable storage', () => {
+	delete globalThis.localStorage;
+	assert.equal(readLogoutGeneration(), '0');
+	assert.doesNotThrow(() => bumpLogoutGeneration());
+
+	globalThis.localStorage = createThrowingStorage();
+	try {
+		assert.equal(readLogoutGeneration(), '0');
+		assert.doesNotThrow(() => bumpLogoutGeneration());
 	} finally {
 		delete globalThis.localStorage;
 	}

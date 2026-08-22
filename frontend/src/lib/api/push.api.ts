@@ -1,17 +1,33 @@
 import { apiGet, apiPost, apiDelete } from './client';
-import { clearPushIntent, getPushIntent, hasExplicitPushOptOut } from '$lib/push-intent';
+import {
+	bumpLogoutGeneration,
+	clearPushIntent,
+	getPushIntent,
+	hasExplicitPushOptOut,
+	readLogoutGeneration
+} from '$lib/push-intent';
 import { signalPushRecovered } from '$lib/push-recovery-signal';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
 
 /**
- * Bumped once by `detachPushOnLogout` (module-local, same-tab only). Recovery
- * must not complete across a logout that began after it started: a logout
- * mid-recovery can run detachPushOnLogout while no subscription exists yet
- * (it detaches nothing), then recovery creates one afterwards — leaving a
- * live subscription + server row on a device the user just signed out of.
- * The counter makes "a logout happened meanwhile" observable to an in-flight
- * recovery without any storage or cross-module wiring — recovery just
- * snapshots it on entry and compares on its way out.
+ * Bumped once by `detachPushOnLogout`. Recovery must not complete across a
+ * logout that began after it started: a logout mid-recovery can run
+ * detachPushOnLogout while no subscription exists yet (it detaches
+ * nothing), then recovery creates one afterwards — leaving a live
+ * subscription + server row on a device the user just signed out of. The
+ * counter makes "a logout happened meanwhile" observable to an in-flight
+ * recovery — recovery just snapshots it on entry and compares on its way
+ * out.
+ *
+ * This module-local counter only ever sees a SAME-tab logout. Cross-tab
+ * logout is covered separately by the storage-backed pair in
+ * `push-intent.ts` (`bumpLogoutGeneration`/`readLogoutGeneration`): the
+ * logout tab bumps storage BEFORE reading the subscription it tears down,
+ * and recovery rechecks storage AFTER creating its own subscription, so any
+ * interleaving between tabs is caught by one side or the other. This
+ * counter remains as the fallback layer for when storage itself is
+ * unavailable (Safari private mode) — same-tab ordering still works
+ * without it.
  */
 let logoutGeneration = 0;
 
@@ -101,7 +117,8 @@ export async function reconcileOrRecreate(vapidPublicKey: string): Promise<boole
 async function teardownRecoveredSub(
 	sub: PushSubscription,
 	userId: string,
-	startGen: number
+	startGen: number,
+	startStoredGen: string
 ): Promise<void> {
 	await Promise.race([
 		unsubscribePush(sub.endpoint).catch(() => {}),
@@ -121,13 +138,15 @@ async function teardownRecoveredSub(
 	// Opt-out still takes precedence even here: if the user toggled OFF
 	// again (writing the separate opt-out key) within this same window,
 	// that decision must win over restoring a subscription for them. A
-	// logout that started during our wait must win too (startGen mismatch):
-	// restoring a subscription after the user signed out would defeat the
-	// very teardown detachPushOnLogout just ran.
+	// logout that started during our wait must win too (startGen mismatch,
+	// checked both module-local and storage-backed so a cross-tab logout is
+	// caught too): restoring a subscription after the user signed out would
+	// defeat the very teardown detachPushOnLogout just ran.
 	if (
 		getPushIntent() === userId &&
 		!hasExplicitPushOptOut(userId) &&
-		startGen === logoutGeneration
+		startGen === logoutGeneration &&
+		startStoredGen === readLogoutGeneration()
 	) {
 		// Re-read the LIVE subscription rather than trusting the captured
 		// `sub`: the toggle-OFF that wrote the opt-out unsubscribes BEFORE
@@ -176,6 +195,11 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 	// bumps it), this recovery must not complete after that point even
 	// though it began before it.
 	const startGen = logoutGeneration;
+	// Also snapshot the storage-backed cross-tab generation, for the same
+	// reason: a logout in ANOTHER tab bumps this before reading the
+	// subscription it tears down, so comparing it later closes the
+	// cross-tab race the module-local counter alone cannot see.
+	const startStoredGen = readLogoutGeneration();
 	// Opt-out lives on its own key precisely so no non-gesture path (this
 	// one included) can ever overwrite it — reads give it precedence over
 	// the intent key, hence the OR here rather than relying on intent alone.
@@ -231,21 +255,24 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 		// runs in the same synchronous frame as the pulse below, so nothing
 		// can invalidate intent between this check and the pulse itself. The
 		// opt-out check is read-precedence, matching the entry gate above.
-		// The generation check catches SAME-TAB logout: a bump means
-		// detachPushOnLogout already ran and missed this not-yet-created
-		// subscription, so tear it down here instead (the server DELETE may
-		// 401 against the now-dead session — best-effort as always; the local
-		// unsubscribe is what actually removes the exposure). A CROSS-tab
-		// logout (cookie flips mid-flight, no generation bump on this tab)
-		// stays in the previously documented accepted class: the POST's own
-		// expected_user_id binding rejects it, or a stray row self-heals via
-		// reclaim on the next app open.
+		// The generation check catches a logout that happened meanwhile: a
+		// bump means detachPushOnLogout already ran and missed this
+		// not-yet-created subscription, so tear it down here instead (the
+		// server DELETE may 401 against the now-dead session — best-effort
+		// as always; the local unsubscribe is what actually removes the
+		// exposure). Both the module-local (same-tab) and storage-backed
+		// (cross-tab) generation are compared: the logout tab bumps storage
+		// BEFORE reading the subscription it tears down, and this recheck
+		// runs AFTER the subscription above was created, so any interleaving
+		// between tabs is caught here — cross-tab logout is closed, not just
+		// accepted as a residual class anymore.
 		if (
 			getPushIntent() !== userId ||
 			hasExplicitPushOptOut(userId) ||
-			startGen !== logoutGeneration
+			startGen !== logoutGeneration ||
+			startStoredGen !== readLogoutGeneration()
 		) {
-			await teardownRecoveredSub(sub, userId, startGen);
+			await teardownRecoveredSub(sub, userId, startGen, startStoredGen);
 			return;
 		}
 		signalPushRecovered();
@@ -314,9 +341,15 @@ export async function reclaimPushForCurrentUser(userId: string): Promise<void> {
  * and never hangs when no SW is registered.
  */
 export async function detachPushOnLogout(): Promise<void> {
-	// First statement, unconditional: any in-flight recovery must see this
-	// logout regardless of which branch below runs (or whether it hangs).
+	// First statements, unconditional: any in-flight recovery (same-tab via
+	// the module-local counter, cross-tab via storage) must see this logout
+	// regardless of which branch below runs (or whether it hangs). Bumping
+	// storage BEFORE reading the subscription below (not after) is what
+	// closes the cross-tab race: recovery in another tab rechecks storage
+	// AFTER creating its subscription, so this ordering guarantees one side
+	// or the other observes the change.
 	logoutGeneration++;
+	bumpLogoutGeneration();
 	try {
 		const reg = await getActiveRegistration();
 		if (!reg) return;

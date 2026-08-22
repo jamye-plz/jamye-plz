@@ -13,7 +13,12 @@
 		requestAndSubscribe,
 		unsubscribePush
 	} from '$lib/api/push.api';
-	import { hasExplicitPushOptOut, setPushIntent, setPushIntentOff } from '$lib/push-intent';
+	import {
+		backfillPushIntent,
+		hasExplicitPushOptOut,
+		setPushIntent,
+		setPushIntentOff
+	} from '$lib/push-intent';
 	import { pushRecoverySignal } from '$lib/push-recovery-signal';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import UserAvatar from '$lib/components/UserAvatar.svelte';
@@ -97,14 +102,19 @@
 						// existed: a subscription reconciled for the current user is
 						// proof they once opted in. onMount is NOT gated on meQuery.data
 						// (unlike the toggle), so it can race the user query — guard on
-						// uid and silently skip; the next settings visit retries. Never
-						// resurrect an explicit opt-out: with two settings tabs open, a
-						// pending reconcile here can resolve AFTER another tab's
-						// toggle-OFF wrote the opt-out sentinel — both write orders must
-						// converge to "off" (backfill-first: the sentinel overwrites it
-						// right after; off-first: this check skips the backfill).
+						// uid and silently skip; the next settings visit retries. Uses
+						// backfillPushIntent (never setPushIntent) because this is a
+						// non-gesture, best-effort path: setPushIntent also clears the
+						// user's own opt-out, which is correct for an explicit toggle-ON
+						// but would let this backfill silently erase a concurrent tab's
+						// just-written opt-out (the hasExplicitPushOptOut read below can
+						// pass BEFORE that write lands). backfillPushIntent physically
+						// cannot touch the opt-out key, so both write orders converge to
+						// "off" regardless: backfill-first, the opt-out write still lands
+						// after and wins on the next read; opt-out-first, this guard
+						// skips the backfill entirely.
 						const uid = meQuery.data?.id;
-						if (uid && !hasExplicitPushOptOut(uid)) setPushIntent(uid);
+						if (uid && !hasExplicitPushOptOut(uid)) backfillPushIntent(uid);
 					}
 				} catch {
 					pushSubscribed = false;

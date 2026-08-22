@@ -87,6 +87,22 @@ test('recovery entry gate rejects a mismatched marker OR an explicit opt-out', (
 	);
 });
 
+test('recovery also snapshots the storage-backed generation, right after startGen', () => {
+	const fn = extractRecoverIntendedPush();
+	const startGenIdx = fn.indexOf('const startGen = logoutGeneration;');
+	const startStoredGenIdx = fn.indexOf('const startStoredGen = readLogoutGeneration();');
+	const entryGateIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;'
+	);
+	assert.notEqual(startGenIdx, -1);
+	assert.notEqual(startStoredGenIdx, -1, 'the cross-tab storage generation must also be snapshotted');
+	assert.notEqual(entryGateIdx, -1);
+	assert.ok(
+		startGenIdx < startStoredGenIdx && startStoredGenIdx < entryGateIdx,
+		'both generations must be captured before the entry gate can short-circuit'
+	);
+});
+
 test('recovery only READS Notification.permission and never requests it', () => {
 	const fn = extractRecoverIntendedPush();
 	assert.ok(
@@ -242,24 +258,58 @@ test('settings onMount backfill is guarded by hasExplicitPushOptOut', () => {
 	assert.ok(
 		settingsPage.includes(
 			'const uid = meQuery.data?.id;\n' +
-				'\t\t\t\t\t\tif (uid && !hasExplicitPushOptOut(uid)) setPushIntent(uid);'
+				'\t\t\t\t\t\tif (uid && !hasExplicitPushOptOut(uid)) backfillPushIntent(uid);'
 		),
 		'backfill must skip an explicit opt-out regardless of concurrent-tab write ordering'
 	);
 });
 
+test('settings onMount backfill uses backfillPushIntent, never setPushIntent', () => {
+	const backfillCallIdx = settingsPage.indexOf(
+		'if (uid && !hasExplicitPushOptOut(uid)) backfillPushIntent(uid);'
+	);
+	assert.notEqual(backfillCallIdx, -1, 'the onMount backfill must call backfillPushIntent');
+	// The toggle-ON gesture (onTogglePush) is the ONLY caller of setPushIntent;
+	// a non-gesture backfill reusing it could clobber a concurrent tab's
+	// just-written opt-out (see push-intent.ts for the full race).
+	const setPushIntentCalls = [...settingsPage.matchAll(/\bsetPushIntent\(uid\)/g)];
+	assert.equal(
+		setPushIntentCalls.length,
+		1,
+		'setPushIntent(uid) must be called from exactly one site: the toggle-ON gesture'
+	);
+	const onTogglePushIdx = settingsPage.indexOf('async function onTogglePush');
+	const elseIdx = settingsPage.indexOf('} else {', onTogglePushIdx);
+	assert.ok(
+		onTogglePushIdx < setPushIntentCalls[0].index && setPushIntentCalls[0].index < elseIdx,
+		'the sole setPushIntent(uid) call must sit in onTogglePush\'s turnOn branch'
+	);
+});
+
 test('push-intent is imported by push.api.ts and settings, never by the service worker', () => {
 	const pushApiImport =
-		"import { clearPushIntent, getPushIntent, hasExplicitPushOptOut } from '$lib/push-intent';";
+		'import {\n' +
+		'\tbumpLogoutGeneration,\n' +
+		'\tclearPushIntent,\n' +
+		'\tgetPushIntent,\n' +
+		'\thasExplicitPushOptOut,\n' +
+		'\treadLogoutGeneration\n' +
+		"} from '$lib/push-intent';";
 	assert.ok(
 		pushApi.includes(pushApiImport),
-		'push.api.ts must import the intent accessors it uses, including the opt-out reader'
+		'push.api.ts must import the intent accessors and generation accessors it uses'
 	);
+	// Svelte <script> blocks indent one level deeper than plain .ts modules.
 	const settingsImport =
-		"import { hasExplicitPushOptOut, setPushIntent, setPushIntentOff } from '$lib/push-intent';";
+		'import {\n' +
+		'\t\tbackfillPushIntent,\n' +
+		'\t\thasExplicitPushOptOut,\n' +
+		'\t\tsetPushIntent,\n' +
+		'\t\tsetPushIntentOff\n' +
+		"\t} from '$lib/push-intent';";
 	assert.ok(
 		settingsPage.includes(settingsImport),
-		'settings must import the opt-out-aware intent writers it uses'
+		'settings must import the opt-out-aware intent writers it uses, including the backfill setter'
 	);
 	assert.doesNotMatch(serviceWorker, /from '\$lib\/push-intent'/);
 });
@@ -282,49 +332,62 @@ test('the pre-subscribe recheck stays intent-only (unaffected by the opt-out fix
 	);
 });
 
-test('the final post-await recheck also gates on opt-out AND the logout generation', () => {
+test('the final post-await recheck also gates on opt-out AND both logout generations', () => {
 	const fn = extractRecoverIntendedPush();
 	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 	const notSubIdx = fn.indexOf('if (!sub) return;', subIdx);
 	const recheckIdx = fn.indexOf('if (\n\t\t\tgetPushIntent() !== userId ||', notSubIdx);
 	const optOutIdx = fn.indexOf('hasExplicitPushOptOut(userId) ||', recheckIdx);
-	const genIdx = fn.indexOf('startGen !== logoutGeneration', optOutIdx);
-	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId, startGen);', genIdx);
+	const genIdx = fn.indexOf('startGen !== logoutGeneration ||', optOutIdx);
+	const storedGenIdx = fn.indexOf('startStoredGen !== readLogoutGeneration()', genIdx);
+	const teardownIdx = fn.indexOf(
+		'await teardownRecoveredSub(sub, userId, startGen, startStoredGen);',
+		storedGenIdx
+	);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(subIdx, -1);
 	assert.notEqual(notSubIdx, -1);
 	assert.notEqual(recheckIdx, -1, 'the final recheck must start with the same condition as entry');
 	assert.notEqual(optOutIdx, -1, 'the opt-out term must be part of the final recheck');
-	assert.notEqual(genIdx, -1, 'the logout-generation term must be part of the final recheck');
-	assert.notEqual(teardownIdx, -1, 'teardown must be called with the captured startGen');
+	assert.notEqual(genIdx, -1, 'the module-local generation term must be part of the final recheck');
+	assert.notEqual(storedGenIdx, -1, 'the storage-backed generation term must also be part of it');
+	assert.notEqual(teardownIdx, -1, 'teardown must be called with both captured generations');
 	assert.notEqual(signalIdx, -1);
 	assert.ok(
 		subIdx < notSubIdx &&
 			notSubIdx < recheckIdx &&
 			recheckIdx < optOutIdx &&
 			optOutIdx < genIdx &&
-			genIdx < teardownIdx &&
+			genIdx < storedGenIdx &&
+			storedGenIdx < teardownIdx &&
 			teardownIdx < signalIdx,
-		'subscribe -> !sub bail -> compound (marker/opt-out/generation) recheck+teardown -> pulse'
+		'subscribe -> !sub bail -> compound (marker/opt-out/both generations) recheck+teardown -> pulse'
 	);
 });
 
-test('teardownRecoveredSub restores intent only when not opted out AND same generation', () => {
+test('teardownRecoveredSub restores intent only when not opted out AND both generations match', () => {
 	const fn = extractTeardownRecoveredSub();
 	const condIdx = fn.indexOf('if (\n\t\tgetPushIntent() === userId &&');
 	const optOutIdx = fn.indexOf('!hasExplicitPushOptOut(userId) &&', condIdx);
-	const genIdx = fn.indexOf('startGen === logoutGeneration', optOutIdx);
+	const genIdx = fn.indexOf('startGen === logoutGeneration &&', optOutIdx);
+	const storedGenIdx = fn.indexOf('startStoredGen === readLogoutGeneration()', genIdx);
 	assert.notEqual(condIdx, -1, 'the restored-intent branch must exist');
 	assert.notEqual(optOutIdx, -1, 'restore must require the absence of an opt-out');
-	assert.notEqual(genIdx, -1, 'restore must require the SAME logout generation as when started');
-	assert.ok(condIdx < optOutIdx && optOutIdx < genIdx, 'all three terms must gate the same branch');
+	assert.notEqual(genIdx, -1, 'restore must require the SAME module-local generation as when started');
+	assert.notEqual(storedGenIdx, -1, 'restore must also require the SAME storage-backed generation');
+	assert.ok(
+		condIdx < optOutIdx && optOutIdx < genIdx && genIdx < storedGenIdx,
+		'all four terms must gate the same branch'
+	);
 });
 
 test('hasExplicitPushOptOut is imported by push.api.ts and used at all three gates', () => {
 	assert.ok(
-		/import \{ clearPushIntent, getPushIntent, hasExplicitPushOptOut \}/.test(pushApi),
-		'hasExplicitPushOptOut must be imported alongside the other intent accessors'
+		/import \{\s*bumpLogoutGeneration,\s*clearPushIntent,\s*getPushIntent,\s*hasExplicitPushOptOut,\s*readLogoutGeneration\s*\} from '\$lib\/push-intent';/.test(
+			pushApi
+		),
+		'hasExplicitPushOptOut must be imported alongside the other intent and generation accessors'
 	);
 	const calls = pushApi.match(/hasExplicitPushOptOut\(userId\)/g) ?? [];
 	assert.equal(
@@ -343,14 +406,34 @@ test('logoutGeneration is a module-local counter bumped first by detachPushOnLog
 		/export async function detachPushOnLogout\(\): Promise<void> \{[\s\S]*?\n}\n/
 	)?.[0];
 	assert.ok(detachFn, 'detachPushOnLogout must exist');
+	const genIncrementIdx = detachFn.indexOf('logoutGeneration++;');
+	const bumpStoredIdx = detachFn.indexOf('bumpLogoutGeneration();', genIncrementIdx);
+	assert.notEqual(genIncrementIdx, -1, 'the module-local counter must be incremented');
+	assert.notEqual(bumpStoredIdx, -1, 'the storage-backed counter must also be bumped');
+	const preamble = detachFn.slice(0, genIncrementIdx);
+	assert.doesNotMatch(
+		preamble,
+		/\bawait\b/,
+		'both generation bumps must be unconditional, before any await'
+	);
 	assert.ok(
-		detachFn.startsWith(
-			'export async function detachPushOnLogout(): Promise<void> {\n' +
-				'\t// First statement, unconditional: any in-flight recovery must see this\n' +
-				'\t// logout regardless of which branch below runs (or whether it hangs).\n' +
-				'\tlogoutGeneration++;'
-		),
-		'logoutGeneration must be incremented as the unconditional first statement'
+		genIncrementIdx < bumpStoredIdx,
+		'the module-local bump and the storage bump must both sit at the top of the function'
+	);
+});
+
+test('detachPushOnLogout bumps storage BEFORE reading the subscription it tears down', () => {
+	const detachFn = pushApi.match(
+		/export async function detachPushOnLogout\(\): Promise<void> \{[\s\S]*?\n}\n/
+	)?.[0];
+	assert.ok(detachFn, 'detachPushOnLogout must exist');
+	const bumpStoredIdx = detachFn.indexOf('bumpLogoutGeneration();');
+	const getSubIdx = detachFn.indexOf('await reg.pushManager.getSubscription();');
+	assert.notEqual(bumpStoredIdx, -1);
+	assert.notEqual(getSubIdx, -1);
+	assert.ok(
+		bumpStoredIdx < getSubIdx,
+		'bump-before-read on the logout side is what closes the cross-tab race with recovery\'s recheck-after-create'
 	);
 });
 
@@ -418,17 +501,18 @@ test('push.api.ts no longer imports getMe (server binding supersedes identity ch
 
 // --- teardownRecoveredSub: restored-intent re-POST ---
 
-test('teardownRecoveredSub takes sub, userId, and the captured startGen', () => {
+test('teardownRecoveredSub takes sub, userId, and both captured generations', () => {
 	const fn = extractTeardownRecoveredSub();
 	assert.ok(
 		fn.startsWith(
 			'async function teardownRecoveredSub(\n' +
 				'\tsub: PushSubscription,\n' +
 				'\tuserId: string,\n' +
-				'\tstartGen: number\n' +
+				'\tstartGen: number,\n' +
+				'\tstartStoredGen: string\n' +
 				'): Promise<void> {'
 		),
-		'teardownRecoveredSub must accept the userId and the logout generation to re-check'
+		'teardownRecoveredSub must accept the userId and both logout generations to re-check'
 	);
 });
 
@@ -556,7 +640,10 @@ test('a toggle-OFF, opt-out, or logout mid-requestAndSubscribe tears the sub bac
 	const fn = extractRecoverIntendedPush();
 	const notSubIdx = fn.indexOf('if (!sub) return;');
 	const recheckIdx = fn.indexOf('if (\n\t\t\tgetPushIntent() !== userId ||', notSubIdx);
-	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId, startGen);', recheckIdx);
+	const teardownIdx = fn.indexOf(
+		'await teardownRecoveredSub(sub, userId, startGen, startStoredGen);',
+		recheckIdx
+	);
 	const returnIdx = fn.indexOf('return;', teardownIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
@@ -584,9 +671,10 @@ test('the marker recheck runs synchronously right before the pulse, no interveni
 		'if (\n' +
 		'\t\t\tgetPushIntent() !== userId ||\n' +
 		'\t\t\thasExplicitPushOptOut(userId) ||\n' +
-		'\t\t\tstartGen !== logoutGeneration\n' +
+		'\t\t\tstartGen !== logoutGeneration ||\n' +
+		'\t\t\tstartStoredGen !== readLogoutGeneration()\n' +
 		'\t\t) {\n' +
-		'\t\t\tawait teardownRecoveredSub(sub, userId, startGen);\n' +
+		'\t\t\tawait teardownRecoveredSub(sub, userId, startGen, startStoredGen);\n' +
 		'\t\t\treturn;\n' +
 		'\t\t}\n' +
 		'\t\tsignalPushRecovered();';
@@ -759,7 +847,7 @@ test('PushReconciler subscribes to swRegisteredSignal and re-runs reclaim on a p
 		'reclaim must re-run whenever the composite key changes'
 	);
 	assert.ok(
-		/reclaimPushForCurrentUser\(uid\);/.test(pushReconciler),
+		/reclaimPushForCurrentUser\(uid\)/.test(pushReconciler),
 		'PushReconciler must still call reclaimPushForCurrentUser(uid)'
 	);
 });
@@ -770,4 +858,36 @@ test('PushReconciler no longer uses a plain uid-only lastReclaimed guard', () =>
 		/uid !== lastReclaimed\b(?!For)/,
 		'the old uid-only guard must be replaced by the composite-key guard'
 	);
+});
+
+// --- Fix 3: serialize overlapping reclaim attempts ---
+
+test('PushReconciler chains reclaim attempts through a promise instead of firing directly', () => {
+	assert.ok(
+		/let reclaimChain: Promise<void> = Promise\.resolve\(\);/.test(pushReconciler),
+		'a module/component-scoped chain promise must exist to serialize attempts'
+	);
+	assert.ok(
+		/reclaimChain = reclaimChain\.then\(\(\) => reclaimPushForCurrentUser\(uid\)\)\.catch\(\(\) => \{\}\);/.test(
+			pushReconciler
+		),
+		'each trigger must extend the SAME chain, not call reclaimPushForCurrentUser directly'
+	);
+	assert.doesNotMatch(
+		pushReconciler,
+		/\n\t\t\treclaimPushForCurrentUser\(uid\);\n/,
+		'the old fire-and-forget direct call must be gone, replaced by the chained version'
+	);
+});
+
+test('the reclaim chain assignment still sits inside the composite-key guard', () => {
+	const effectBody = pushReconciler.match(/\$effect\(\(\) => \{[\s\S]*?\n\t\}\);/)?.[0];
+	assert.ok(effectBody, '$effect body must exist');
+	const guardIdx = effectBody.indexOf('if (key !== lastReclaimedFor) {');
+	const chainIdx = effectBody.indexOf(
+		'reclaimChain = reclaimChain.then(() => reclaimPushForCurrentUser(uid)).catch(() => {});'
+	);
+	assert.notEqual(guardIdx, -1);
+	assert.notEqual(chainIdx, -1);
+	assert.ok(guardIdx < chainIdx, 'the chained call must run only when the composite key changed');
 });

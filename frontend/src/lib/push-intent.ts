@@ -63,6 +63,26 @@ export function setPushIntent(userId: string): void {
 	}
 }
 
+/**
+ * Record that `userId` wants push enabled on this device, WITHOUT touching
+ * the opt-out key — for the settings backfill only (a non-gesture,
+ * best-effort reconciliation), never the explicit toggle-ON gesture (that
+ * stays on `setPushIntent`, which is allowed to clear the user's own
+ * opt-out as part of a fresh decision). The backfill is a non-gesture
+ * writer, so it gets a setter that physically cannot clear an opt-out;
+ * combined with readers giving the opt-out key precedence over the intent
+ * key, either ordering of backfill vs a concurrent tab's opt-out write
+ * converges to opt-out. Best-effort: failure is swallowed.
+ */
+export function backfillPushIntent(userId: string): void {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		localStorage.setItem(PUSH_INTENT_KEY, userId);
+	} catch {
+		// Safari private mode / storage disabled — nothing we can do.
+	}
+}
+
 /** Remove the push-intent marker from this device. Leaves opt-out alone. */
 export function clearPushIntent(): void {
 	if (typeof localStorage === 'undefined') return;
@@ -100,5 +120,39 @@ export function hasExplicitPushOptOut(userId: string): boolean {
 		return localStorage.getItem(PUSH_OPTOUT_KEY) === userId;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Cross-tab counterpart to `push.api.ts`'s module-local `logoutGeneration`.
+ * A logout in one tab must be observable to an in-flight recovery running in
+ * ANOTHER tab, which a module-local counter (scoped to one JS realm) cannot
+ * see. Storing the generation here closes that gap: the logout tab bumps it
+ * BEFORE reading the subscription it is about to tear down, and recovery
+ * rechecks it AFTER creating a subscription — so any interleaving of the two
+ * is caught by one side or the other. The module-local counter remains as a
+ * fallback layer for when storage itself is unavailable (Safari private
+ * mode) — same-tab ordering still works without it.
+ */
+export const PUSH_LOGOUT_GEN_KEY = 'jamye:push-logout-gen';
+
+/** The stored cross-tab logout generation, or `'0'` if unset/unavailable. */
+export function readLogoutGeneration(): string {
+	if (typeof localStorage === 'undefined') return '0';
+	try {
+		return localStorage.getItem(PUSH_LOGOUT_GEN_KEY) ?? '0';
+	} catch {
+		return '0';
+	}
+}
+
+/** Increment the stored cross-tab logout generation. No-op without storage. */
+export function bumpLogoutGeneration(): void {
+	if (typeof localStorage === 'undefined') return;
+	try {
+		const current = parseInt(localStorage.getItem(PUSH_LOGOUT_GEN_KEY) ?? '0', 10) || 0;
+		localStorage.setItem(PUSH_LOGOUT_GEN_KEY, String(current + 1));
+	} catch {
+		// Safari private mode / storage disabled — nothing we can do.
 	}
 }

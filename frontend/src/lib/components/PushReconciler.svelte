@@ -17,6 +17,14 @@
 	// appearing mid-session re-triggers reclaim for the SAME uid too — reclaim
 	// is idempotent, so re-running it here is harmless.
 	let lastReclaimedFor: string | null = null;
+	// Reclaim is idempotent (safe to re-run for the same user) but NOT
+	// concurrency-safe against itself: a failed duplicate attempt's rollback
+	// (detachPushOnLogout, inside reclaimPushForCurrentUser's catch) can tear
+	// down the subscription a concurrent, still-in-flight attempt just won.
+	// Chaining every call through this promise serializes attempts without
+	// dropping either trigger (me-query resolution and the sw-ready pulse
+	// both still enqueue their own run, just one after another).
+	let reclaimChain: Promise<void> = Promise.resolve();
 	$effect(() => {
 		const uid = meQuery.data?.id;
 		const swPulse = $swRegisteredSignal;
@@ -24,7 +32,7 @@
 		const key = `${uid}:${swPulse}`;
 		if (key !== lastReclaimedFor) {
 			lastReclaimedFor = key;
-			reclaimPushForCurrentUser(uid);
+			reclaimChain = reclaimChain.then(() => reclaimPushForCurrentUser(uid)).catch(() => {});
 		}
 	});
 </script>
