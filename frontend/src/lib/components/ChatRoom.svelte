@@ -6,14 +6,26 @@
 	import { listMessages, markChatroomRead, refreshChatMediaUrl } from '$lib/api/chat.api';
 	import { renderMarkdown } from '$lib/markdown';
 	import { getMe } from '$lib/api/auth.api';
+	import {
+		createChatSocketLifecycle,
+		createReconnectHistoryRecovery,
+		mergeChatMessageRecords,
+		resolveInitialHistoryBoundary,
+		type ChatConnectionState,
+		type ChatSocket,
+		type ChatSocketLifecycle,
+		type ReconnectHistoryRecovery
+	} from '$lib/chat/chat-socket-lifecycle';
 	import type {
 		ChatMedia,
 		ChatMediaInput,
 		ChatMessage,
+		ChatPage,
 		WsClientMessage,
 		WsServerMessage
 	} from '$lib/types/chat.types';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -50,10 +62,6 @@
 
 	const queryClient = useQueryClient();
 
-	// Matches ws_hub.EVICTED_CLOSE_CODE on the backend: the server closes a
-	// socket with this code when the user is removed from / the group is deleted.
-	const EVICTED_CLOSE_CODE = 4001;
-
 	// backHref is a caller-provided absolute app route (may carry a ?date query).
 	// resolve()'s typed-routes signature only accepts statically-known route
 	// literals, not a runtime string, so navigate directly.
@@ -71,9 +79,12 @@
 	// load where performance.now() is still < 1500ms); only later calls throttle.
 	let lastReadAt = Number.NEGATIVE_INFINITY;
 	let pendingRead: ReturnType<typeof setTimeout> | null = null;
+	// The initial page alone cannot close the REST/WS join gap. Keep receipts
+	// behind this barrier until the current physical socket's snapshot succeeds.
+	let historyRecoveryPending = $state(true);
 
 	function tryMarkRead(explicitUpTo?: string) {
-		if (!groupId || !chatroomId) return;
+		if (!groupId || !chatroomId || historyRecoveryPending) return;
 		const since = performance.now() - lastReadAt;
 		if (since < 1500) {
 			// Within the window: ensure exactly one trailing read fires after it.
@@ -155,8 +166,33 @@
 	// Hide the list until the first page is pinned to the bottom, so entering a
 	// room never flashes at the oldest message before jumping to the newest.
 	let initialReady = $state(false);
-	let ws = $state<WebSocket | null>(null);
-	let connected = $state(false);
+	let initialRevealPromise: Promise<boolean> | null = null;
+	let ws = $state<ChatSocket | null>(null);
+	let socketLifecycle: ChatSocketLifecycle | null = null;
+	let connectionState = $state<ChatConnectionState>('connecting');
+	let reconnecting = $state(false);
+	let showManualRetry = $state(false);
+	// Transcript frames that arrived before the message they belong to. The
+	// worker publishes through Redis on its own schedule — it is NOT ordered
+	// with this handler's echo/broadcast — so a fast failure (or a very short
+	// clip) can beat the `message` frame here. Dropping the frame would strand
+	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
+	// media_id lets every message-insertion path claim it. Entries are removed
+	// on match; the map only ever holds this room's still-unmatched frames.
+	const pendingTranscripts = new SvelteMap<string, { status: string; transcript: string | null }>();
+	let activeRoomKey = '';
+	const connected = $derived(connectionState === 'connected' && ws?.readyState === WebSocket.OPEN);
+	const retryAttemptActive = $derived(ws?.readyState === WebSocket.CONNECTING);
+	const manualRetryDisabled = $derived(retryAttemptActive || connectionState === 'disconnected');
+	const connectionLabel = $derived(
+		connectionState === 'connected'
+			? '연결됨'
+			: connectionState === 'connecting'
+				? reconnecting
+					? '다시 연결하는 중'
+					: '연결 중'
+				: '연결이 끊겼어요'
+	);
 	let messagesEl = $state<HTMLElement | null>(null);
 	let rootEl = $state<HTMLElement | null>(null);
 	// True while the on-screen keyboard is open — drops the composer's home-indicator
@@ -172,6 +208,33 @@
 			bodyOpenRoom = chatroomId;
 			bodyOpen = false;
 		}
+	});
+
+	// This component stays mounted while dynamic topic routes change. Keep this
+	// effect dependent only on the route key: physical socket recovery must
+	// retain local history, while a different room starts with no old state.
+	$effect(() => {
+		const roomKey = `${groupId}:${chatroomId}`;
+		if (!chatroomId || roomKey === activeRoomKey) return;
+		activeRoomKey = roomKey;
+		untrack(() => {
+			messages = [];
+			nextCursor = null;
+			loadingOlder = false;
+			initialReady = false;
+			initialRevealPromise = null;
+			if (pendingRead !== null) {
+				clearTimeout(pendingRead);
+				pendingRead = null;
+			}
+			lastReadAt = Number.NEGATIVE_INFINITY;
+			ws = null;
+			connectionState = 'connecting';
+			reconnecting = false;
+			showManualRetry = false;
+			pendingTranscripts.clear();
+			historyRecoveryPending = true;
+		});
 	});
 
 	// Keep the header pinned while the on-screen keyboard is open — only the messages +
@@ -248,102 +311,149 @@
 		};
 	});
 
+	function revealInitialMessages(isCurrent: () => boolean): Promise<boolean> {
+		if (!isCurrent()) return Promise.resolve(false);
+		if (initialReady) return Promise.resolve(true);
+		if (initialRevealPromise) return initialRevealPromise;
+
+		let resolveReveal!: (revealed: boolean) => void;
+		const revealPromise = new Promise<boolean>((resolve) => {
+			resolveReveal = resolve;
+		});
+		initialRevealPromise = revealPromise;
+		const complete = (revealed: boolean) => {
+			if (initialRevealPromise === revealPromise) initialRevealPromise = null;
+			resolveReveal(revealed);
+		};
+
+		tick().then(() => {
+			if (!isCurrent()) return complete(false);
+			if (initialReady) return complete(true);
+			scrollToBottom();
+			requestAnimationFrame(() => {
+				if (!isCurrent()) return complete(false);
+				if (initialReady) return complete(true);
+				scrollToBottom();
+				initialReady = true;
+				complete(true);
+			});
+		});
+
+		return revealPromise;
+	}
+
 	// Seed the room from the latest page (newest-first → reversed to oldest-first
 	// for display) and remember the cursor to older history. Mid-session refetch
 	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
-		if (messagesQuery.data) {
-			messages = [...messagesQuery.data.items].reverse().map(applyBufferedTranscripts);
-			nextCursor = messagesQuery.data.next_cursor;
-			// Pin to the bottom before revealing: scroll after the DOM updates
-			// (tick) and again after layout settles (rAF), then show the list.
-			tick().then(() => {
-				scrollToBottom();
-				requestAnimationFrame(() => {
-					scrollToBottom();
-					initialReady = true;
-				});
+		const seedPage = messagesQuery.data;
+		const seedRoomKey = `${groupId}:${chatroomId}`;
+		if (seedPage) {
+			const currentRoomItems = seedPage.items.filter(
+				(message) => message.chatroom_id === chatroomId
+			);
+			if (currentRoomItems.length !== seedPage.items.length) return;
+			const seededMessages = untrack(() =>
+				[...currentRoomItems].reverse().map(applyBufferedTranscripts)
+			);
+			messages = untrack(() => mergeChatMessageRecords(messages, seededMessages, compareMessages));
+			nextCursor = seedPage.next_cursor;
+			// Pin to the bottom before revealing. The shared helper also lets a
+			// successful join-gap recovery reveal an empty/failed initial query.
+			untrack(() => {
+				void revealInitialMessages(() => activeRoomKey === seedRoomKey);
 			});
 			// Mark the room read on entry, bounded to the fetched page's newest
 			// message read from messagesQuery.data (NOT the reactive `messages`), so
 			// this effect doesn't depend on `messages` and re-seed it — dropping live
 			// messages / older pages — when it later changes.
-			const newest = messagesQuery.data.items[0]?.created_at;
-			tryMarkRead(newest ?? untrack(() => createdAt));
+			const newest = currentRoomItems[0]?.created_at;
+			untrack(() => tryMarkRead(newest ?? createdAt));
 		}
 	});
 
-	$effect(() => {
-		if (!chatroomId) return;
+	function compareMessages(a: ChatMessage, b: ChatMessage): number {
+		if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
+		return a.id.localeCompare(b.id);
+	}
 
-		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-		const socket = new WebSocket(`${protocol}://${window.location.host}/api/ws`);
+	function mergeJoinGap(
+		pageItems: ChatMessage[],
+		lifecycle: ChatSocketLifecycle,
+		socket: ChatSocket
+	) {
+		if (!lifecycle.isCurrent(socket)) return;
+		const stick = isNearBottom();
+		const existingIds = new Set(messages.map((message) => message.id));
+		const hasNewRecoveryMessages = pageItems.some((message) => !existingIds.has(message.id));
+		// Always pass fetched records through the transcript buffer, even when the
+		// message is already present from WS. The fetched canonical record then
+		// replaces it while the common merge keeps one id per message and removes
+		// only a matching optimistic client row.
+		messages = mergeChatMessageRecords(
+			messages,
+			pageItems.map(applyBufferedTranscripts),
+			compareMessages
+		);
+		if (stick && hasNewRecoveryMessages) {
+			tick().then(() => {
+				if (!lifecycle.isCurrent(socket)) return;
+				scrollToBottom();
+				if (document.visibilityState === 'visible') tryMarkRead();
+			});
+		}
+	}
 
-		socket.onopen = () => {
-			connected = true;
-			const joinMsg: WsClientMessage = {
-				type: 'join',
-				chatroom_id: chatroomId
-			};
-			socket.send(JSON.stringify(joinMsg));
-			// Close the REST/WS gap: a message can arrive between the history fetch
-			// and this join (so it's in neither the fetched page nor the broadcast).
-			// Re-fetch the latest page and merge anything we don't have, keeping the
-			// stream contiguous before a read can advance past it.
-			listMessages(groupId, chatroomId)
-				.then((page) => {
-					const have = new Set(messages.map((m) => m.id));
-					const missed = page.items.filter((m) => !have.has(m.id)).map(applyBufferedTranscripts);
-					if (!missed.length) return;
-					const stick = isNearBottom();
-					messages = [...messages, ...missed].sort((a, b) =>
-						a.created_at < b.created_at
-							? -1
-							: a.created_at > b.created_at
-								? 1
-								: a.id.localeCompare(b.id)
-					);
-					if (stick) tick().then(scrollToBottom);
-				})
-				.catch(() => {
-					// transient — the next live message / re-entry will reconcile
+	function handleSocketMessage(event: MessageEvent, socket: ChatSocket) {
+		if (!socketLifecycle?.isCurrent(socket)) return;
+		try {
+			const data: WsServerMessage = JSON.parse(event.data as string);
+			const stick = isNearBottom();
+			if (data.type === 'message') {
+				const msg: ChatMessage = applyBufferedTranscripts({
+					id: data.id,
+					chatroom_id: data.chatroom_id,
+					sender_id: data.sender_id,
+					sender_nickname: data.sender_nickname ?? undefined,
+					sender_avatar_url: data.sender_avatar_url ?? undefined,
+					body: data.body,
+					type: data.msg_type,
+					created_at: data.created_at,
+					media: data.media ?? [],
+					client_msg_id: data.client_msg_id ?? undefined
 				});
-		};
-
-		socket.onmessage = (event) => {
-			try {
-				const data: WsServerMessage = JSON.parse(event.data as string);
-				const stick = isNearBottom();
-				if (data.type === 'message') {
-					const msg: ChatMessage = applyBufferedTranscripts({
-						id: data.id,
-						chatroom_id: data.chatroom_id,
-						sender_id: data.sender_id,
-						sender_nickname: data.sender_nickname ?? undefined,
-						sender_avatar_url: data.sender_avatar_url ?? undefined,
-						body: data.body,
-						type: data.msg_type,
-						created_at: data.created_at,
-						media: data.media ?? [],
-						client_msg_id: data.client_msg_id ?? undefined
-					});
-					const idx = data.client_msg_id
-						? messages.findIndex((m) => m.pending && m.client_msg_id === data.client_msg_id)
-						: -1;
-					messages = idx >= 0 ? messages.map((m, i) => (i === idx ? msg : m)) : [...messages, msg];
-					if (stick) tick().then(scrollToBottom);
-					// Only mark read when the message is actually in view: a message appended
-					// while the user has scrolled up isn't brought into view, so reading it
-					// would clear its unread state unseen. Scrolling back down marks it read.
-					if (document.visibilityState === 'visible' && stick) {
-						tryMarkRead();
-					}
-				} else if (data.type === 'system') {
-					// e.g. "A posted a new topic!" reminder in the group main chat.
+				const pendingIndex = data.client_msg_id
+					? messages.findIndex(
+							(message) => message.pending && message.client_msg_id === data.client_msg_id
+						)
+					: -1;
+				const realIndex = messages.findIndex((message) => message.id === msg.id);
+				if (pendingIndex >= 0 && realIndex >= 0 && pendingIndex !== realIndex) {
+					messages = messages
+						.filter((_, index) => index !== pendingIndex)
+						.map((message, index) =>
+							index === (pendingIndex < realIndex ? realIndex - 1 : realIndex) ? msg : message
+						);
+				} else {
+					const index = pendingIndex >= 0 ? pendingIndex : realIndex;
+					messages =
+						index >= 0
+							? messages.map((message, i) => (i === index ? msg : message))
+							: [...messages, msg];
+				}
+				if (stick) tick().then(scrollToBottom);
+				// Only mark read when the message is actually in view: a message appended
+				// while the user has scrolled up isn't brought into view, so reading it
+				// would clear its unread state unseen. Scrolling back down marks it read.
+				if (document.visibilityState === 'visible' && stick) tryMarkRead();
+			} else if (data.type === 'system') {
+				// e.g. "A posted a new topic!" reminder in the group main chat.
+				const id = data.id ?? crypto.randomUUID();
+				if (!messages.some((message) => message.id === id)) {
 					messages = [
 						...messages,
 						{
-							id: data.id ?? crypto.randomUUID(),
+							id,
 							chatroom_id: chatroomId,
 							sender_id: null,
 							body: data.body,
@@ -352,52 +462,161 @@
 						}
 					];
 					if (stick) tick().then(scrollToBottom);
-				} else if (data.type === 'transcript') {
-					// Async STT finished for a voice message (possibly one sent
-					// minutes ago) — patch the media entry in place. No scroll:
-					// the bubble grows a caption, the log must not jump.
-					const owner = messages.find(
-						(m) => m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
-					);
-					if (!owner) {
-						// The frame beat its message (worker publish is unordered
-						// with the echo/broadcast). Hold it; the insertion paths
-						// apply it when the message shows up.
-						pendingTranscripts.set(data.media_id, {
-							status: data.status,
-							transcript: data.transcript
-						});
-					} else {
-						messages = messages.map((m) =>
-							m.id === data.message_id && m.media?.some((x) => x.id === data.media_id)
-								? {
-										...m,
-										media: m.media.map((x) =>
-											x.id === data.media_id
-												? { ...x, transcript: data.transcript, transcript_status: data.status }
-												: x
-										)
-									}
-								: m
-						);
-					}
 				}
-			} catch {
-				// ignore parse errors
+			} else if (data.type === 'transcript') {
+				// Async STT finished for a voice message (possibly one sent minutes ago).
+				// Every insertion path claims this buffer when its message arrives.
+				const owner = messages.find(
+					(message) =>
+						message.id === data.message_id &&
+						message.media?.some((media) => media.id === data.media_id)
+				);
+				if (!owner) {
+					pendingTranscripts.set(data.media_id, {
+						status: data.status,
+						transcript: data.transcript
+					});
+				} else {
+					messages = messages.map((message) =>
+						message.id === data.message_id &&
+						message.media?.some((media) => media.id === data.media_id)
+							? {
+									...message,
+									media: message.media.map((media) =>
+										media.id === data.media_id
+											? { ...media, transcript: data.transcript, transcript_status: data.status }
+											: media
+									)
+								}
+							: message
+					);
+				}
 			}
-		};
+		} catch {
+			// Ignore malformed application frames.
+		}
+	}
 
-		socket.onclose = (event) => {
-			connected = false;
-			// 4001 = the server evicted us because we were removed from (or the
-			// owner deleted) this group. Drop the now-inaccessible group's caches
-			// and leave the group so we don't keep rendering stale chat/topics.
-			if (event.code === EVICTED_CLOSE_CODE) {
+	$effect(() => {
+		if (!chatroomId) return;
+		const roomId = chatroomId;
+		const currentGroupId = groupId;
+		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+		let recoveryKnownIds: ReadonlySet<string> = new Set();
+		let historyRecovery: ReconnectHistoryRecovery | null = null;
+		let lifecycle: ChatSocketLifecycle;
+		let hasJoinedSocket = false;
+		const isRoomSocketCurrent = (socket: ChatSocket) =>
+			lifecycle.isCurrent(socket) && activeRoomKey === `${currentGroupId}:${roomId}`;
+
+		async function finishHistoryRecovery(socket: ChatSocket) {
+			if (!isRoomSocketCurrent(socket)) return;
+			if (!initialReady) {
+				const revealed = await revealInitialMessages(() => isRoomSocketCurrent(socket));
+				if (!revealed || !isRoomSocketCurrent(socket)) return;
+			}
+			await tick();
+			if (!isRoomSocketCurrent(socket)) return;
+			historyRecoveryPending = false;
+			if (document.visibilityState === 'visible' && isNearBottom()) tryMarkRead();
+		}
+
+		function startHistoryRecovery(socket: ChatSocket, knownIds: ReadonlySet<string>) {
+			if (!isRoomSocketCurrent(socket)) return;
+			historyRecovery?.dispose();
+			historyRecovery = createReconnectHistoryRecovery<ChatMessage>({
+				knownIds,
+				fetchPage: (cursor) => listMessages(currentGroupId, roomId, cursor),
+				applyPage: (items) => mergeJoinGap(items, lifecycle, socket),
+				isCurrent: () => isRoomSocketCurrent(socket),
+				onSuccess: () => {
+					if (!isRoomSocketCurrent(socket)) return;
+					void finishHistoryRecovery(socket);
+				}
+			});
+			historyRecovery.start();
+		}
+
+		async function startInitialHistoryRecovery(
+			socket: ChatSocket,
+			recoveryBoundaryIds: ReadonlySet<string>
+		) {
+			const cachedPage = queryClient.getQueryData<ChatPage>(['messages', roomId]);
+			const inFlightPage =
+				cachedPage === undefined
+					? queryClient.getQueryCache().find<ChatPage>({
+							queryKey: ['messages', roomId],
+							exact: true
+						})?.promise
+					: undefined;
+			const boundaryIds = await resolveInitialHistoryBoundary({
+				knownIds: recoveryBoundaryIds,
+				cachedPage,
+				inFlightPage,
+				isCurrent: () => isRoomSocketCurrent(socket),
+				selectItems: (items) => items.filter((message) => message.chatroom_id === roomId),
+				applyPage: (items) => {
+					const initialPageItems = items.map(applyBufferedTranscripts);
+					messages = mergeChatMessageRecords(messages, initialPageItems, compareMessages);
+				}
+			});
+			if (!isRoomSocketCurrent(socket) || boundaryIds === null) return;
+			startHistoryRecovery(socket, boundaryIds);
+		}
+		lifecycle = createChatSocketLifecycle({
+			url: `${protocol}://${window.location.host}/api/ws`,
+			createSocket: (url) => new WebSocket(url),
+			isOnline: () => navigator.onLine,
+			isVisible: () => document.visibilityState === 'visible',
+			networkEvents: window,
+			visibilityEvents: document,
+			onSocketChange: (socket) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) ws = socket;
+			},
+			onStateChange: (state) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) connectionState = state;
+			},
+			onRecoveryChange: (recovering) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) reconnecting = recovering;
+			},
+			onManualRetryChange: (visible) => {
+				if (!socketLifecycle || socketLifecycle === lifecycle) showManualRetry = visible;
+			},
+			onOpen: (socket) => {
+				if (!isRoomSocketCurrent(socket)) return;
+				historyRecoveryPending = true;
+				recoveryKnownIds = new Set(
+					messages
+						.filter((message) => !message.pending && message.chatroom_id === roomId)
+						.map((message) => message.id)
+				);
+				const joinMsg: WsClientMessage = { type: 'join', chatroom_id: roomId };
+				socket.send(JSON.stringify(joinMsg));
+			},
+			onReady: (socket) => {
+				if (!isRoomSocketCurrent(socket)) return;
+				const isInitialRoomJoin = !hasJoinedSocket;
+				hasJoinedSocket = true;
+				if (isInitialRoomJoin) {
+					void startInitialHistoryRecovery(socket, recoveryKnownIds);
+					return;
+				}
+				// Close the REST/WS gap for every physical socket. Do not refetch the
+				// query: older loaded pages and the reader's scroll position stay local.
+				// The server emits `joined` only after ws_hub subscription, closing the
+				// final delivery gap before this independent REST snapshot begins.
+				startHistoryRecovery(socket, recoveryKnownIds);
+			},
+			onMessage: handleSocketMessage,
+			onTerminalClose: () => {
+				// 4001 = eviction. This is terminal: lifecycle has already cancelled
+				// retry/heartbeat work before preserving the existing group cleanup.
+				historyRecovery?.dispose();
 				for (const key of [
-					['group', groupId],
-					['members', groupId],
-					['topics', groupId],
-					['topic-dates', groupId]
+					['group', currentGroupId],
+					['members', currentGroupId],
+					['topics', currentGroupId],
+					['topic-dates', currentGroupId]
 				]) {
 					queryClient.removeQueries({ queryKey: key });
 				}
@@ -406,14 +625,24 @@
 				queryClient.invalidateQueries({ queryKey: ['groups'] });
 				// eslint-disable-next-line svelte/no-navigation-without-resolve -- static route literal
 				goto('/groups');
+			},
+			onAuthenticationClose: () => {
+				historyRecovery?.dispose();
+				queryClient.clear();
+				window.location.assign('/login');
 			}
-		};
-
-		ws = socket;
+		});
+		socketLifecycle = lifecycle;
+		lifecycle.start();
 
 		return () => {
-			socket.close();
-			ws = null;
+			historyRecovery?.dispose();
+			lifecycle.dispose();
+			hasJoinedSocket = false;
+			if (socketLifecycle === lifecycle) {
+				socketLifecycle = null;
+				ws = null;
+			}
 		};
 	});
 
@@ -435,12 +664,15 @@
 	// anchored to the message the user was reading (no jump).
 	async function loadOlder() {
 		if (loadingOlder || !nextCursor || !chatroomId || !messagesEl) return;
+		const requestRoomId = chatroomId;
+		const requestGroupId = groupId;
 		const cursor = nextCursor;
 		const prevHeight = messagesEl.scrollHeight;
 		const prevTop = messagesEl.scrollTop;
 		loadingOlder = true;
 		try {
-			const olderPage = await listMessages(groupId, chatroomId, cursor);
+			const olderPage = await listMessages(requestGroupId, requestRoomId, cursor);
+			if (chatroomId !== requestRoomId || groupId !== requestGroupId) return;
 			const older = [...olderPage.items].reverse(); // oldest-first
 			const seen = new Set(messages.map((m) => m.id));
 			// Claim buffered transcript frames here too: an older page's REST
@@ -453,12 +685,13 @@
 		} catch {
 			// transient failure — the user can scroll up again to retry
 		} finally {
-			loadingOlder = false;
+			if (chatroomId === requestRoomId && groupId === requestGroupId) loadingOlder = false;
 		}
+		if (chatroomId !== requestRoomId || groupId !== requestGroupId) return;
 		// Measure after the indicator is gone so its height doesn't skew the
 		// anchor; restore the prior reading position now that content prepended.
 		await tick();
-		if (messagesEl) {
+		if (chatroomId === requestRoomId && groupId === requestGroupId && messagesEl) {
 			messagesEl.scrollTop = messagesEl.scrollHeight - prevHeight + prevTop;
 		}
 	}
@@ -481,7 +714,13 @@
 	 */
 	function sendMessage(body: string, media: ChatMediaInput[] = []): boolean {
 		// A media-only message is valid, so body alone no longer gates the send.
-		if ((!body && media.length === 0) || !ws || ws.readyState !== WebSocket.OPEN || !chatroomId)
+		if (
+			(!body && media.length === 0) ||
+			connectionState !== 'connected' ||
+			!ws ||
+			ws.readyState !== WebSocket.OPEN ||
+			!chatroomId
+		)
 			return false;
 
 		const clientMsgId = crypto.randomUUID();
@@ -519,15 +758,6 @@
 		scrollToBottom();
 		return true;
 	}
-
-	// Transcript frames that arrived before the message they belong to. The
-	// worker publishes through Redis on its own schedule — it is NOT ordered
-	// with this handler's echo/broadcast — so a fast failure (or a very short
-	// clip) can beat the `message` frame here. Dropping the frame would strand
-	// the later-arriving bubble on "받아쓰는 중" until a reload; buffering by
-	// media_id lets every message-insertion path claim it. Entries are removed
-	// on match; the map only ever holds this room's still-unmatched frames.
-	const pendingTranscripts = new SvelteMap<string, { status: string; transcript: string | null }>();
 
 	function applyBufferedTranscripts(msg: ChatMessage): ChatMessage {
 		if (!msg.media?.length || pendingTranscripts.size === 0) return msg;
@@ -655,6 +885,10 @@
 	function initial(name: string | undefined): string {
 		return name?.trim()?.[0]?.toUpperCase() ?? '?';
 	}
+
+	function retrySocket(): void {
+		socketLifecycle?.retryNow();
+	}
 </script>
 
 {#snippet messageBody(msg: ChatMessage, onPrimary: boolean)}
@@ -735,15 +969,56 @@
 					본문 추가
 				</button>
 			{/if}
-			<div
-				class="status shrink-0 {connected ? 'status-success' : ''}"
-				role="status"
-				aria-label={connected ? '연결됨' : '연결 중'}
-				aria-live="polite"
-				title={connected ? '연결됨' : '연결 중...'}
-			></div>
+			<div class="flex shrink-0 items-center gap-1">
+				<div
+					role="status"
+					aria-live="polite"
+					class="flex items-center gap-1 text-xs whitespace-nowrap"
+				>
+					{#if connectionState === 'connected'}
+						<span class="relative grid size-4 place-items-center" aria-hidden="true">
+							<span class="absolute inset-0 status status-xl status-success"></span>
+							<Check class="relative size-3 text-success-content" strokeWidth={3} />
+						</span>
+					{:else}
+						<span
+							class="status {connectionState === 'connecting' ? 'status-warning' : 'status-error'}"
+							aria-hidden="true"
+						></span>
+					{/if}
+					<span class:sr-only={connectionState === 'connected'}>{connectionLabel}</span>
+				</div>
+				{#if showManualRetry}
+					<button
+						type="button"
+						data-chat-retry="header"
+						class="btn hidden min-h-11 btn-ghost px-2 text-xs text-primary sm:inline-flex"
+						disabled={manualRetryDisabled}
+						onclick={retrySocket}
+					>
+						다시 시도
+					</button>
+				{/if}
+			</div>
 		</div>
 	</AppHeader>
+
+	{#if showManualRetry}
+		<div
+			data-chat-retry-row
+			class="flex shrink-0 justify-end border-b border-base-300 bg-base-100 px-4 py-1 sm:hidden"
+		>
+			<button
+				type="button"
+				data-chat-retry="mobile"
+				class="btn min-h-11 btn-ghost px-3 text-xs text-primary"
+				disabled={manualRetryDisabled}
+				onclick={retrySocket}
+			>
+				다시 시도
+			</button>
+		</div>
+	{/if}
 
 	{#if pinnedBody}
 		<div

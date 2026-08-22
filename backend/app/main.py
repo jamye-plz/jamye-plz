@@ -176,11 +176,14 @@ async def websocket_endpoint(websocket: WebSocket):
     Authentication via httpOnly cookie `access_token`.
     Protocol (JSON messages):
       Client → Server:
+        { "type": "ping" }
         { "type": "join",         "chatroom_id": "..." }
         { "type": "send_message", "chatroom_id": "...", "body": "...", "client_msg_id": "..." }
         { "type": "ack",          "message_id": "..." }
 
       Server → Client:
+        { "type": "pong" }
+        { "type": "joined",    "chatroom_id": "..." }
         { "type": "message",   ...MessageOut fields }
         { "type": "duplicate", "message_id": "..." }
         { "type": "system",    "body": "..." }
@@ -193,6 +196,12 @@ async def websocket_endpoint(websocket: WebSocket):
     from app.repositories.user_repository import UserRepository
     from app.services.chat_service import ChatService
     from app.core.exceptions import MessageIdempotencyError
+
+    # Starlette turns a pre-accept close into an HTTP 403 denial, which hides
+    # the WebSocket close code from browser clients. Accept first so an expired
+    # or missing cookie is delivered as the terminal 1008 policy close below.
+    # No room subscription or application frame is processed before auth.
+    await websocket.accept()
 
     token = websocket.cookies.get("access_token")
     if not token:
@@ -207,8 +216,6 @@ async def websocket_endpoint(websocket: WebSocket):
     except AuthenticationError:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-
-    await websocket.accept()
 
     # Resolve the sender's nickname + avatar once for this connection.
     sender_nickname: str | None = None
@@ -227,7 +234,13 @@ async def websocket_endpoint(websocket: WebSocket):
             data: dict[str, Any] = await websocket.receive_json()
             msg_type: str = data.get("type", "")
 
-            if msg_type == "join":
+            if msg_type == "ping":
+                # Browser clients cannot emit native WebSocket control pings.
+                # This application-level heartbeat is deliberately direct: it
+                # neither subscribes the socket nor touches chat persistence.
+                await websocket.send_json({"type": "pong"})
+
+            elif msg_type == "join":
                 chatroom_id: str = data.get("chatroom_id", "")
                 if not chatroom_id:
                     await websocket.send_json({"type": "error", "detail": "chatroom_id required"})
@@ -243,10 +256,15 @@ async def websocket_endpoint(websocket: WebSocket):
                             ws_hub.leave(active_chatroom, websocket)
                         active_chatroom = chatroom_id
                         ws_hub.join(chatroom_id, websocket, user_id)
-                        # No join ack: it surfaced as a "Joined chatroom <uuid>"
-                        # system line in the room. Errors still report via "error".
-                    except AppError as exc:
-                        await websocket.send_json({"type": "error", "detail": exc.detail})
+                        # This acknowledgement is the client's causal boundary:
+                        # history recovery starts only after live fan-out is active.
+                        await websocket.send_json({"type": "joined", "chatroom_id": chatroom_id})
+                    except AppError:
+                        # A rejected reconnect is terminal. Reuse the same 4001
+                        # client cleanup as live membership eviction; retrying can
+                        # never restore access and would leave stale group caches.
+                        await websocket.close(code=ws_hub.EVICTED_CLOSE_CODE)
+                        return
                     break
 
             elif msg_type == "send_message":
