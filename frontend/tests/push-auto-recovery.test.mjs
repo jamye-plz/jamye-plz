@@ -11,10 +11,15 @@ const settingsPage = readFileSync(
 	new URL('../src/routes/settings/+page.svelte', import.meta.url),
 	'utf8'
 );
+const layoutSvelte = readFileSync(new URL('../src/routes/+layout.svelte', import.meta.url), 'utf8');
 const serviceWorker = readFileSync(new URL('../src/service-worker.ts', import.meta.url), 'utf8');
 const pushIntent = readFileSync(new URL('../src/lib/push-intent.ts', import.meta.url), 'utf8');
 const pushRecoverySignal = readFileSync(
 	new URL('../src/lib/push-recovery-signal.ts', import.meta.url),
+	'utf8'
+);
+const swReadySignal = readFileSync(
+	new URL('../src/lib/sw-ready-signal.ts', import.meta.url),
 	'utf8'
 );
 const notificationTypes = readFileSync(
@@ -53,11 +58,17 @@ test('reclaimPushForCurrentUser takes the current user id', () => {
 	);
 });
 
-test('recovery is gated on getPushIntent() matching the current user', () => {
+test('recovery entry gate rejects a mismatched marker OR an explicit opt-out', () => {
 	const fn = extractRecoverIntendedPush();
 	assert.ok(
-		/if \(getPushIntent\(\) !== userId\) return;/.test(fn),
-		'a marker belonging to a different user (or no marker) must be ignored'
+		fn.startsWith(
+			'async function recoverIntendedPush(userId: string): Promise<void> {\n' +
+				'\t// Opt-out lives on its own key precisely so no non-gesture path (this\n' +
+				'\t// one included) can ever overwrite it — reads give it precedence over\n' +
+				'\t// the intent key, hence the OR here rather than relying on intent alone.\n' +
+				'\tif (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;'
+		),
+		'the entry gate must reject on a mismatched marker OR an explicit opt-out'
 	);
 });
 
@@ -159,22 +170,21 @@ test('the existing reclaim/rotation/detach logic is untouched', () => {
 	);
 });
 
-test('PushReconciler passes the user id and keeps the lastReclaimed guard', () => {
-	assert.ok(
-		/reclaimPushForCurrentUser\(uid\)/.test(pushReconciler),
-		'PushReconciler must call reclaimPushForCurrentUser(uid)'
-	);
-	assert.ok(
-		/uid !== lastReclaimed/.test(pushReconciler),
-		'the once-per-user reclaim guard must remain'
-	);
-});
-
-test('service-worker.ts never imports push-intent', () => {
+test('service-worker.ts never imports push-intent or either reactive signal', () => {
 	assert.doesNotMatch(
 		serviceWorker,
 		/push-intent/,
 		'the service worker has no localStorage and must never touch the intent module'
+	);
+	assert.doesNotMatch(
+		serviceWorker,
+		/push-recovery-signal|pushRecoverySignal|signalPushRecovered/,
+		'the service worker must never touch the recovery signal'
+	);
+	assert.doesNotMatch(
+		serviceWorker,
+		/sw-ready-signal|swRegisteredSignal|signalSwRegistered/,
+		'the service worker must never touch the SW-ready signal'
 	);
 });
 
@@ -199,7 +209,7 @@ test('settings toggle OFF success records an explicit opt-out, not just a clear'
 	assert.doesNotMatch(
 		fn,
 		/clearPushIntent/,
-		'toggle-OFF must use the durable off sentinel, not the ambiguous clear'
+		'toggle-OFF must use the durable opt-out key, not the ambiguous clear'
 	);
 });
 
@@ -224,9 +234,11 @@ test('settings onMount backfill is guarded by hasExplicitPushOptOut', () => {
 });
 
 test('push-intent is imported by push.api.ts and settings, never by the service worker', () => {
+	const pushApiImport =
+		"import { clearPushIntent, getPushIntent, hasExplicitPushOptOut } from '$lib/push-intent';";
 	assert.ok(
-		/import \{ clearPushIntent, getPushIntent \} from '\$lib\/push-intent';/.test(pushApi),
-		'push.api.ts must import the intent accessors it uses'
+		pushApi.includes(pushApiImport),
+		'push.api.ts must import the intent accessors it uses, including the opt-out reader'
 	);
 	const settingsImport =
 		"import { hasExplicitPushOptOut, setPushIntent, setPushIntentOff } from '$lib/push-intent';";
@@ -237,18 +249,67 @@ test('push-intent is imported by push.api.ts and settings, never by the service 
 	assert.doesNotMatch(serviceWorker, /from '\$lib\/push-intent'/);
 });
 
-// --- explicit opt-out sentinel: ordering-independent backfill vs toggle-OFF ---
+// --- explicit opt-out: separate key, read-precedence in both recovery gates ---
 
-test('recovery still compares getPushIntent() with strict equality (off sentinel is inert)', () => {
+test('the pre-subscribe recheck stays intent-only (unaffected by the opt-out fix)', () => {
 	const fn = extractRecoverIntendedPush();
-	// Every marker check in recovery is `=== userId` / `!== userId` against
-	// the raw stored value. `off:<userId>` never equals `<userId>`, so the
-	// opt-out sentinel is inert for recovery by construction — no dedicated
-	// off-handling branch should exist there.
-	assert.doesNotMatch(
-		fn,
-		/hasExplicitPushOptOut|setPushIntentOff/,
-		'recovery must stay unaware of the off sentinel; plain equality already excludes it'
+	const emptyKeyIdx = fn.indexOf('if (!public_key) return;');
+	const recheckMatches = [...fn.matchAll(/if \(getPushIntent\(\) !== userId\) return;/g)];
+	assert.notEqual(emptyKeyIdx, -1);
+	assert.equal(
+		recheckMatches.length,
+		1,
+		'exactly one plain (non-compound) intent-only recheck must remain: the pre-subscribe one'
+	);
+	assert.ok(
+		emptyKeyIdx < recheckMatches[0].index,
+		'the pre-subscribe recheck must sit after the public_key check'
+	);
+});
+
+test('the final post-await recheck also gates on the compound opt-out condition', () => {
+	const fn = extractRecoverIntendedPush();
+	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
+	const notSubIdx = fn.indexOf('if (!sub) return;', subIdx);
+	const recheckIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
+		notSubIdx
+	);
+	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId);', recheckIdx);
+	const signalIdx = fn.indexOf('signalPushRecovered();');
+
+	assert.notEqual(subIdx, -1);
+	assert.notEqual(notSubIdx, -1);
+	assert.notEqual(recheckIdx, -1, 'the final recheck must use the same compound gate as entry');
+	assert.notEqual(teardownIdx, -1);
+	assert.notEqual(signalIdx, -1);
+	assert.ok(
+		subIdx < notSubIdx &&
+			notSubIdx < recheckIdx &&
+			recheckIdx < teardownIdx &&
+			teardownIdx < signalIdx,
+		'subscribe -> !sub bail -> compound recheck+teardown -> pulse, in that order'
+	);
+});
+
+test('teardownRecoveredSub restores intent only when NOT also opted out', () => {
+	const fn = extractTeardownRecoveredSub();
+	assert.ok(
+		/if \(getPushIntent\(\) === userId && !hasExplicitPushOptOut\(userId\)\) \{/.test(fn),
+		'the restored-intent re-POST branch must also require the absence of an opt-out'
+	);
+});
+
+test('hasExplicitPushOptOut is imported by push.api.ts and used at all three gates', () => {
+	assert.ok(
+		/import \{ clearPushIntent, getPushIntent, hasExplicitPushOptOut \}/.test(pushApi),
+		'hasExplicitPushOptOut must be imported alongside the other intent accessors'
+	);
+	const calls = pushApi.match(/hasExplicitPushOptOut\(userId\)/g) ?? [];
+	assert.equal(
+		calls.length,
+		3,
+		'entry gate, final recheck, and teardown restore must all consult the opt-out key'
 	);
 });
 
@@ -262,27 +323,6 @@ test('push-recovery-signal.ts exports a writable pulse and a success-only publis
 	assert.ok(
 		/export function signalPushRecovered\(\): void/.test(pushRecoverySignal),
 		'signalPushRecovered must be the sole publish entry point'
-	);
-});
-
-test('recoverIntendedPush re-checks intent right before subscribing (TOCTOU narrowing)', () => {
-	const fn = extractRecoverIntendedPush();
-	const emptyKeyIdx = fn.indexOf('if (!public_key) return;');
-	const recheckMatches = [...fn.matchAll(/if \(getPushIntent\(\) !== userId\) return;/g)];
-	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
-
-	assert.notEqual(emptyKeyIdx, -1);
-	assert.notEqual(subIdx, -1);
-	assert.equal(
-		recheckMatches.length,
-		2,
-		'getPushIntent must be re-checked twice: once at entry, once right before subscribing'
-	);
-
-	const recheckIdx = recheckMatches[1].index;
-	assert.ok(
-		emptyKeyIdx < recheckIdx && recheckIdx < subIdx,
-		'the second intent re-check must sit between the public_key check and requestAndSubscribe'
 	);
 });
 
@@ -335,7 +375,7 @@ test('push.api.ts no longer imports getMe (server binding supersedes identity ch
 	);
 });
 
-// --- teardownRecoveredSub: restored-intent skip ---
+// --- teardownRecoveredSub: restored-intent re-POST ---
 
 test('teardownRecoveredSub takes the intended userId and races a delete against a timeout', () => {
 	const fn = extractTeardownRecoveredSub();
@@ -355,10 +395,12 @@ test('teardownRecoveredSub takes the intended userId and races a delete against 
 	);
 });
 
-test('teardownRecoveredSub re-POSTs (not just skips) when intent was restored', () => {
+test('teardownRecoveredSub re-POSTs when intent was restored and not opted out', () => {
 	const fn = extractTeardownRecoveredSub();
 	const raceCloseIdx = fn.indexOf(']);');
-	const recheckIdx = fn.indexOf('if (getPushIntent() === userId) {');
+	const recheckIdx = fn.indexOf(
+		'if (getPushIntent() === userId && !hasExplicitPushOptOut(userId)) {'
+	);
 	const rePostIdx = fn.indexOf('await subscribePush({', recheckIdx);
 	const expectedUserIdIdx = fn.indexOf('expected_user_id: userId', rePostIdx);
 	const catchIdx = fn.indexOf('}).catch(() => {});', expectedUserIdIdx);
@@ -366,8 +408,8 @@ test('teardownRecoveredSub re-POSTs (not just skips) when intent was restored', 
 	const unsubscribeIdx = fn.indexOf('await sub.unsubscribe().catch(() => {});');
 
 	assert.notEqual(raceCloseIdx, -1);
-	assert.notEqual(recheckIdx, -1, 'the marker must be re-read after the race, not before it');
-	assert.notEqual(rePostIdx, -1, 'a restored marker must re-POST the subscription, not just skip');
+	assert.notEqual(recheckIdx, -1, 'the marker must be re-read (with opt-out) after the race');
+	assert.notEqual(rePostIdx, -1, 'a restored, non-opted-out marker must re-POST, not just skip');
 	assert.notEqual(expectedUserIdIdx, -1, 're-POST must stay bound to the intended user');
 	assert.notEqual(catchIdx, -1, 're-POST must be best-effort (swallowed failure)');
 	assert.notEqual(returnIdx, -1);
@@ -397,41 +439,50 @@ test('recoverIntendedPush signals only after subscribe succeeds and the recheck 
 	const fn = extractRecoverIntendedPush();
 	const subIdx = fn.indexOf('const sub = await requestAndSubscribe(public_key, userId);');
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const recheckIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
+		notSubIdx
+	);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(subIdx, -1, 'the subscribe result must be captured');
 	assert.notEqual(notSubIdx, -1, 'a null subscription must bail before signaling');
-	assert.notEqual(recheckIdx, -1, 'the post-await marker recheck must exist');
+	assert.notEqual(recheckIdx, -1, 'the post-await compound marker recheck must exist');
 	assert.notEqual(signalIdx, -1, 'signalPushRecovered must exist');
 	assert.ok(
 		subIdx < notSubIdx && notSubIdx < recheckIdx && recheckIdx < signalIdx,
-		'the pulse must fire only after subscribe succeeds and the marker is reconfirmed'
+		'the pulse must fire only after subscribe succeeds and the recheck is reconfirmed'
 	);
 });
 
-test('a cross-tab toggle-OFF during requestAndSubscribe tears the subscription back down', () => {
+test('a cross-tab toggle-OFF/opt-out during requestAndSubscribe tears the sub back down', () => {
 	const fn = extractRecoverIntendedPush();
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const recheckIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
+		notSubIdx
+	);
 	const teardownIdx = fn.indexOf('await teardownRecoveredSub(sub, userId);', recheckIdx);
 	const returnIdx = fn.indexOf('return;', teardownIdx);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
-	assert.notEqual(recheckIdx, -1, 'the post-await marker recheck block must exist');
-	assert.notEqual(teardownIdx, -1, 'a stale marker must reuse the teardown helper with userId');
+	assert.notEqual(recheckIdx, -1, 'the post-await compound marker recheck block must exist');
+	assert.notEqual(teardownIdx, -1, 'a stale marker or opt-out must reuse the teardown helper');
 	assert.notEqual(returnIdx, -1);
 	assert.notEqual(signalIdx, -1);
 	assert.ok(
 		recheckIdx < teardownIdx && teardownIdx < returnIdx && returnIdx < signalIdx,
-		'a stale marker must tear down and return before ever reaching the pulse'
+		'a stale marker or opt-out must tear down and return before ever reaching the pulse'
 	);
 });
 
 test('the marker recheck runs synchronously right before the pulse, no intervening await', () => {
 	const fn = extractRecoverIntendedPush();
 	const notSubIdx = fn.indexOf('if (!sub) return;');
-	const recheckIdx = fn.indexOf('if (getPushIntent() !== userId) {', notSubIdx);
+	const recheckIdx = fn.indexOf(
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {',
+		notSubIdx
+	);
 	const signalIdx = fn.indexOf('signalPushRecovered();');
 
 	assert.notEqual(recheckIdx, -1);
@@ -439,7 +490,7 @@ test('the marker recheck runs synchronously right before the pulse, no interveni
 
 	const between = fn.slice(recheckIdx, signalIdx + 'signalPushRecovered();'.length);
 	const expected =
-		'if (getPushIntent() !== userId) {\n' +
+		'if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {\n' +
 		'\t\t\tawait teardownRecoveredSub(sub, userId);\n' +
 		'\t\t\treturn;\n' +
 		'\t\t}\n' +
@@ -532,15 +583,96 @@ test('settings consumes pushRecoverySignal and flips the toggle only when not bu
 	assert.ok(busyIdx !== -1 && flipIdx !== -1 && busyIdx < flipIdx);
 });
 
-test('push-intent.ts and service-worker.ts are untouched by the new signal', () => {
+test('push-intent.ts is untouched by either reactive signal', () => {
 	assert.doesNotMatch(
 		pushIntent,
 		/push-recovery-signal|signalPushRecovered|pushRecoverySignal/,
-		'push-intent.ts must stay framework-free and signal-free'
+		'push-intent.ts must stay framework-free and recovery-signal-free'
 	);
 	assert.doesNotMatch(
-		serviceWorker,
-		/push-recovery-signal|signalPushRecovered|pushRecoverySignal/,
-		'the service worker must never touch the recovery signal'
+		pushIntent,
+		/sw-ready-signal|swRegisteredSignal|signalSwRegistered/,
+		'push-intent.ts must stay framework-free and SW-signal-free'
+	);
+});
+
+// --- Fix B: retry reclaim when a SW registration appears mid-session ---
+
+test('sw-ready-signal.ts exports a writable pulse and a publisher', () => {
+	assert.ok(
+		/export const swRegisteredSignal = writable\(0\);/.test(swReadySignal),
+		'the signal must be a plain writable store'
+	);
+	assert.ok(
+		/export function signalSwRegistered\(\): void/.test(swReadySignal),
+		'signalSwRegistered must be the publish entry point'
+	);
+});
+
+test('+layout.svelte registers the SW with immediate:true and onRegisteredSW', () => {
+	assert.ok(
+		/import \{ signalSwRegistered \} from '\$lib\/sw-ready-signal';/.test(layoutSvelte),
+		'the layout must import the SW-ready signal publisher'
+	);
+	const registerCallIdx = layoutSvelte.indexOf('registerSW({');
+	const immediateIdx = layoutSvelte.indexOf('immediate: true,', registerCallIdx);
+	const onRegisteredIdx = layoutSvelte.indexOf(
+		'onRegisteredSW: () => signalSwRegistered()',
+		registerCallIdx
+	);
+	assert.notEqual(registerCallIdx, -1, 'registerSW must still be called');
+	assert.notEqual(immediateIdx, -1, 'immediate: true must be kept unchanged');
+	assert.notEqual(onRegisteredIdx, -1, 'onRegisteredSW must publish the SW-ready pulse');
+	assert.ok(
+		registerCallIdx < immediateIdx && immediateIdx < onRegisteredIdx,
+		'immediate and onRegisteredSW must both be part of the same registerSW call'
+	);
+});
+
+test('the dynamic PWA-register import gating is unchanged', () => {
+	assert.ok(
+		/if \(import\.meta\.env\.PROD \|\| import\.meta\.env\.VITE_DEV_SW === 'true'\)/.test(
+			layoutSvelte
+		),
+		'the prod/VITE_DEV_SW gate around registering the SW must remain'
+	);
+	assert.ok(
+		/import\('virtual:pwa-register'\)\.then\(\(\{ registerSW \}\) =>/.test(layoutSvelte),
+		'the dynamic import of virtual:pwa-register must remain'
+	);
+});
+
+test('PushReconciler subscribes to swRegisteredSignal and re-runs reclaim on a pulse', () => {
+	assert.ok(
+		/import \{ swRegisteredSignal \} from '\$lib\/sw-ready-signal';/.test(pushReconciler),
+		'PushReconciler must import the SW-ready signal'
+	);
+	assert.ok(
+		/const swPulse = \$swRegisteredSignal;/.test(pushReconciler),
+		'the effect must read the SW-ready signal (so it re-runs when the pulse changes)'
+	);
+	// The re-run key must be a composite of uid AND the pulse, not uid alone,
+	// otherwise a pulse arriving for an already-reclaimed uid would not
+	// re-trigger reclaim (Svelte effects only re-run when a value THEY READ
+	// changes; merely mutating a shared variable from elsewhere would not).
+	assert.ok(
+		/const key = `\$\{uid\}:\$\{swPulse\}`;/.test(pushReconciler),
+		'the dedupe key must combine uid and the SW-ready pulse count'
+	);
+	assert.ok(
+		/if \(key !== lastReclaimedFor\) \{/.test(pushReconciler),
+		'reclaim must re-run whenever the composite key changes'
+	);
+	assert.ok(
+		/reclaimPushForCurrentUser\(uid\);/.test(pushReconciler),
+		'PushReconciler must still call reclaimPushForCurrentUser(uid)'
+	);
+});
+
+test('PushReconciler no longer uses a plain uid-only lastReclaimed guard', () => {
+	assert.doesNotMatch(
+		pushReconciler,
+		/uid !== lastReclaimed\b(?!For)/,
+		'the old uid-only guard must be replaced by the composite-key guard'
 	);
 });

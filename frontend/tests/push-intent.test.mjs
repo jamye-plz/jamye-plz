@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
 	PUSH_INTENT_KEY,
+	PUSH_OPTOUT_KEY,
 	clearPushIntent,
 	getPushIntent,
 	hasExplicitPushOptOut,
@@ -28,8 +29,10 @@ function createThrowingStorage() {
 	return { getItem: boom, setItem: boom, removeItem: boom };
 }
 
-test('PUSH_INTENT_KEY is the app-prefixed storage key', () => {
+test('PUSH_INTENT_KEY and PUSH_OPTOUT_KEY are distinct, app-prefixed storage keys', () => {
 	assert.equal(PUSH_INTENT_KEY, 'jamye:push-intent');
+	assert.equal(PUSH_OPTOUT_KEY, 'jamye:push-optout');
+	assert.notEqual(PUSH_INTENT_KEY, PUSH_OPTOUT_KEY, 'intent and opt-out must be separate keys');
 });
 
 test('setPushIntent/getPushIntent/clearPushIntent round-trip the user id', () => {
@@ -42,6 +45,20 @@ test('setPushIntent/getPushIntent/clearPushIntent round-trip the user id', () =>
 
 		clearPushIntent();
 		assert.equal(getPushIntent(), null, 'clearPushIntent removes the key');
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('the intent key never contains an off: encoding (opt-out lives elsewhere)', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		setPushIntentOff('user-123');
+		const raw = localStorage.getItem(PUSH_INTENT_KEY);
+		assert.ok(
+			raw === null || !raw.startsWith('off:'),
+			'opt-out must never be encoded into the intent key value'
+		);
 	} finally {
 		delete globalThis.localStorage;
 	}
@@ -75,7 +92,7 @@ test('accessors swallow a throwing localStorage instead of propagating', () => {
 		);
 		assert.doesNotThrow(
 			() => hasExplicitPushOptOut('user-123'),
-			'hasExplicitPushOptOut swallows the thrown error (via getPushIntent)'
+			'hasExplicitPushOptOut swallows the thrown error'
 		);
 		assert.equal(hasExplicitPushOptOut('user-123'), false, 'falls back to false on throw');
 	} finally {
@@ -83,14 +100,20 @@ test('accessors swallow a throwing localStorage instead of propagating', () => {
 	}
 });
 
-test('setPushIntentOff/hasExplicitPushOptOut round-trip the opt-out sentinel', () => {
+test('setPushIntentOff writes the opt-out key and clears the (now stale) intent key', () => {
 	globalThis.localStorage = createMemoryStorage();
 	try {
-		assert.equal(hasExplicitPushOptOut('user-123'), false, 'starts with no opt-out');
+		setPushIntent('user-123');
+		assert.equal(getPushIntent(), 'user-123', 'precondition: intent was ON');
 
 		setPushIntentOff('user-123');
-		assert.equal(getPushIntent(), 'off:user-123', 'the sentinel value is off:<userId>');
-		assert.equal(hasExplicitPushOptOut('user-123'), true, 'opt-out is now recorded');
+		assert.equal(
+			localStorage.getItem(PUSH_OPTOUT_KEY),
+			'user-123',
+			'the opt-out key stores the user id verbatim'
+		);
+		assert.equal(getPushIntent(), null, 'the stale intent marker is removed');
+		assert.equal(hasExplicitPushOptOut('user-123'), true);
 	} finally {
 		delete globalThis.localStorage;
 	}
@@ -102,11 +125,7 @@ test('hasExplicitPushOptOut is false for a missing marker, another user, or an O
 		assert.equal(hasExplicitPushOptOut('user-123'), false, 'no marker at all');
 
 		setPushIntentOff('user-456');
-		assert.equal(
-			hasExplicitPushOptOut('user-123'),
-			false,
-			'another user\'s opt-out must not match'
-		);
+		assert.equal(hasExplicitPushOptOut('user-123'), false, "another user's opt-out must not match");
 
 		setPushIntent('user-123');
 		assert.equal(
@@ -119,18 +138,61 @@ test('hasExplicitPushOptOut is false for a missing marker, another user, or an O
 	}
 });
 
-test('setPushIntent overwrites an existing off sentinel (toggle-ON wins over opt-out)', () => {
+test('setPushIntent clears its OWN prior opt-out but never another user\'s', () => {
 	globalThis.localStorage = createMemoryStorage();
 	try {
 		setPushIntentOff('user-123');
-		assert.equal(hasExplicitPushOptOut('user-123'), true, 'precondition: opted out');
+		assert.equal(hasExplicitPushOptOut('user-123'), true, 'precondition: user-123 opted out');
 
 		setPushIntent('user-123');
-		assert.equal(getPushIntent(), 'user-123', 'setPushIntent must overwrite the off sentinel');
+		assert.equal(getPushIntent(), 'user-123', 'setPushIntent must write the intent key');
 		assert.equal(
 			hasExplicitPushOptOut('user-123'),
 			false,
-			'an explicit toggle-ON gesture clears the prior opt-out'
+			"an explicit toggle-ON gesture clears that SAME user's prior opt-out"
+		);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('setPushIntent for one user never touches a different user\'s opt-out record', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		setPushIntentOff('user-456');
+		assert.equal(hasExplicitPushOptOut('user-456'), true, 'precondition: user-456 opted out');
+
+		// A backfill-style write for a DIFFERENT user (user-123) must never
+		// remove user-456's opt-out record — cross-user writes are the exact
+		// hazard the separate key exists to prevent.
+		setPushIntent('user-123');
+		assert.equal(
+			hasExplicitPushOptOut('user-456'),
+			true,
+			"a different user's setPushIntent must not clear user-456's opt-out"
+		);
+	} finally {
+		delete globalThis.localStorage;
+	}
+});
+
+test('a backfill-style intent write cannot remove the opt-out key it does not own', () => {
+	globalThis.localStorage = createMemoryStorage();
+	try {
+		setPushIntentOff('user-123');
+		assert.equal(localStorage.getItem(PUSH_OPTOUT_KEY), 'user-123');
+
+		// Simulate the settings backfill: it only ever calls setPushIntent,
+		// never anything that targets PUSH_OPTOUT_KEY directly. Even so, once
+		// the SAME user's opt-out is set, only that user's own setPushIntent
+		// clears it (previous test) — a structurally separate key means there
+		// is no write path that can silently drop it as a side effect of an
+		// unrelated key's write.
+		localStorage.setItem(PUSH_INTENT_KEY, 'user-999');
+		assert.equal(
+			localStorage.getItem(PUSH_OPTOUT_KEY),
+			'user-123',
+			'writing the intent key directly must never disturb the opt-out key'
 		);
 	} finally {
 		delete globalThis.localStorage;

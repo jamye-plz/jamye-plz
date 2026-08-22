@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiDelete } from './client';
-import { clearPushIntent, getPushIntent } from '$lib/push-intent';
+import { clearPushIntent, getPushIntent, hasExplicitPushOptOut } from '$lib/push-intent';
 import { signalPushRecovered } from '$lib/push-recovery-signal';
 import type { PushSubscriptionPayload } from '$lib/types/notification.types';
 
@@ -103,7 +103,10 @@ async function teardownRecoveredSub(sub: PushSubscription, userId: string): Prom
 	// existing reclaim path (existing-subscription branch re-registers). No
 	// signal here: this branch preserves the user's own fresh toggle-ON, it
 	// doesn't complete a recovery — the toggle path already owns the UI.
-	if (getPushIntent() === userId) {
+	// Opt-out still takes precedence even here: if the user toggled OFF
+	// again (writing the separate opt-out key) within this same window,
+	// that decision must win over restoring a subscription for them.
+	if (getPushIntent() === userId && !hasExplicitPushOptOut(userId)) {
 		const raw = sub.toJSON();
 		const keys = raw.keys as { p256dh: string; auth: string };
 		await subscribePush({
@@ -128,7 +131,10 @@ async function teardownRecoveredSub(sub: PushSubscription, userId: string): Prom
  * so the next authenticated app load simply retries.
  */
 async function recoverIntendedPush(userId: string): Promise<void> {
-	if (getPushIntent() !== userId) return; // no intent, or another account's
+	// Opt-out lives on its own key precisely so no non-gesture path (this
+	// one included) can ever overwrite it — reads give it precedence over
+	// the intent key, hence the OR here rather than relying on intent alone.
+	if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) return;
 	// `window` guard first: this module is imported by push.api.ts consumers
 	// that may run in non-browser contexts (SSR, tests) where `window` itself
 	// is undefined — checking `'Notification' in window` there would throw.
@@ -172,13 +178,15 @@ async function recoverIntendedPush(userId: string): Promise<void> {
 		const sub = await requestAndSubscribe(public_key, userId);
 		if (!sub) return;
 		// Final synchronous re-check: another tab may have toggled push off
-		// (clearing the marker) at any point during the requestAndSubscribe
+		// (clearing the marker, and — for an explicit opt-out — writing the
+		// separate opt-out key) at any point during the requestAndSubscribe
 		// await. A cross-tab toggle-OFF must win over recovery, so tear the
 		// just-created subscription back down (unless intent was restored in
 		// the meantime — see teardownRecoveredSub) and skip the signal. This
 		// runs in the same synchronous frame as the pulse below, so nothing
-		// can invalidate intent between this check and the pulse itself.
-		if (getPushIntent() !== userId) {
+		// can invalidate intent between this check and the pulse itself. The
+		// opt-out check is read-precedence, matching the entry gate above.
+		if (getPushIntent() !== userId || hasExplicitPushOptOut(userId)) {
 			await teardownRecoveredSub(sub, userId);
 			return;
 		}
