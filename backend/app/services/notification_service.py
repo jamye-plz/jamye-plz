@@ -187,8 +187,26 @@ class NotificationService:
         return notif
 
     async def upsert_push_subscription(
-        self, user_id: str, endpoint: str, p256dh: str, auth: str
+        self,
+        user_id: str,
+        endpoint: str,
+        p256dh: str,
+        auth: str,
+        expected_user_id: str | None = None,
     ) -> PushSubscription:
+        # Server-side session authority check for the frontend's silent push
+        # recovery flow. The httpOnly session cookie is shared across tabs, so
+        # a client-side "is this still my session?" check races (the session
+        # can flip A→B→A mid flight); only the server can see the *current*
+        # request's session user atomically. When the caller asserts who it
+        # expects to be registering and that doesn't match the session's
+        # current_user.id, reject before touching any subscription row — do
+        # not create, update, or reassign anything for either identity.
+        if expected_user_id is not None and expected_user_id != user_id:
+            from app.core.exceptions import ForbiddenError
+
+            raise ForbiddenError("Session user does not match expected user")
+
         # Serialize this user's concurrent registrations so the upsert + cap
         # prune below are atomic: without the lock, parallel POSTs for distinct
         # endpoints each see the same old rows, prune the same oldest one, and

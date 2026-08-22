@@ -22,4 +22,12 @@ export interface PushSubscriptionPayload {
 	endpoint: string;
 	p256dh: string;
 	auth: string;
+	/**
+	 * Optional server-side binding check: when present, the backend rejects
+	 * (403, writes nothing) if the session cookie belongs to a different
+	 * user by the time the POST lands. Used only by the silent auto-recovery
+	 * path (never by the explicit settings toggle) to atomically guard
+	 * against a cross-tab account change racing the subscribe request.
+	 */
+	expected_user_id?: string;
 }

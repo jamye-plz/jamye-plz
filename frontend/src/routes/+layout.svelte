@@ -8,6 +8,7 @@
 	import AppNavigation from '$lib/components/AppNavigation.svelte';
 	import PushReconciler from '$lib/components/PushReconciler.svelte';
 	import shouldMoveRouteFocus from '$lib/route-focus';
+	import { signalSwRegistered } from '$lib/sw-ready-signal';
 
 	let { children } = $props();
 
@@ -16,7 +17,16 @@
 	// tested against the dev server (which already proxies /api + WS).
 	onMount(() => {
 		if (import.meta.env.PROD || import.meta.env.VITE_DEV_SW === 'true') {
-			import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }));
+			import('virtual:pwa-register').then(({ registerSW }) =>
+				registerSW({
+					immediate: true,
+					// Tell PushReconciler a registration now exists: reclaim can have
+					// already run (and no-opped) before the SW finished registering,
+					// and its once-per-user latch would otherwise block any retry
+					// until a full reload.
+					onRegisteredSW: () => signalSwRegistered()
+				})
+			);
 		}
 	});
 

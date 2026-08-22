@@ -783,6 +783,102 @@ class TestSubscriptionCap:
         assert db.commits == 1
 
 
+# ── expected_user_id binds /push/subscribe to the session's current_user ────
+#
+# PR #31 review: the frontend's silent push recovery cannot atomically verify
+# the session user around POST /api/push/subscribe (httpOnly cookie shared
+# across tabs; the session can change mid-flight A→B→A, so any client-side
+# check races). The server is the single authority: an optional
+# expected_user_id in the body is compared against the *session's*
+# current_user.id (never a client-supplied identity on its own).
+
+
+class TestExpectedUserIdBinding:
+    async def test_mismatched_expected_user_id_raises_forbidden_and_touches_no_row(self) -> None:
+        import pytest
+
+        from app.core.exceptions import ForbiddenError
+
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs=[])
+
+        with pytest.raises(ForbiddenError) as excinfo:
+            await svc.upsert_push_subscription(
+                user_id="u1",
+                endpoint="https://push.example/new",
+                p256dh=VALID_P256DH,
+                auth=VALID_AUTH,
+                expected_user_id="u2",
+            )
+
+        assert excinfo.value.status_code == 403
+        # No lock/upsert/prune attempted, and no commit — nothing created,
+        # updated, or reassigned for either identity.
+        assert push_repo.calls == []
+        assert push_repo.locked == []
+        assert push_repo.prune_calls == []
+        assert push_repo._subs == []
+        assert db.commits == 0
+
+    async def test_matching_expected_user_id_registers_normally(self) -> None:
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs=[])
+
+        sub = await svc.upsert_push_subscription(
+            user_id="u1",
+            endpoint="https://push.example/new",
+            p256dh=VALID_P256DH,
+            auth=VALID_AUTH,
+            expected_user_id="u1",
+        )
+
+        assert sub.user_id == "u1"
+        assert push_repo.locked == ["u1"]
+        assert push_repo.prune_calls == [
+            ("u1", notification_service_module.MAX_PUSH_SUBSCRIPTIONS_PER_USER)
+        ]
+        assert db.commits == 1
+
+    async def test_omitted_expected_user_id_registers_normally(self) -> None:
+        """Regression: default (no expected_user_id) must behave byte-for-byte
+        as before this field existed."""
+        db = FakeAsyncSession()
+        svc, push_repo = _make_service(db, subs=[])
+
+        sub = await svc.upsert_push_subscription(
+            user_id="u1",
+            endpoint="https://push.example/new",
+            p256dh=VALID_P256DH,
+            auth=VALID_AUTH,
+        )
+
+        assert sub.user_id == "u1"
+        assert push_repo.locked == ["u1"]
+        assert push_repo.prune_calls == [
+            ("u1", notification_service_module.MAX_PUSH_SUBSCRIPTIONS_PER_USER)
+        ]
+        assert db.commits == 1
+
+    def test_push_subscribe_body_expected_user_id_defaults_to_none(self) -> None:
+        from app.routers.push import PushSubscribeBody
+
+        body = PushSubscribeBody(
+            endpoint="https://fcm.googleapis.com/x", p256dh=VALID_P256DH, auth=VALID_AUTH
+        )
+        assert body.expected_user_id is None
+
+    def test_push_subscribe_body_accepts_expected_user_id(self) -> None:
+        from app.routers.push import PushSubscribeBody
+
+        body = PushSubscribeBody(
+            endpoint="https://fcm.googleapis.com/x",
+            p256dh=VALID_P256DH,
+            auth=VALID_AUTH,
+            expected_user_id="u1",
+        )
+        assert body.expected_user_id == "u1"
+
+
 # ── send fan-out is bounded even when stored rows exceed the cap ──────────────
 
 
