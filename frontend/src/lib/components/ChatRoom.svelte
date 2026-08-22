@@ -166,6 +166,7 @@
 	// Hide the list until the first page is pinned to the bottom, so entering a
 	// room never flashes at the oldest message before jumping to the newest.
 	let initialReady = $state(false);
+	let initialRevealPromise: Promise<boolean> | null = null;
 	let ws = $state<ChatSocket | null>(null);
 	let socketLifecycle: ChatSocketLifecycle | null = null;
 	let connectionState = $state<ChatConnectionState>('connecting');
@@ -221,6 +222,7 @@
 			nextCursor = null;
 			loadingOlder = false;
 			initialReady = false;
+			initialRevealPromise = null;
 			if (pendingRead !== null) {
 				clearTimeout(pendingRead);
 				pendingRead = null;
@@ -309,11 +311,43 @@
 		};
 	});
 
+	function revealInitialMessages(isCurrent: () => boolean): Promise<boolean> {
+		if (!isCurrent()) return Promise.resolve(false);
+		if (initialReady) return Promise.resolve(true);
+		if (initialRevealPromise) return initialRevealPromise;
+
+		let resolveReveal!: (revealed: boolean) => void;
+		const revealPromise = new Promise<boolean>((resolve) => {
+			resolveReveal = resolve;
+		});
+		initialRevealPromise = revealPromise;
+		const complete = (revealed: boolean) => {
+			if (initialRevealPromise === revealPromise) initialRevealPromise = null;
+			resolveReveal(revealed);
+		};
+
+		tick().then(() => {
+			if (!isCurrent()) return complete(false);
+			if (initialReady) return complete(true);
+			scrollToBottom();
+			requestAnimationFrame(() => {
+				if (!isCurrent()) return complete(false);
+				if (initialReady) return complete(true);
+				scrollToBottom();
+				initialReady = true;
+				complete(true);
+			});
+		});
+
+		return revealPromise;
+	}
+
 	// Seed the room from the latest page (newest-first → reversed to oldest-first
 	// for display) and remember the cursor to older history. Mid-session refetch
 	// is disabled, so this only runs on entry — then WS + loadOlder own `messages`.
 	$effect(() => {
 		const seedPage = messagesQuery.data;
+		const seedRoomKey = `${groupId}:${chatroomId}`;
 		if (seedPage) {
 			const currentRoomItems = seedPage.items.filter(
 				(message) => message.chatroom_id === chatroomId
@@ -324,14 +358,10 @@
 			);
 			messages = untrack(() => mergeChatMessageRecords(messages, seededMessages, compareMessages));
 			nextCursor = seedPage.next_cursor;
-			// Pin to the bottom before revealing: scroll after the DOM updates
-			// (tick) and again after layout settles (rAF), then show the list.
-			tick().then(() => {
-				scrollToBottom();
-				requestAnimationFrame(() => {
-					scrollToBottom();
-					initialReady = true;
-				});
+			// Pin to the bottom before revealing. The shared helper also lets a
+			// successful join-gap recovery reveal an empty/failed initial query.
+			untrack(() => {
+				void revealInitialMessages(() => activeRoomKey === seedRoomKey);
 			});
 			// Mark the room read on entry, bounded to the fetched page's newest
 			// message read from messagesQuery.data (NOT the reactive `messages`), so
@@ -479,6 +509,18 @@
 		const isRoomSocketCurrent = (socket: ChatSocket) =>
 			lifecycle.isCurrent(socket) && activeRoomKey === `${currentGroupId}:${roomId}`;
 
+		async function finishHistoryRecovery(socket: ChatSocket) {
+			if (!isRoomSocketCurrent(socket)) return;
+			if (!initialReady) {
+				const revealed = await revealInitialMessages(() => isRoomSocketCurrent(socket));
+				if (!revealed || !isRoomSocketCurrent(socket)) return;
+			}
+			await tick();
+			if (!isRoomSocketCurrent(socket)) return;
+			historyRecoveryPending = false;
+			if (document.visibilityState === 'visible' && isNearBottom()) tryMarkRead();
+		}
+
 		function startHistoryRecovery(socket: ChatSocket, knownIds: ReadonlySet<string>) {
 			if (!isRoomSocketCurrent(socket)) return;
 			historyRecovery?.dispose();
@@ -489,16 +531,7 @@
 				isCurrent: () => isRoomSocketCurrent(socket),
 				onSuccess: () => {
 					if (!isRoomSocketCurrent(socket)) return;
-					historyRecoveryPending = false;
-					tick().then(() => {
-						if (
-							!isRoomSocketCurrent(socket) ||
-							document.visibilityState !== 'visible' ||
-							!isNearBottom()
-						)
-							return;
-						tryMarkRead();
-					});
+					void finishHistoryRecovery(socket);
 				}
 			});
 			historyRecovery.start();

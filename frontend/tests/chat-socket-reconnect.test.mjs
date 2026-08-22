@@ -734,6 +734,16 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
+		/function revealInitialMessages\(isCurrent: \(\) => boolean\): Promise<boolean> \{[\s\S]*tick\(\)\.then\(\(\) => \{[\s\S]*if \(!isCurrent\(\)\) return complete\(false\);[\s\S]*scrollToBottom\(\);[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*if \(!isCurrent\(\)\) return complete\(false\);[\s\S]*scrollToBottom\(\);[\s\S]*initialReady = true/,
+		'initial reveal must guard its tick and rAF stages before scrolling or exposing messages'
+	);
+	assert.match(
+		chatRoomSource.slice(seedEffectStart, seedEffectEnd),
+		/untrack\(\(\) => \{\s*void revealInitialMessages\(\(\) => activeRoomKey === seedRoomKey\);\s*\}\)/,
+		'a late query seed must delegate reveal to the guarded helper instead of scrolling again directly'
+	);
+	assert.match(
+		chatRoomSource,
 		/messages\s*\.filter\(\(message\) => !message\.pending && message\.chatroom_id === roomId\)/,
 		'join snapshots must never seed new-room recovery with old-room message ids'
 	);
@@ -744,12 +754,12 @@ test('ChatRoom only queues sends after liveness and reconciles fetched client me
 	);
 	assert.match(
 		chatRoomSource,
-		/createReconnectHistoryRecovery(?:<ChatMessage>)?\([\s\S]*onSuccess:[\s\S]*historyRecoveryPending = false/,
+		/async function finishHistoryRecovery\(socket: ChatSocket\) \{[\s\S]*if \(!initialReady\)[\s\S]*await revealInitialMessages\(\(\) => isRoomSocketCurrent\(socket\)\);[\s\S]*await tick\(\);[\s\S]*if \(!isRoomSocketCurrent\(socket\)\) return;[\s\S]*historyRecoveryPending = false;[\s\S]*document\.visibilityState === 'visible'[\s\S]*isNearBottom\(\)[\s\S]*tryMarkRead\(\)[\s\S]*onSuccess: \(\) => \{[\s\S]*void finishHistoryRecovery\(socket\)/,
 		'ChatRoom must own a cancellable retry chain for transient join-gap history failures'
 	);
 	assert.match(
 		chatRoomSource,
-		/function tryMarkRead\(explicitUpTo\?: string\) \{[\s\S]*historyRecoveryPending[\s\S]*onSuccess:[\s\S]*historyRecoveryPending = false[\s\S]*tryMarkRead\(\)/,
+		/function tryMarkRead\(explicitUpTo\?: string\) \{[\s\S]*historyRecoveryPending[\s\S]*async function finishHistoryRecovery\(socket: ChatSocket\) \{[\s\S]*historyRecoveryPending = false[\s\S]*tryMarkRead\(\)/,
 		'read receipts must wait for successful gap recovery, then advance only from the current recovery path'
 	);
 	assert.match(
