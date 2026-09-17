@@ -30,11 +30,11 @@
     , ...
     }:
     let
-      # Build packages only for the deploy architecture. The frontend FOD hash is
+      # Build packages for the deploy architectures. The frontend FOD hash is
       # architecture-specific (bun.lock pulls OS/CPU-gated native optionals), so
       # exposing systems without a hash would break `nix flake {show,check}`. Add
       # a system here only once infra/frontend.nix has a matching hash entry.
-      packageSystems = [ "aarch64-linux" ];
+      packageSystems = [ "x86_64-linux" "aarch64-linux" ];
       # Broader set is fine for system-agnostic outputs (formatter).
       allSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
       forPackageSystems = nixpkgs.lib.genAttrs packageSystems;
