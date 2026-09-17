@@ -6,6 +6,20 @@
 
 > 갱신 2026-08-05 — 음성 전사 스택(M4a) 반영. MinIO·Web Push 배선은 PR #17·#19·#20.
 
+## 지원 아키텍처
+
+Nix 패키지는 `aarch64-linux`와 `x86_64-linux`를 지원합니다. frontend의
+`node_modules` 해시는 아키텍처별로 고정하므로 `bun.lock`을 바꾸면 두 해시를
+각각 검증해야 합니다.
+
+```bash
+nix build .#packages.x86_64-linux.frontend .#packages.x86_64-linux.backend
+nix build .#packages.aarch64-linux.frontend .#packages.aarch64-linux.backend
+```
+
+아래 alfheim 구성은 최초 배포 예시입니다. 현재 호스트 배치와 데이터 이전 절차는
+homelab 저장소의 호스트 설정과 배포 런북을 기준으로 합니다.
+
 ## 아키텍처
 
 ```

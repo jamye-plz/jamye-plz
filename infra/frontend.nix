@@ -38,6 +38,7 @@
   # install evidently produced an identical tree; trust the build, not the
   # intuition that it must differ.)
   nodeModulesHashes = {
+    x86_64-linux = "sha256-jJW3YunGV0GxcQID4In+z5HL6Fktn7+v3rzxpbGaK0w=";
     aarch64-linux = "sha256-VsOqP829lfUu5PzmQk9vNgGgOZJDkw9vFUUPfHpjYlM=";
   };
   nodeModulesHash =
